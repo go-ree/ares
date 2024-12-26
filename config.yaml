@@ -1,0 +1,12 @@
+db:
+  connString: "root:123@/test?charset=utf8"
+
+server:
+  addr: ":8080"
+
+log:
+  level: "info"
+
+job:
+  jobname:
+    cron: "* * * * *"
