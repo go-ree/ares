@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"gitlab.ttpai.work/sre/pipeline/ares/internal/jenkins"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,24 +13,27 @@ import (
 	"gitlab.ttpai.work/sre/pipeline/ares/internal/db"
 	"gitlab.ttpai.work/sre/pipeline/ares/internal/job"
 	"gitlab.ttpai.work/sre/pipeline/ares/internal/logger"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/web"
+	"gitlab.ttpai.work/sre/pipeline/ares/internal/webserver"
 )
 
 func main() {
 
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
-	logger.Init()
-
-	cli.Init()
-
-	err := config.Init()
+	err := logger.Init()
 	if err != nil {
 		os.Exit(5)
 	}
 
-	oldLevel := logger.SetLevel(config.Main.Log.Level)
-	if oldLevel == "" {
+	cli.Init()
+
+	err = config.Init()
+	if err != nil {
+		os.Exit(5)
+	}
+
+	err = logger.Init2(config.Main.Log.Level)
+	if err != nil {
 		os.Exit(5)
 	}
 
@@ -43,6 +47,11 @@ func main() {
 		os.Exit(5)
 	}
 
+	err = jenkins.Init()
+	if err != nil {
+		os.Exit(5)
+	}
+
 	// Ignore errors; 出错自动os.Exit(5)
-	web.Run(ctx, api.Router)
+	webserver.Run(ctx, api.Router)
 }

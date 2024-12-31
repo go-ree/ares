@@ -1,12 +1,19 @@
 db:
-  connString: "root:123@/test?charset=utf8"
+#  conn_str: "root:123@/test?charset=utf8"
 
-server:
-  addr: ":8080"
+web:
+  address: ":8080"
 
 log:
   level: "info"
+  accessLogfile: "log/access.log"
+  runtimeLogfile: "log/runtime.log"
 
+# 精确到秒
 job:
-  jobname:
-    cron: "* * * * *"
+#  jobname:
+#    cron: "* * * * * *"
+
+jenkins:
+  address: "http://172.16.2.88:8080"
+  token:  "118f677d3e8596a6bde966ca5f57c2d018"

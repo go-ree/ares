@@ -11,16 +11,22 @@ import (
 
 type Config struct {
 	Log struct {
-		Level string
-	}
+		Level          string `yaml:"level"`
+		AccessLogfile  string `yaml:"accessLogfile"`
+		RuntimeLogfile string `yaml:"runtimeLogfile"`
+	} `yaml:"log"`
 	Web struct {
-		Address string
-	}
+		Address string `yaml:"address"`
+	} `yaml:"web"`
 	DB struct {
-		ConnStr string
-	}
+		ConnStr string `yaml:"conn_str"`
+	} `yaml:"db"`
 	Job map[string]struct {
-		Cron string
+		Cron string `yaml:"cron"`
+	} `yaml:"job"`
+	Jenkins struct {
+		Address string `yaml:"address"`
+		Token   string `yaml:"token"`
 	}
 }
 
@@ -38,6 +44,6 @@ func Init() error {
 		slog.Error("yaml unmarshal error", slog.Any("error", err))
 		return err
 	}
-
+	slog.Info("load config successfully", slog.Any("config", Main))
 	return nil
 }
