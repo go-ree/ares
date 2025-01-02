@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 )
 
 type Job struct {
@@ -19,6 +20,7 @@ type Node struct {
 	NodeStatus string `json:"node_status"`
 }
 
+// GetJenkinsNodeStatus	获取jenkins中node的状态信息
 func GetJenkinsNodeStatus() (*Nodes, error) {
 	ctx := context.Background()
 	if Jenkins == nil {
@@ -53,6 +55,59 @@ func GetJenkinsNodeStatus() (*Nodes, error) {
 		}
 	}
 	return &nodeInfo, nil
+}
+
+// GetJenkinsBuildLog 获取jenkins构建日志
+func GetJenkinsBuildLog(jobName string, buildNumber int64) (string, error) {
+	ctx := context.Background()
+	if Jenkins == nil {
+		return "", errors.New("jenkins not initialized")
+	}
+	job, err := Jenkins.GetJob(ctx, jobName)
+	if err != nil {
+		slog.Error("获取 Job 失败", slog.Any("error", err))
+		return "", err
+	}
+	build, err := job.GetBuild(ctx, buildNumber)
+	if err != nil {
+		slog.Error("获取 Job 构建失败", slog.Any("error", err))
+		return "", err
+	}
+	log := build.GetConsoleOutput(ctx)
+	return log, nil
+}
+
+// StreamJenkinsBuildLog	持续获取jenkins的构建日志
+func StreamJenkinsBuildLog(jobName string, buildNumber int64, logChan chan<- string, errChan chan<- error) bool {
+	ctx := context.Background()
+	if Jenkins == nil {
+		errChan <- errors.New("jenkins not initialized")
+		return false
+	}
+	job, err := Jenkins.GetJob(ctx, jobName)
+	if err != nil {
+		errChan <- err
+		return false
+	}
+	build, err := job.GetBuild(ctx, buildNumber)
+	if err != nil {
+		errChan <- err
+		return false
+	}
+	build.IsRunning(ctx)
+
+	var lastLog string
+	for {
+		log := build.GetConsoleOutput(ctx) // 这里持续获取增量日志的逻辑
+		if log != lastLog && len(log) > len(lastLog) {
+			logChan <- log[len(lastLog):]
+			lastLog = log
+		}
+		if !build.IsRunning(ctx) {
+			return true
+		}
+		time.Sleep(1 * time.Second) // 控制获取频率
+	}
 }
 
 // CreateJob 创建一个新的 Jenkins Job

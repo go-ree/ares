@@ -11,6 +11,8 @@ func Router(r gin.IRouter) {
 	{
 		apiRouter.GET("/home", controller.Home)
 		apiRouter.GET("/v1/nodes/status", controller.GetJenkinsNodeStatus)
+		apiRouter.GET("/v1/job/log/:job/:id", controller.GetJenkinsBuildLog)
+		apiRouter.GET("/v1/job/stream/log", controller.StreamJenkinsBuildLogHandler)
 	}
 
 }
