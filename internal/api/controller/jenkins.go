@@ -72,10 +72,9 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 		}
 	}()
 
-	c.Header("Content-Type", "text/event-stream")
+	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
-	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 
 	// 使用 Gin 的 Stream 方法来处理流式响应
 	c.Stream(func(w io.Writer) bool {
@@ -101,4 +100,52 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 			}
 		}
 	})
+}
+
+func CreateBuildTask(c *gin.Context) {
+	var requestData struct {
+		GitUrlPath      string `json:"git_url_path"`
+		PackagePath     string `json:"package_path"`
+		PackageName     string `json:"package_name"`
+		AppName         string `json:"app_name"`
+		Branch          string `json:"branch"`
+		Env             string `json:"env"`
+		BaseImageName   string `json:"base_image_name"`
+		MavenImageName  string `json:"maven_image_name"`
+		HarborUrl       string `json:"harbor_url"`
+		ResinFileUrl    string `json:"resin_file_url"`
+		PinpointFileUrl string `json:"pinpoint_file_url"`
+		PublishUser     string `json:"publish_user"`
+	}
+	job := c.Param("job")
+	if job == "" {
+		c.JSON(http.StatusBadRequest, util.ResponseError("未指定job名称"))
+		return
+	}
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, util.ResponseError("请求数据格式错误"+err.Error()))
+		return
+	}
+	// 将 requestData 转换为 map[string]string
+	requestMap := map[string]string{
+		"git_url_path":      requestData.GitUrlPath,
+		"package_path":      requestData.PackagePath,
+		"package_name":      requestData.PackageName,
+		"app_name":          requestData.AppName,
+		"branch":            requestData.Branch,
+		"env":               requestData.Env,
+		"base_image_name":   requestData.BaseImageName,
+		"maven_image_name":  requestData.MavenImageName,
+		"harbor_url":        requestData.HarborUrl,
+		"resin_file_url":    requestData.ResinFileUrl,
+		"pinpoint_file_url": requestData.PinpointFileUrl,
+		"publish_user":      requestData.PublishUser,
+	}
+
+	buildNumber, err := jenkins.CreateBuildTask(job, requestMap)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, util.ResponseError(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, util.ResponseSuccess(buildNumber))
 }

@@ -110,10 +110,19 @@ func StreamJenkinsBuildLog(jobName string, buildNumber int64, logChan chan<- str
 	}
 }
 
-// CreateJob 创建一个新的 Jenkins Job
-func CreateJob(job Job) error {
+// CreateBuildTask 创建一个新的 Jenkins 构建任务
+func CreateBuildTask(jobName string, params map[string]string) (int64, error) {
+	ctx := context.Background()
 	// 实现创建逻辑
-	return nil
+	if Jenkins == nil {
+		return 0, errors.New("jenkins not initialized")
+	}
+	buildNumber, err := Jenkins.BuildJob(ctx, jobName, params)
+	if err != nil {
+		slog.Error("任务构建失败", slog.Any("error", err))
+		return 0, err
+	}
+	return buildNumber, nil
 }
 
 // GetJob 获取 Jenkins Job
