@@ -125,6 +125,14 @@ func CreateBuildTask(jobName string, params map[string]string) (int64, error) {
 	return buildNumber, nil
 }
 
+func BuildTask() error {
+	if Jenkins == nil {
+		return errors.New("jenkins not initialized")
+	}
+
+	return nil
+}
+
 // GetJob 获取 Jenkins Job
 func GetJob(id string) (Job, error) {
 	// 实现获取逻辑
