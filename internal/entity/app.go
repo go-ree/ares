@@ -1,21 +1,22 @@
 package entity
 
+import (
+	"encoding/json"
+	"time"
+)
+
 type App struct {
-	AppId       int    `xorm:"primary_key;auto_increment:true" json:"app_id"`
-	CreatedTime string `xorm:"created" json:"created_time"`
-	UpdatedTime string `xorm:"updated" json:"updated_time"`
-	DeletedTime string `xorm:"deleted" json:"deleted_time"`
-
-	AppName       string `xorm:"VARCHAR(100)" json:"app_name"`
-	AppNameCn     string `xorm:"VARCHAR(100)" json:"app_name_cn"`
-	Owner         string `xorm:"VARCHAR(100)" json:"owner"`
-	AppLevel      int    `xorm:"INT(11)" json:"app_level"`
-	BusinessGroup string `xorm:"VARCHAR(100)" json:"business_group"`
-
-	GitUrl          string `xorm:"VARCHAR(100)" json:"git_url"`
-	DevLanguage     string `xorm:"VARCHAR(100)" json:"dev_language"`
-	CodePackageName string `xorm:"VARCHAR(100)" json:"code_package_name"`
-	CodePackagePath string `xorm:"VARCHAR(100)" json:"code_package_path"`
+	AppId         int        `xorm:"pk autoincr 'app_id'" json:"app_id"`
+	AppName       string     `xorm:"varchar(255) notnull 'app_name'" json:"app_name"`
+	AppNameCn     string     `xorm:"varchar(255) default 'NULL' 'app_name_cn'" json:"app_name_cn"`
+	Owner         string     `xorm:"varchar(100) notnull 'owner'" json:"owner"`
+	OwnerCN       string     `xorm:"varchar(100) notnull 'owner_cn'" json:"owner_cn"`
+	DevLanguage   string     `xorm:"varchar(100) notnull 'dev_language'" json:"dev_language"`
+	DescriptionCN string     `xorm:"varchar(255) default 'NULL' 'description_cn'" json:"description_cn"`
+	GitUrl        string     `xorm:"varchar(255) notnull 'git_url'" json:"git_url"`
+	CreatedTime   time.Time  `xorm:"created 'created_at'" json:"created_at"`
+	UpdatedTime   time.Time  `xorm:"updated 'updated_at'" json:"updated_at"`
+	DeletedTime   *time.Time `xorm:"deleted 'deleted_at'" json:"deleted_at"`
 }
 
 type AppConfig struct {
@@ -42,4 +43,10 @@ type PublishConfig struct {
 	JenkinsFileGitUrl string `xorm:"VARCHAR(100)" json:"jenkins_file_git_url"`
 	// 在git仓库中的相对路径
 	JenkinsFilePath string `xorm:"VARCHAR(100)" json:"jenkins_file_path"`
+}
+
+type JenkinsJobData struct {
+	JobName  string          `xorm:"VARCHAR(100)" json:"job_name"`
+	Describe string          `xorm:"VARCHAR(100)" json:"describe"`
+	Json     json.RawMessage `xorm:"json" json:"json"`
 }
