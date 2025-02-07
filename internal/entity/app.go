@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-type App struct {
+type Apps struct {
 	AppId         int        `xorm:"pk autoincr 'app_id'" json:"app_id"`
 	AppName       string     `xorm:"varchar(255) notnull 'app_name'" json:"app_name"`
 	AppNameCn     string     `xorm:"varchar(255) default 'NULL' 'app_name_cn'" json:"app_name_cn"`
@@ -14,9 +14,9 @@ type App struct {
 	DevLanguage   string     `xorm:"varchar(100) notnull 'dev_language'" json:"dev_language"`
 	DescriptionCN string     `xorm:"varchar(255) default 'NULL' 'description_cn'" json:"description_cn"`
 	GitUrl        string     `xorm:"varchar(255) notnull 'git_url'" json:"git_url"`
-	CreatedTime   time.Time  `xorm:"created 'created_at'" json:"created_at"`
-	UpdatedTime   time.Time  `xorm:"updated 'updated_at'" json:"updated_at"`
-	DeletedTime   *time.Time `xorm:"deleted 'deleted_at'" json:"deleted_at"`
+	CreatedTime   time.Time  `xorm:"timestamp created notnull default CURRENT_TIMESTAMP 'created_at'" json:"created_at"`
+	UpdatedTime   time.Time  `xorm:"timestamp updated notnull default CURRENT_TIMESTAMP 'updated_at'" json:"updated_at"`
+	DeletedTime   *time.Time `xorm:"timestamp deleted 'deleted_at'" json:"deleted_at"`
 }
 
 type AppConfig struct {
