@@ -34,13 +34,23 @@ func PublishingEntry(appName string, branch string, env string) error {
 	}
 	//fmt.Printf("aaaa%+v\n", appConfig)
 
+	// 检验对应环境的常量信息是否存在
+	var envConfig entity.EnvConfigs
+	exists, err = db.Engine.Where("env = ? AND deleted_at IS NULL", env).Get(&envConfig)
+	if err != nil {
+		return fmt.Errorf("配置信息查询失败：%s", err)
+	}
+	if !exists {
+		return fmt.Errorf("未找到环境配置：%s", env)
+	}
+
 	// 这里需要构建实际的发布数据
-	jenkinsParam, err := ComposePublishData(appName, branch, env)
+	jenkinsParam, taskId, err := ComposePublishData(branch, app, appConfig, envConfig)
 	if err != nil {
 		return err
 	}
 	fmt.Println(jenkinsParam)
-
+	fmt.Println(taskId)
 	fmt.Println(appConfig.CodePackageType)
 
 	// 确定该类型的项目应该走哪个发布管线
@@ -60,43 +70,18 @@ func PublishingEntry(appName string, branch string, env string) error {
 }
 
 // ComposePublishData 构建发布数据
-func ComposePublishData(appName string, branch string, env string) (map[string]string, error) {
+// 这里主要是拼接各种发布参数信息
+func ComposePublishData(branch string, app entity.Apps, appConfig entity.AppConfigs, envConfig entity.EnvConfigs) (map[string]string, int, error) {
 	JenkinsParam := make(map[string]string)
-	var app entity.Apps
-	var appConfig entity.AppConfigs
-	var envConfig entity.EnvConfigs
-	exists, err := db.Engine.Where("app_name = ? AND deleted_at IS NULL", appName).Get(&app)
-	if err != nil {
-		return nil, fmt.Errorf("应用信息查询失败：%s", err)
-	}
-	if !exists {
-		return nil, fmt.Errorf("未找到应用：%s", appName)
-	}
-
-	exists, err = db.Engine.Where("app_id = ? AND env = ? AND deleted_at IS NULL", app.AppId, env).Get(&appConfig)
-	if err != nil {
-		return nil, fmt.Errorf("配置信息查询失败：%s", err)
-	}
-	if !exists {
-		return nil, fmt.Errorf("未找到对应环境配置信息，appId：%d,env：%s", app.AppId, env)
-	}
-
-	exists, err = db.Engine.Where("env = ? AND deleted_at IS NULL", env).Get(&envConfig)
-	if err != nil {
-		return nil, fmt.Errorf("配置信息查询失败：%s", err)
-	}
-	if !exists {
-		return nil, fmt.Errorf("未找到环境配置：%s", env)
-	}
 	// 输出当前时间的时间戳，精确到毫秒
 	milliseconds := time.Now().UnixMilli()
 
 	// 示例格式
 	// harbor.ttpai.work/publish/dev/asr-job:1739265948923
-	image := envConfig.HarborURL + "/" + envConfig.HarborProjectName + "/" + env + "/" + appName + ":" + fmt.Sprintf("%d", milliseconds)
+	image := envConfig.HarborURL + "/" + envConfig.HarborProjectName + "/" + envConfig.Env + "/" + app.AppName + ":" + fmt.Sprintf("%d", milliseconds)
 
-	JenkinsParam["app_name"] = appName
-	JenkinsParam["env"] = env
+	JenkinsParam["app_name"] = app.AppName
+	JenkinsParam["env"] = envConfig.Env
 	JenkinsParam["branch"] = branch
 	JenkinsParam["git_url"] = app.GitUrl
 	JenkinsParam["code_package_type"] = appConfig.CodePackageType
@@ -115,24 +100,22 @@ func ComposePublishData(appName string, branch string, env string) (map[string]s
 	JenkinsParam["image"] = image
 	jsonStr, err := tool.ToJSON(JenkinsParam)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	fmt.Println(jsonStr)
 	// 先直接在数据库中写入数据，此时记录状态信息
 	// 然后携带相关的发布信息，对jenkins发送api请求，jenkins会返回对应的build_number，这个用于查询执行状态和获取日志信息。
 	//
 	taskRecord := &entity.TaskRecord{
-		AppName:       appName,
+		AppName:       app.AppName,
 		PipelineParam: json.RawMessage(jsonStr),
 		Products:      image,
 	}
 	_, err = db.Engine.Insert(taskRecord)
 	if err != nil {
-		return nil, fmt.Errorf("任务记录创建失败: %s", err)
+		return nil, 0, fmt.Errorf("任务记录创建失败: %s", err)
 	}
-	fmt.Println("aaaaa", taskRecord.TaskId)
-
-	return JenkinsParam, nil
+	return JenkinsParam, taskRecord.TaskId, nil
 }
 
 // QueryTaskStatus 查询任务的执行状态
