@@ -6,7 +6,7 @@ import (
 )
 
 type Apps struct {
-	AppId         int        `xorm:"pk autoincr 'app_id'" json:"app_id"`
+	AppId         int        `xorm:"INT(11) pk autoincr 'app_id'" json:"app_id"`
 	AppName       string     `xorm:"varchar(255) notnull 'app_name'" json:"app_name"`
 	AppNameCn     string     `xorm:"varchar(255) default 'NULL' 'app_name_cn'" json:"app_name_cn"`
 	Owner         string     `xorm:"varchar(100) notnull 'owner'" json:"owner"`
@@ -19,16 +19,33 @@ type Apps struct {
 	DeletedTime   *time.Time `xorm:"timestamp deleted 'deleted_at'" json:"deleted_at"`
 }
 
-type AppConfig struct {
-	ConfigId string `xorm:"VARCHAR(100)" json:"config_id"`
+type AppConfigs struct {
+	ConfigID        int    `xorm:"INT(11) pk autoincr 'config_id'" json:"config_id"`
+	AppID           int    `xorm:"INT(11) not null 'app_id' index" json:"app_id"`
+	Env             string `xorm:"varchar(100) not null 'env'" json:"env"`
+	CodePackageType string `xorm:"varchar(100) default 'NULL' 'code_package_type'" json:"code_package_type"`
+	CodePackagePath string `xorm:"varchar(255) default 'NULL' 'code_package_path'" json:"code_package_path"`
+	CodePackageName string `xorm:"varchar(255) default 'NULL' 'code_package_name'" json:"code_package_name"`
+	BaseImage       string `xorm:"default 'NULL' 'base_image'" json:"base_image"`
 
-	AppId       int    `xorm:"primary_key;auto_increment:true" json:"app_id"`
-	CreatedTime string `xorm:"created" json:"created_time"`
-	UpdatedTime string `xorm:"updated" json:"updated_time"`
-	DeletedTime string `xorm:"deleted" json:"deleted_time"`
+	PodCount         int    `xorm:"int(11) default 1 'pod_count'" json:"pod_count"`
+	LimitsMemory     int    `xorm:"int(11) default 2 'limits_memory'" json:"limits_memory"`
+	ProbeType        string `xorm:"varchar(100) default 'TCP' 'probe_type'" json:"probe_type"`
+	ProbeCheckPath   string `xorm:"varchar(100) default '/ttpai/inside/checkup' 'probe_check_path'" json:"probe_check_path"`
+	PreStopType      string `xorm:"varchar(100) default 'TCP' 'pre_stop_type'" json:"pre_stop_type"`
+	PreStopCheckPath string `xorm:"varchar(100) default '/ttpai/inside/prestop' 'pre_stop_check_path' " json:"pre_stop_check_path"`
+	PreStopCommand   string `xorm:"varchar(255) default 'NULL' 'pre_stop_command'" json:"pre_stop_command"`
+	Domain           string `xorm:"varchar(255) default 'NULL' 'domain'" json:"domain"`
+	DomainPath       string `xorm:"varchar(255) default '/' 'domain_path'" json:"domain_path"`
 
-	Env string `xorm:"VARCHAR(100)" json:"env"`
+	CreatedTime time.Time  `xorm:"timestamp created notnull default CURRENT_TIMESTAMP 'created_at'" json:"created_at"`
+	UpdatedTime time.Time  `xorm:"timestamp updated notnull default CURRENT_TIMESTAMP 'updated_at'" json:"updated_at"`
+	DeletedTime *time.Time `xorm:"timestamp deleted 'deleted_at'" json:"deleted_at"`
 }
+
+//
+//以上为投产结构体
+//
 
 type PublishConfig struct {
 	// 项目类型

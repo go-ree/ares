@@ -13,90 +13,80 @@ import (
 
 // PublishingEntry 所有类型项目的统一发布入口，由这里决定具体的发布动作
 func PublishingEntry(appName string, branch string, env string) error {
-	var app []entity.Apps
-	err := db.Engine.Where("app_name = ? AND deleted_at IS NULL", appName).Find(&app)
+	start := time.Now()
+
+	// 查询应用信息
+	dbStart := time.Now()
+	var app entity.Apps
+	exists, err := db.Engine.Where("app_name = ? AND deleted_at IS NULL", appName).Get(&app)
+	fmt.Printf("查询应用信息耗时: %v\n", time.Since(dbStart))
 	if err != nil {
 		return fmt.Errorf("应用信息查询失败：%s", err)
 	}
-	if len(app) == 0 {
+	if !exists {
 		return fmt.Errorf("未找到应用：%s", appName)
-	}
-	if len(app) > 1 {
-		return fmt.Errorf("匹配到 %d 条记录信息，请检查app_name：%s 是否唯一存在", len(app), appName)
 	}
 	//fmt.Printf("APPID:%d app_name:%s deleted_at:%s,created_at:%s \n", app.AppId, app.AppName, app.DeletedTime, app.CreatedTime.Format("2006-01-02 15:04:05"))
 
-	// 检验发布的应用环境是否存在
-	var appConfig []entity.AppConfigs
-	err = db.Engine.Where("app_id = ? AND env = ? AND deleted_at IS NULL", app[0].AppId, env).Find(&appConfig)
+	// 检验发布的应用环境
+	dbStart = time.Now()
+	var appConfig entity.AppConfigs
+	exists, err = db.Engine.Where("app_id = ? AND env = ? AND deleted_at IS NULL", app.AppId, env).Get(&appConfig)
+	fmt.Printf("查询应用环境配置耗时: %v\n", time.Since(dbStart))
 	if err != nil {
 		return fmt.Errorf("配置信息查询失败：%s", err)
 	}
-	if len(appConfig) == 0 {
-		return fmt.Errorf("未找到对应环境配置信息，appId：%d,env：%s", app[0].AppId, env)
-	}
-	if len(appConfig) > 1 {
-		return fmt.Errorf("匹配到 %d 条记录信息，请检查appId：%d, env：%s 是否唯一存在", len(appConfig), app[0].AppId, env)
+	if !exists {
+		return fmt.Errorf("未找到对应环境配置信息，appId：%d,env：%s", app.AppId, env)
 	}
 	//fmt.Printf("aaaa%+v\n", appConfig)
 
 	// 检验对应环境的常量信息是否存在
-	var envConfig []entity.EnvConfigs
-	err = db.Engine.Where("env = ? AND deleted_at IS NULL", env).Find(&envConfig)
+	dbStart = time.Now()
+	var envConfig entity.EnvConfigs
+	exists, err = db.Engine.Where("env = ? AND deleted_at IS NULL", env).Get(&envConfig)
+	fmt.Printf("查询环境常量耗时: %v\n", time.Since(dbStart))
 	if err != nil {
 		return fmt.Errorf("配置信息查询失败：%s", err)
 	}
-	if len(envConfig) == 0 {
+	if !exists {
 		return fmt.Errorf("未找到环境配置：%s", env)
-	}
-	if len(envConfig) > 1 {
-		return fmt.Errorf("匹配到 %d 条记录信息，请检查env：%s 是否唯一存在", len(envConfig), env)
 	}
 
 	// 这里需要构建实际的发布数据
-	jenkinsParam, taskId, err := ComposePublishData(branch, app[0], appConfig[0], envConfig[0])
+	jenkinsParam, taskId, err := ComposePublishData(branch, app, appConfig, envConfig)
 	if err != nil {
 		return err
 	}
-	//fmt.Println(jenkinsParam)
-	//fmt.Println(taskId)
-	//fmt.Println(appConfig.CodePackageType)
+	fmt.Println(jenkinsParam)
+	fmt.Println(taskId)
+	fmt.Println(appConfig.CodePackageType)
 
 	// 确定该类型的项目应该走哪个发布管线
-	var pipelines []entity.Pipelines
-	err = db.Engine.Where("code_package_type = ? AND deleted_at IS NULL", appConfig[0].CodePackageType).Find(&pipelines)
+	dbStart = time.Now()
+	var pipelines entity.Pipelines
+	exists, err = db.Engine.Where("code_package_type = ? AND deleted_at IS NULL", appConfig.CodePackageType).Get(&pipelines)
+	fmt.Printf("查询发布管线耗时: %v\n", time.Since(dbStart))
 	if err != nil {
 		return fmt.Errorf("代码包类型所属管线查询失败：%s", err)
 	}
-	if len(pipelines) == 0 {
-		return fmt.Errorf("未找到环境配置：%s", env)
-	}
-	if len(pipelines) > 1 {
-		return fmt.Errorf("匹配到 %d 条记录信息，请检查code_package_type：%s 是否唯一存在", len(pipelines), appConfig[0].CodePackageType)
-	}
-
-	// 对相应的管线创建新的构建任务
-	jobBuildId, _, err := jenkins.CreateBuildTask(pipelines[0].JobName, jenkinsParam)
+	taskStart := time.Now()
+	jobBuildId, jobName, err := jenkins.CreateBuildTask(pipelines.JobName, jenkinsParam)
 	if err != nil {
 		return err
 	}
-	// 回写数据库中的数据，将编译阶段产生的taskId回写到表中
-	var taskRecord entity.TaskRecord
-	taskRecord.CiBuildId = jobBuildId
-	taskRecord.Status = "packaging"
-	taskRecord.CiJobName = pipelines[0].JobName
-	// 更新指定id的数据
-	_, err = db.Engine.ID(taskId).Update(&taskRecord)
-	if err != nil {
-		return fmt.Errorf("ci阶段taskId回写失败：%s", err)
-	}
+	fmt.Printf("taskStart耗时: %v\n", time.Since(taskStart))
+	fmt.Println(jobBuildId)
+	fmt.Println(jobName)
 
+	fmt.Printf("PublishingEntry总耗时: %v\n", time.Since(start))
 	return nil
 }
 
 // ComposePublishData 构建发布数据
 // 这里主要是拼接各种发布参数信息
 func ComposePublishData(branch string, app entity.Apps, appConfig entity.AppConfigs, envConfig entity.EnvConfigs) (map[string]string, int, error) {
+	start := time.Now()
 	JenkinsParam := make(map[string]string)
 	// 输出当前时间的时间戳，精确到毫秒
 	milliseconds := time.Now().UnixMilli()
@@ -127,7 +117,7 @@ func ComposePublishData(branch string, app entity.Apps, appConfig entity.AppConf
 	if err != nil {
 		return nil, 0, err
 	}
-	//fmt.Println(jsonStr)
+	fmt.Println(jsonStr)
 	// 先直接在数据库中写入数据，此时记录状态信息
 	// 然后携带相关的发布信息，对jenkins发送api请求，jenkins会返回对应的build_number，这个用于查询执行状态和获取日志信息。
 	//
@@ -135,12 +125,21 @@ func ComposePublishData(branch string, app entity.Apps, appConfig entity.AppConf
 		AppName:       app.AppName,
 		PipelineParam: json.RawMessage(jsonStr),
 		Products:      image,
-		Status:        "init",
 	}
-	// 需要在这里显式的把一些有默认值的给排除掉，golang会将未使用的值赋值为零值，而不是使用默认值
-	_, err = db.Engine.Omit("ci_build_id", "cd_build_id", "message", "ci_job_name", "cd_job_name", "auto_deploy").Insert(taskRecord)
+	// 记录数据库操作耗时
+	dbStart := time.Now()
+	_, err = db.Engine.Insert(taskRecord)
+	fmt.Printf("数据库写入耗时: %v\n", time.Since(dbStart))
 	if err != nil {
 		return nil, 0, fmt.Errorf("任务记录创建失败: %s", err)
 	}
+	fmt.Printf("ComposePublishData总耗时: %v\n", time.Since(start))
 	return JenkinsParam, taskRecord.TaskId, nil
+}
+
+// QueryTaskStatus 查询任务的执行状态
+// 实际的执行逻辑就是根据任务id查询数据库中的status字段，由此判断任务的执行状态并返回结果。
+func QueryTaskStatus(taskId int) (string, error) {
+
+	return "成功", nil
 }

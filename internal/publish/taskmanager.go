@@ -1,0 +1,157 @@
+package publish
+
+import (
+	"fmt"
+	"gitlab.ttpai.work/sre/pipeline/ares/internal/db"
+	"gitlab.ttpai.work/sre/pipeline/ares/internal/entity"
+	"gitlab.ttpai.work/sre/pipeline/ares/internal/jenkins"
+	"gitlab.ttpai.work/sre/pipeline/ares/internal/tool"
+	"log/slog"
+	"sync"
+)
+
+// TaskManager 任务管理器
+type TaskManager struct{}
+
+// NewTaskManager 创建新的任务管理器
+func NewTaskManager() *TaskManager {
+	return &TaskManager{}
+}
+
+// UpdateTaskStatuses 更新任务状态
+func (tm *TaskManager) UpdateTaskStatuses() {
+	tasks, err := tm.fetchTasks()
+	if err != nil {
+		slog.Error("查询任务列表失败", slog.Any("error", err))
+		return
+	}
+	var wg sync.WaitGroup
+	for _, task := range tasks {
+		wg.Add(1)
+		go func(task entity.TaskRecord) {
+			defer wg.Done()
+			switch task.Status {
+			case entity.StatusPackaging:
+				if err := tm.handlePackagingTask(task); err != nil {
+					slog.Error("处理编译中任务失败", slog.Any("taskId", task.TaskId), slog.Any("error", err))
+				}
+			case entity.StatusPackaged:
+				if err := tm.handlePackagedTask(task); err != nil {
+					slog.Error("处理编译成功任务失败", slog.Any("taskId", task.TaskId), slog.Any("error", err))
+				}
+			case entity.StatusDeploying:
+				if err := tm.handleDeployingTask(task); err != nil {
+					slog.Error("处理部署中任务失败", slog.Any("taskId", task.TaskId), slog.Any("error", err))
+				}
+			}
+		}(task)
+
+	}
+	wg.Wait()
+	return
+}
+
+// fetchTasks 查询状态为编译中、编译成功或打包中的任务
+func (tm *TaskManager) fetchTasks() ([]entity.TaskRecord, error) {
+	var tasks []entity.TaskRecord
+	err := db.Engine.Where("status IN (?, ?, ?) AND deleted_at IS NULL", entity.StatusPackaging, entity.StatusPackaged, entity.StatusDeploying).Find(&tasks)
+	if err != nil {
+		return nil, fmt.Errorf("查询任务列表失败：%s", err)
+	}
+	return tasks, nil
+}
+
+// handlePackagingTask 处理编译中任务
+func (tm *TaskManager) handlePackagingTask(task entity.TaskRecord) error {
+	status, err := jenkins.GetBuildStatus(task.CiJobName, task.CiBuildId)
+	if err != nil {
+		return fmt.Errorf("查询管线状态失败：%s", err)
+	}
+
+	switch status {
+	case "RUNNING":
+		// 不做任何变动
+		return nil
+	case "SUCCESS":
+		return tm.handlePackagingSuccess(task)
+	case "FAILURE", "ABORTED":
+		task.Status = entity.StatusPackageFailed
+		_, err := db.Engine.ID(task.TaskId).Update(&task)
+		return err
+	default:
+		return nil
+	}
+}
+
+// handlePackagingSuccess 处理编译成功状态
+func (tm *TaskManager) handlePackagingSuccess(task entity.TaskRecord) error {
+	if task.AutoDeploy == 1 {
+		return tm.triggerJenkinsBuild(task)
+	}
+
+	// 更新状态为“编译完成”
+	task.Status = entity.StatusPackaged
+	_, err := db.Engine.ID(task.TaskId).Update(&task)
+	return err
+}
+
+// triggerJenkinsBuild 触发 Jenkins 构建任务
+func (tm *TaskManager) triggerJenkinsBuild(task entity.TaskRecord) error {
+	// 在这里手动定义所有应用部署用的job名称
+	autoDeployJobName := "deploy-k8s"
+	jenkinsParam, err := tool.ToMapStringInterface(task.PipelineParam)
+	if err != nil {
+		return fmt.Errorf("转换参数失败：%s", err)
+	}
+
+	var pipelines []entity.Pipelines
+	err = db.Engine.Where("code_package_type = ? AND deleted_at IS NULL", autoDeployJobName).Find(&pipelines)
+	if err != nil || len(pipelines) == 0 {
+		return fmt.Errorf("未找到环境配置")
+	}
+
+	jobBuildId, _, err := jenkins.CreateBuildTask(pipelines[0].JobName, jenkinsParam)
+	if err != nil {
+		return fmt.Errorf("创建构建任务失败：%s", err)
+	}
+
+	// 更新任务信息
+	task.Status = entity.StatusDeploying
+	task.CdJobName = pipelines[0].JobName
+	task.CdBuildId = jobBuildId
+	_, err = db.Engine.ID(task.TaskId).Update(&task)
+	return err
+}
+
+// handlePackagedTask 处理编译成功任务
+func (tm *TaskManager) handlePackagedTask(task entity.TaskRecord) error {
+	// 检测自动部署的状态是否为1，如果是1则触发自动部署，开始继续执行，如果不为1则什么都不做
+	if task.AutoDeploy == 1 {
+		return tm.triggerJenkinsBuild(task)
+	}
+	return nil
+}
+
+// handleDeployingTask 处理部署中任务
+func (tm *TaskManager) handleDeployingTask(task entity.TaskRecord) error {
+	status, err := jenkins.GetBuildStatus(task.CdJobName, task.CdBuildId)
+	if err != nil {
+		return fmt.Errorf("查询部署状态失败：%s", err)
+	}
+
+	switch status {
+	case "RUNNING":
+		// 不做任何变动
+		return nil
+	case "SUCCESS":
+		task.Status = entity.StatusDeployed
+		_, err := db.Engine.ID(task.TaskId).Update(&task)
+		return err
+	case "FAILURE", "ABORTED":
+		task.Status = entity.StatusDeployFailed
+		_, err := db.Engine.ID(task.TaskId).Update(&task)
+		return err
+	default:
+		return nil
+	}
+}

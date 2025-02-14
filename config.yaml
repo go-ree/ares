@@ -1,5 +1,5 @@
 db:
-#  conn_str: "root:123@/test?charset=utf8"
+  conn_str: "root:Abc123..@(172.16.2.139:3306)/ares?charset=utf8mb4&loc=Asia%2FShanghai"
 
 web:
   address: ":8080"
@@ -11,9 +11,13 @@ log:
 
 # 精确到秒
 job:
+  taskManager:
+    cron: "@every 10s"
 #  jobname:
 #    cron: "* * * * * *"
 
 jenkins:
   address: "http://172.16.2.88:8080"
   token:  "118f677d3e8596a6bde966ca5f57c2d018"
+  username: "admin"
+  password: "hello@ttpai"

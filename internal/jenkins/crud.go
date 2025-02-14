@@ -4,14 +4,9 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"time"
 )
-
-type Job struct {
-	ID   string
-	Name string
-	// 其他字段...
-}
 
 type Nodes []Node
 
@@ -58,7 +53,7 @@ func GetJenkinsNodeStatus() (*Nodes, error) {
 }
 
 // GetJenkinsBuildLog 获取jenkins构建日志
-func GetJenkinsBuildLog(jobName string, buildNumber int64) (string, error) {
+func GetJenkinsBuildLog(jobName string, buildId int64) (string, error) {
 	ctx := context.Background()
 	if Jenkins == nil {
 		return "", errors.New("jenkins not initialized")
@@ -68,7 +63,7 @@ func GetJenkinsBuildLog(jobName string, buildNumber int64) (string, error) {
 		slog.Error("获取 Job 失败", slog.Any("error", err))
 		return "", err
 	}
-	build, err := job.GetBuild(ctx, buildNumber)
+	build, err := job.GetBuild(ctx, buildId)
 	if err != nil {
 		slog.Error("获取 Job 构建失败", slog.Any("error", err))
 		return "", err
@@ -78,7 +73,9 @@ func GetJenkinsBuildLog(jobName string, buildNumber int64) (string, error) {
 }
 
 // StreamJenkinsBuildLog	持续获取jenkins的构建日志
-func StreamJenkinsBuildLog(jobName string, buildNumber int64, logChan chan<- string, errChan chan<- error) bool {
+// jobName: 执行的Job名称
+// buildId：执行的任务id
+func StreamJenkinsBuildLog(jobName string, buildId int64, logChan chan<- string, errChan chan<- error) bool {
 	ctx := context.Background()
 	if Jenkins == nil {
 		errChan <- errors.New("jenkins not initialized")
@@ -89,12 +86,12 @@ func StreamJenkinsBuildLog(jobName string, buildNumber int64, logChan chan<- str
 		errChan <- err
 		return false
 	}
-	build, err := job.GetBuild(ctx, buildNumber)
+	build, err := job.GetBuild(ctx, buildId)
 	if err != nil {
 		errChan <- err
 		return false
 	}
-	build.IsRunning(ctx)
+	//build.IsRunning(ctx)
 
 	var lastLog string
 	for {
@@ -111,18 +108,38 @@ func StreamJenkinsBuildLog(jobName string, buildNumber int64, logChan chan<- str
 }
 
 // CreateBuildTask 创建一个新的 Jenkins 构建任务
-func CreateBuildTask(jobName string, params map[string]string) (int64, error) {
+// 传入：管线名称、入参
+// 返回：构建id、管线名称、错误信息
+func CreateBuildTask(jobName string, params map[string]string) (int64, string, error) {
 	ctx := context.Background()
 	// 实现创建逻辑
 	if Jenkins == nil {
-		return 0, errors.New("jenkins not initialized")
+		return 0, "", errors.New("jenkins not initialized")
 	}
-	buildNumber, err := Jenkins.BuildJob(ctx, jobName, params)
+	queueId, err := Jenkins.BuildJob(ctx, jobName, params)
 	if err != nil {
 		slog.Error("任务构建失败", slog.Any("error", err))
-		return 0, err
+		return 0, "", err
 	}
-	return buildNumber, nil
+	if queueId == 0 {
+		return 0, "", errors.New("作业任务已在队列中。 如需优化,请将该job的静默期调整为0秒。默认为5秒,需设置为0秒即可解决。配置路径：jobName-->configure-->Quiet period  静默功能说明：https://www.jenkins.io/blog/2010/08/11/quiet-period-feature/")
+	}
+
+	// 这段代码是一个循环，检查任务的 Executable.Number 是否为 0。根据 Jenkins 的 API，任务在队列中会有一个大约 4.7 秒的静默期。
+	// 在此期间，任务的构建编号可能尚未分配。循环中每隔 1 秒调用一次 Poll 方法来更新任务状态。如果在此过程中发生错误，返回 nil 和错误信息。
+	buildInfo, err := Jenkins.GetBuildFromQueueID(ctx, queueId)
+	if err != nil {
+		return 0, "", err
+	}
+	// job任务中的id
+	jobBuildIdStr := buildInfo.Raw.ID
+
+	jobBuildId, err := strconv.ParseInt(jobBuildIdStr, 10, 64)
+	if err != nil {
+		return 0, "", err
+	}
+
+	return jobBuildId, jobName, nil
 }
 
 func BuildTask() error {
@@ -133,19 +150,62 @@ func BuildTask() error {
 	return nil
 }
 
-// GetJob 获取 Jenkins Job
-func GetJob(id string) (Job, error) {
-	// 实现获取逻辑
-	return Job{}, nil
+// GetBuildStatus 获取 Jenkins构建结果
+// 传入：管线名称、构建id
+// 返回：构建状态（RUNNING、SUCCESS、FAILURE、ABORTED）
+func GetBuildStatus(jobName string, buildId int64) (string, error) {
+	if Jenkins == nil {
+		return "", errors.New("jenkins not initialized")
+	}
+
+	ctx := context.Background()
+
+	// 获取job对象
+	job, err := Jenkins.GetJob(ctx, jobName)
+	if err != nil {
+		slog.Error("获取 Job 失败", slog.Any("error", err))
+		return "", err
+	}
+	// 获取具体构建实例
+	build, err := job.GetBuild(ctx, buildId)
+	if err != nil {
+		slog.Error("获取 Job 构建失败", slog.Any("error", err))
+		return "", err
+	}
+
+	// 检查构建是否仍在运行
+	isRunning := build.IsRunning(ctx)
+	if isRunning {
+		return "RUNNING", nil
+	}
+
+	// 获取最终构建结果
+	result := build.GetResult()
+	switch result {
+	case "SUCCESS":
+		return "SUCCESS", nil
+	case "FAILURE":
+		return "FAILURE", nil
+	case "ABORTED":
+		return "ABORTED", nil
+	default:
+		return "ABNORMAL", nil
+	}
 }
 
-// UpdateJob 更新 Jenkins Job
-func UpdateJob(job Job) error {
-	// 实现更新逻辑
-	return nil
-}
+//// GetJob 获取 Jenkins Job
+//func GetJob(id string) (Job, error) {
+//	// 实现获取逻辑
+//	return Job{}, nil
+//}
 
-// DeleteJob 删除 Jenkins Job
+//// UpdateJob 更新 Jenkins Job
+//func UpdateJob(job Job) error {
+//	// 实现更新逻辑
+//	return nil
+//}
+
+// DeleteJob 删除 Jenkins
 func DeleteJob(id string) error {
 	// 实现删除逻辑
 	return nil

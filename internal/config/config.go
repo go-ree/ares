@@ -25,8 +25,10 @@ type Config struct {
 		Cron string `yaml:"cron"`
 	} `yaml:"job"`
 	Jenkins struct {
-		Address string `yaml:"address"`
-		Token   string `yaml:"token"`
+		Address  string `yaml:"address"`
+		Token    string `yaml:"token"`
+		UserName string `yaml:"username"`
+		Password string `yaml:"password"`
 	}
 }
 
