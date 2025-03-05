@@ -28,18 +28,17 @@ func Router(r gin.IRouter) {
 		// 发布相关路由组
 		deploy := apiRouter.Group("/deploy")
 		{
-			// 单个应用进行发布动作
-			deploy.POST("/publish", controller.BuildTask)
+			// 单个应用进行发布
+			deploy.POST("/publish", publishController.CreateBuildTask)
+			// 应用批量发布
+			deploy.POST("/publish/batch", publishController.CreateBatchBuildTask)
+
 			// 单个应用进行发布动作（未投产）
 			deploy.POST("/publish/v1", controller.CreateBuildTask)
 			// 获取构建任务状态
 			deploy.GET("/query/status", controller.GetBuildTaskStatus)
 			// 获取job任务构建日志
 			deploy.GET("/log/stream", controller.StreamJenkinsBuildLogHandler)
-			// 单个应用进行发布
-			deploy.POST("/publish/v2", publishController.CreateBuildTask)
-			// 应用批量发布
-			deploy.POST("/publish/v2/batch", publishController.CreateBatchBuildTask)
 		}
 		// 应用相关接口
 		apps := apiRouter.Group("/apps")

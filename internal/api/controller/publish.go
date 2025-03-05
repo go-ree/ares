@@ -34,6 +34,15 @@ func (pc *PublishController) CreateBuildTask(c *gin.Context) {
 
 }
 
+// CreateBatchBuildTask godoc
+// @Summary 批量创建构建任务
+// @Description 批量创建构建任务
+// @Tags 构建任务
+// @Accept json
+// @Produce json
+// @Param request body publish.CreateBatchPublishRequest true "发布信息"
+// @Success 200 {object} util.ResponseSuccess
+// @Router  [post]
 func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
 	var req publish.CreateBatchPublishRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -46,35 +55,6 @@ func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
 		return
 	}
 	c.JSON(200, util.ResponseSuccess(publishBatchResult))
-}
-
-// BuildTask godoc
-// @Summary 创建单个构建任务
-// @Description 创建新的构建任务
-// @Tags 构建任务
-// @Accept json
-// @Produce json
-// @Param request body publish.CreateAppRequest true "应用信息"
-// @Success 200 {object} util.ResponseSuccess
-// @Router /api/v1/deploy/publish [post]
-func BuildTask(c *gin.Context) {
-	// 识别携带的入参，触发对应的发布动作
-	// appid、环境
-	var requestData struct {
-		AppName string `json:"app_name"`
-		Env     string `json:"env"`
-		Branch  string `json:"branch"`
-	}
-	if err := c.ShouldBindJSON(&requestData); err != nil {
-		c.JSON(http.StatusBadRequest, util.ResponseError("请求数据格式错误"+err.Error()))
-		return
-	}
-	err := publish.PublishingEntry(requestData.AppName, requestData.Branch, requestData.Env)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, util.ResponseError(err.Error()))
-		return
-	}
-	c.JSON(http.StatusOK, util.ResponseSuccess("触发构建任务成功"))
 }
 
 // CreateBuildTask 创建Job的构建任务
