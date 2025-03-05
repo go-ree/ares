@@ -55,7 +55,17 @@ func ResponseSuccess(data interface{}) gin.H {
 // @Description API 响应结构
 func ResponsePage(data interface{}, total int) gin.H {
 	return gin.H{
-		"data":  data,
 		"total": total,
+		"data":  data,
+	}
+}
+
+// Response 定义了 API 响应的结构
+// @Description API 响应结构
+func Response(code int, message string, result interface{}) gin.H {
+	return gin.H{
+		"code":    code,
+		"message": message,
+		"result":  result,
 	}
 }

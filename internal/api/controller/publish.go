@@ -9,7 +9,54 @@ import (
 	"net/http"
 )
 
-// BuildTask 处理前端请求，触发构建任务
+type PublishController struct {
+	publishManager publish.PublishManager
+}
+
+func NewPublishController() *PublishController {
+	return &PublishController{
+		publishManager: publish.PublishManager{},
+	}
+}
+
+func (pc *PublishController) CreateBuildTask(c *gin.Context) {
+	var req publish.CreatePublishRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, util.ResponseError("请求数据格式错误"+err.Error()))
+		return
+	}
+	publishResult, err := pc.publishManager.CreatePublish(&req)
+	if err != nil {
+		c.JSON(500, util.ResponseError(err.Error()))
+		return
+	}
+	c.JSON(200, util.ResponseSuccess(publishResult))
+
+}
+
+func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
+	var req publish.CreateBatchPublishRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, util.ResponseError("请求数据格式错误"+err.Error()))
+		return
+	}
+	publishBatchResult, err := pc.publishManager.CreateBatchPublish(&req)
+	if err != nil {
+		c.JSON(500, util.ResponseError(err.Error()))
+		return
+	}
+	c.JSON(200, util.ResponseSuccess(publishBatchResult))
+}
+
+// BuildTask godoc
+// @Summary 创建单个构建任务
+// @Description 创建新的构建任务
+// @Tags 构建任务
+// @Accept json
+// @Produce json
+// @Param request body publish.CreateAppRequest true "应用信息"
+// @Success 200 {object} util.ResponseSuccess
+// @Router /api/v1/deploy/publish [post]
 func BuildTask(c *gin.Context) {
 	// 识别携带的入参，触发对应的发布动作
 	// appid、环境
