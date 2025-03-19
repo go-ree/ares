@@ -235,6 +235,7 @@ func (pm *PublishManager) ComposePublishData(req *CreatePublishRequest, app *ent
 	JenkinsParam["domain"] = appConfig.Domain
 	JenkinsParam["domain_path"] = appConfig.DomainPath
 	JenkinsParam["image"] = image
+	JenkinsParam["dev_language"] = app.DevLanguage
 	jsonStr, err := tool.ToJSON(JenkinsParam)
 	if err != nil {
 		return nil, 0, err
