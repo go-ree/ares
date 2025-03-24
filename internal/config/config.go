@@ -2,10 +2,9 @@ package config
 
 import (
 	"fmt"
+	"gitlab.ttpai.work/sre/pipeline/ares/docs"
 	"log/slog"
 	"os"
-
-	docs "gitlab.ttpai.work/sre/pipeline/ares/cmd/server/docs"
 
 	"gitlab.ttpai.work/sre/pipeline/ares/internal/cli"
 	"gopkg.in/yaml.v3"
