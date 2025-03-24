@@ -14,7 +14,17 @@ const docTemplate = `{
     },
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
-    "paths": {}
+    "paths": {
+        "/api/v1/deploy/publish": {
+            "post": {
+                "tags": [
+                    "Publish"
+                ],
+                "summary": "单应用进行下发布动作",
+                "responses": {}
+            }
+        }
+    }
 }`
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it

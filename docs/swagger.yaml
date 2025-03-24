@@ -1,4 +1,10 @@
 info:
   contact: {}
-paths: {}
+paths:
+  /api/v1/deploy/publish:
+    post:
+      responses: {}
+      summary: 单应用进行下发布动作
+      tags:
+      - Publish
 swagger: "2.0"

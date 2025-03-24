@@ -37,16 +37,6 @@ func (pc *PublishController) CreateBuildTask(c *gin.Context) {
 	c.JSON(200, util.Response(200, "", publishResult))
 }
 
-// CreateBatchBuildTask godoc
-//
-//	@Summary		批量创建构建任务
-//	@Description	批量创建构建任务
-//	@Tags			构建任务
-//	@Accept			json
-//	@Produce		json
-//	@Param			request	body		publish.CreateBatchPublishRequest	true	"发布信息"
-//	@Success		200		{object}	util.ResponseSuccess
-//	@Router		/api/v1/deploy/batch-publish [post]
 func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
 	var req publish.CreateBatchPublishRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

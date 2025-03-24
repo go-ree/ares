@@ -14,7 +14,7 @@ func Router(r gin.IRouter) {
 	appsController := controller.NewAppsController()
 	publishController := controller.NewPublishController()
 	// Swagger 路由
-	r.GET("/docs", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/swagger/index.html") })
+	r.GET("/wiki", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/swagger/index.html") })
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	r.GET("/home", controller.Home)
 
