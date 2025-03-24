@@ -17,14 +17,15 @@ func NewAppsController() *AppsController {
 }
 
 // CreateApp godoc
-// @Summary 创建单个应用
-// @Description 创建新的应用
-// @Tags 应用管理
-// @Accept json
-// @Produce json
-// @Param request body publish.CreateAppRequest true "应用信息"
-// @Success 200 {object} publish.App
-// @Router /api/v1/apps [post]
+//
+//	@Summary		创建单个应用
+//	@Description	创建新的应用
+//	@Tags			应用管理
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		publish.CreateAppRequest	true	"应用信息"
+//	@Success		200		{object}	publish.App
+//	@Router			/api/v1/apps [post]
 func (ac *AppsController) CreateApp(c *gin.Context) {
 	var req app.CreateAppRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -42,14 +43,15 @@ func (ac *AppsController) CreateApp(c *gin.Context) {
 }
 
 // CreateApps godoc
-// @Summary 批量创建应用
-// @Description 批量创建多个应用
-// @Tags 应用管理
-// @Accept json
-// @Produce json
-// @Param request body publish.CreateAppsRequest true "应用信息列表"
-// @Success 200 {array} publish.App
-// @Router /api/v1/apps/batch [post]
+//
+//	@Summary		批量创建应用
+//	@Description	批量创建多个应用
+//	@Tags			应用管理
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body	publish.CreateAppsRequest	true	"应用信息列表"
+//	@Success		200		{array}	publish.App
+//	@Router			/api/v1/apps/batch [post]
 func (ac *AppsController) CreateApps(c *gin.Context) {
 	var req app.CreateAppsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

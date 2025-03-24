@@ -15,21 +15,23 @@ import (
 )
 
 // Home godoc
-// @Summary 首页
-// @Description 返回 Hello, World!
-// @Success 200 {string} string "Hello, World!"
-// @Router /home [get]
+//
+//	@Summary		首页
+//	@Description	返回 Hello, World!
+//	@Success		200	{string}	string	"Hello, World!"
+//	@Router			/home [get]
 func Home(c *gin.Context) {
 	home.Home()
 	c.JSON(200, util.Response(200, "Hello, World!", ""))
 }
 
 // GetJenkinsNodeStatus godoc
-// @Summary 获取 Jenkins 节点状态
-// @Description 返回 Jenkins 节点的状态信息
-// @Success 200 {object} util.ResponseSuccess "成功返回节点状态"
-// @Failure 500 {object} util.ResponseError "内部服务器错误"
-// @Router /jenkins/node/status [get]
+//
+//	@Summary		获取 Jenkins 节点状态
+//	@Description	返回 Jenkins 节点的状态信息
+//	@Success		200	{object}	util.ResponseSuccess	"成功返回节点状态"
+//	@Failure		500	{object}	util.ResponseError		"内部服务器错误"
+//	@Router			/jenkins/node/status [get]
 func GetJenkinsNodeStatus(c *gin.Context) {
 	nodeInfo, err := jenkins.GetJenkinsNodeStatus()
 	if err != nil {
@@ -40,14 +42,15 @@ func GetJenkinsNodeStatus(c *gin.Context) {
 }
 
 // GetJenkinsBuildLog godoc
-// @Summary 获取 Jenkins 构建日志
-// @Description 根据 job 名称和构建 ID 获取构建日志
-// @Param job path string true "Job 名称"
-// @Param id path int true "构建 ID"
-// @Success 200 {object} util.ResponseSuccess "成功返回构建日志"
-// @Failure 400 {object} util.ResponseError "请求参数错误"
-// @Failure 502 {object} util.ResponseError "错误网关"
-// @Router /jenkins/build/log/{job}/{id} [get]
+//
+//	@Summary		获取 Jenkins 构建日志
+//	@Description	根据 job 名称和构建 ID 获取构建日志
+//	@Param			job	path		string					true	"Job 名称"
+//	@Param			id	path		int						true	"构建 ID"
+//	@Success		200	{object}	util.ResponseSuccess	"成功返回构建日志"
+//	@Failure		400	{object}	util.ResponseError		"请求参数错误"
+//	@Failure		502	{object}	util.ResponseError		"错误网关"
+//	@Router			/jenkins/build/log/{job}/{id} [get]
 func GetJenkinsBuildLog(c *gin.Context) {
 	job := c.Param("job")
 	idStr := c.Param("id")
@@ -65,14 +68,15 @@ func GetJenkinsBuildLog(c *gin.Context) {
 }
 
 // StreamJenkinsBuildLogHandler godoc
-// @Summary 流式获取 Jenkins 构建日志
-// @Description 持续获取 Jenkins 构建日志
-// @Param job_name query string true "Job 名称"
-// @Param build_number query int true "构建编号"
-// @Success 200 {string} string "成功返回构建日志"
-// @Failure 400 {object} util.ResponseError "请求参数错误"
-// @Failure 424 {object} util.ResponseError "依赖失败"
-// @Router /jenkins/build/log/stream [get]
+//
+//	@Summary		流式获取 Jenkins 构建日志
+//	@Description	持续获取 Jenkins 构建日志
+//	@Param			job_name		query		string				true	"Job 名称"
+//	@Param			build_number	query		int					true	"构建编号"
+//	@Success		200				{string}	string				"成功返回构建日志"
+//	@Failure		400				{object}	util.ResponseError	"请求参数错误"
+//	@Failure		424				{object}	util.ResponseError	"依赖失败"
+//	@Router			/jenkins/build/log/stream [get]
 func StreamJenkinsBuildLogHandler(c *gin.Context) {
 	jobName := c.Query("job_name")
 	buildNumberStr := c.Query("build_number")
@@ -138,14 +142,15 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 }
 
 // CreateBuildTask1 godoc
-// @Summary 创建构建任务
-// @Description 执行 Job 的构建任务
-// @Param job path string true "Job 名称"
-// @Param request body struct true "构建任务参数"
-// @Success 200 {int} int "成功返回 Job 任务 ID"
-// @Failure 400 {object} util.ResponseError "请求数据格式错误"
-// @Failure 500 {object} util.ResponseError "内部服务器错误"
-// @Router /jenkins/build/task/{job} [post]
+//
+//	@Summary		创建构建任务
+//	@Description	执行 Job 的构建任务
+//	@Param			job		path		string				true	"Job 名称"
+//	@Param			request	body		struct				true	"构建任务参数"
+//	@Success		200		{int}		int					"成功返回 Job 任务 ID"
+//	@Failure		400		{object}	util.ResponseError	"请求数据格式错误"
+//	@Failure		500		{object}	util.ResponseError	"内部服务器错误"
+//	@Router			/jenkins/build/task/{job} [post]
 func CreateBuildTask1(c *gin.Context) {
 	var requestData struct {
 		GitUrlPath      string `json:"git_url_path"`
@@ -195,14 +200,15 @@ func CreateBuildTask1(c *gin.Context) {
 }
 
 // GetBuildTaskStatus godoc
-// @Summary 获取构建任务状态
-// @Description 根据 job 名称和构建 ID 获取构建任务的执行状态
-// @Param job_name query string true "Job 名称"
-// @Param build_number query int true "构建编号"
-// @Success 200 {object} util.ResponseSuccess "成功返回构建状态"
-// @Failure 400 {object} util.ResponseError "请求参数错误"
-// @Failure 502 {object} util.ResponseError "错误网关"
-// @Router /jenkins/build/task/status [get]
+//
+//	@Summary		获取构建任务状态
+//	@Description	根据 job 名称和构建 ID 获取构建任务的执行状态
+//	@Param			job_name		query		string					true	"Job 名称"
+//	@Param			build_number	query		int						true	"构建编号"
+//	@Success		200				{object}	util.ResponseSuccess	"成功返回构建状态"
+//	@Failure		400				{object}	util.ResponseError		"请求参数错误"
+//	@Failure		502				{object}	util.ResponseError		"错误网关"
+//	@Router			/jenkins/build/task/status [get]
 func GetBuildTaskStatus(c *gin.Context) {
 	jobName := c.Query("job_name")
 	buildNumberStr := c.Query("build_number")
