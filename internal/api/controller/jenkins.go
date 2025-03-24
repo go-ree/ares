@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"gitlab.ttpai.work/sre/pipeline/ares/internal/api/util"
 	"gitlab.ttpai.work/sre/pipeline/ares/internal/jenkins"
 	"io"
@@ -76,27 +77,29 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 	jobName := c.Query("job_name")
 	buildNumberStr := c.Query("build_number")
 
-	buildNumber, err := strconv.ParseInt(buildNumberStr, 10, 64) // 将 id 字符串转换为 int64
+	buildNumber, err := strconv.ParseInt(buildNumberStr, 10, 64)
 	if err != nil {
 		c.JSON(200, util.Response(400, "buildNumber转换失败"+err.Error(), ""))
 		return
 	}
 
-	logChan := make(chan string)    // 缓存日志通道
-	errChan := make(chan error)     //	缓存错误通道
-	logSet := make(map[string]bool) // 用于存储已输出的日志
-	var mu sync.Mutex               // 添加一个互斥锁
+	logChan := make(chan string)
+	errChan := make(chan error, 1) // 添加缓冲区，防止goroutine泄漏
+	logSet := make(map[string]bool)
+	var mu sync.Mutex
 
-	go jenkins.StreamJenkinsBuildLog(jobName, buildNumber, logChan, errChan)
+	// 创建一个完成通道，用于通知主goroutine任务完成或出错
+	doneChan := make(chan struct{})
+	var streamErr error
 
+	// 启动日志流处理
 	go func() {
+		defer close(doneChan)
 		success := jenkins.StreamJenkinsBuildLog(jobName, buildNumber, logChan, errChan)
-		if success {
-			close(logChan) // 关闭日志通道
-			close(errChan) // 关闭错误通道
-		} else {
-			err := <-errChan
-			c.JSON(200, util.Response(424, err.Error(), ""))
+		if !success {
+			if err := <-errChan; err != nil {
+				streamErr = err
+			}
 		}
 	}()
 
@@ -104,28 +107,32 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 
-	// 使用 Gin 的 Stream 方法来处理流式响应
+	// 使用Stream方法处理响应
 	c.Stream(func(w io.Writer) bool {
-		for {
-			select {
-			case log := <-logChan:
-				mu.Lock() // 加锁
-				// 将日志写入响应流
-				if _, exists := logSet[log]; !exists { // 检查日志是否已存在
-					_, err := w.Write([]byte(log))
-					if err != nil {
-						mu.Unlock()  // 解锁
-						return false // 如果写入失败，结束处理
-					}
-					logSet[log] = true // 记录已输出的日志
-				}
-				mu.Unlock() // 解锁
-			case err := <-errChan:
-				if err != nil {
-					c.Error(err) // 处理错误
-				}
-				return false // 返回 false 结束处理
+		select {
+		case log, ok := <-logChan:
+			if !ok {
+				return false
 			}
+			mu.Lock()
+			if _, exists := logSet[log]; !exists {
+				_, err := w.Write([]byte(log))
+				if err != nil {
+					mu.Unlock()
+					return false
+				}
+				logSet[log] = true
+			}
+			mu.Unlock()
+			return true
+		case <-doneChan:
+			// 如果有错误，返回错误响应
+			if streamErr != nil {
+				errorResponse := util.Response(424, streamErr.Error(), "")
+				responseBytes, _ := json.Marshal(errorResponse)
+				w.Write([]byte("\nERROR: " + string(responseBytes) + "\n"))
+			}
+			return false
 		}
 	})
 }
