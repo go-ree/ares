@@ -34,14 +34,14 @@ type CreateBatchPublishRequest struct {
 	BatchPublish []CreatePublishRequest `json:"batch_publish"`
 }
 
-// CreatePublishResult 表示单次应用发布动作
+// CreatePublishResult 表示单次应用发布动作的结果
 type CreatePublishResult struct {
 	TaskRecord *entity.TaskRecord `json:"task_record"`
 	Error      string             `json:"error"`
 	Success    bool               `json:"success"`
 }
 
-// CreateBatchPublishResponse 表示批量应用发布动作
+// CreateBatchPublishResponse 表示批量应用发布动作的结果
 type CreateBatchPublishResponse struct {
 	TaskRecords  []CreatePublishResult `json:"task_records"`
 	SuccessCount int                   `json:"success_count"` // 成功数量
@@ -105,7 +105,7 @@ func (pm *PublishManager) VerifyPipelines(req *CreatePublishRequest) (*entity.Pi
 		return nil, fmt.Errorf("代码包类型所属管线查询失败：%s", err)
 	}
 	if len(pipelines) == 0 {
-		return nil, fmt.Errorf("未找到管线配置：%s", req.Env)
+		return nil, fmt.Errorf("未找到%s应用类型对应管线配置,请在 pipelines 表中定义", req.CodePackageType)
 	}
 	if len(pipelines) > 1 {
 		return nil, fmt.Errorf("匹配到 %d 条记录信息，请检查code_package_type：%s 是否唯一存在", len(pipelines), req.CodePackageType)
@@ -256,4 +256,13 @@ func (pm *PublishManager) ComposePublishData(req *CreatePublishRequest, app *ent
 		return nil, 0, fmt.Errorf("任务记录创建失败: %s", err)
 	}
 	return JenkinsParam, taskRecord.TaskId, nil
+}
+
+func (pm *PublishManager) JobStatus() ([]*entity.TaskRecord, error) {
+	var taskRecords []*entity.TaskRecord
+	err := db.Engine.Where("status IN (?, ?, ?)", "init", "packaging", "deploying").Find(&taskRecords)
+	if err != nil {
+		return nil, fmt.Errorf("查询任务状态失败：%s", err)
+	}
+	return taskRecords, nil
 }

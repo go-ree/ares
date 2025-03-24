@@ -6,7 +6,6 @@ import (
 	"gitlab.ttpai.work/sre/pipeline/ares/internal/publish"
 	"gitlab.ttpai.work/sre/pipeline/ares/internal/tool"
 	"log/slog"
-	"net/http"
 )
 
 type PublishController struct {
@@ -22,16 +21,15 @@ func NewPublishController() *PublishController {
 func (pc *PublishController) CreateBuildTask(c *gin.Context) {
 	var req publish.CreatePublishRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseError("请求数据格式错误"+err.Error()))
+		c.JSON(200, util.Response(400, "请求数据格式错误:"+err.Error(), ""))
 		return
 	}
 	publishResult, err := pc.publishManager.CreatePublish(&req)
 	if err != nil {
-		c.JSON(500, util.ResponseError(err.Error()))
+		c.JSON(200, util.Response(500, err.Error(), ""))
 		return
 	}
 	c.JSON(200, util.ResponseSuccess(publishResult))
-
 }
 
 // CreateBatchBuildTask godoc
@@ -46,15 +44,26 @@ func (pc *PublishController) CreateBuildTask(c *gin.Context) {
 func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
 	var req publish.CreateBatchPublishRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseError("请求数据格式错误"+err.Error()))
+		c.JSON(200, util.Response(400, "请求数据格式错误:"+err.Error(), ""))
 		return
 	}
 	publishBatchResult, err := pc.publishManager.CreateBatchPublish(&req)
 	if err != nil {
-		c.JSON(500, util.ResponseError(err.Error()))
+		c.JSON(200, util.Response(500, err.Error(), ""))
 		return
 	}
-	c.JSON(200, util.ResponseSuccess(publishBatchResult))
+	c.JSON(200, util.Response(200, "", publishBatchResult))
+}
+
+// GetBuildTaskList 获取发布任务列表
+func (pc *PublishController) GetBuildTaskList(c *gin.Context) {
+	status, err := pc.publishManager.JobStatus()
+	if err != nil {
+		c.JSON(200, util.Response(500, err.Error(), ""))
+		return
+	}
+	c.JSON(200, util.Response(200, "", status))
+
 }
 
 // CreateBuildTask 创建Job的构建任务
@@ -66,13 +75,13 @@ func CreateBuildTask(c *gin.Context) {
 		Env     string `json:"env"`
 	}
 	if err := c.ShouldBindJSON(&requestData); err != nil {
-		c.JSON(http.StatusBadRequest, util.ResponseError("请求数据格式错误"+err.Error()))
+		c.JSON(200, util.Response(400, "请求数据格式错误:"+err.Error(), ""))
 		return
 	}
 	slog.Info("Data", requestData)
 	requestDataMap, err := tool.ToMapStringString(requestData)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, util.ResponseError("转换map类型错误"+err.Error()))
+		c.JSON(200, util.Response(400, "转换map类型错误:"+err.Error(), ""))
 		return
 	}
 	slog.Info("构建的任务参数为：", requestData)
@@ -84,5 +93,5 @@ func CreateBuildTask(c *gin.Context) {
 	//	return
 	//}
 	//c.JSON(http.StatusOK, util.ResponseSuccess(jobBuildId))
-	c.JSON(http.StatusOK, util.ResponseSuccess(requestDataMap))
+	c.JSON(200, util.Response(200, "", requestDataMap))
 }

@@ -8,6 +8,65 @@ import (
 	"time"
 )
 
+// JenkinsManager jenkins管理器
+type JenkinsManager struct {
+}
+
+// NewJenkinsManager 创建新的jenkins管理器
+func NewJenkinsManager() *JenkinsManager {
+	return &JenkinsManager{}
+}
+
+// CreateBuildTaskRequest 触发jenkins任务的请求
+type CreateBuildTaskRequest struct {
+	JobName string            `json:"job_name"`
+	BuildId int               `json:"build_id"`
+	Params  map[string]string `json:"params"`
+}
+
+type CreateBuildTaskResult struct {
+	TaskResult *CreateBuildTaskRequest `json:"task_result"`
+	Error      string                  `json:"error"`
+	Success    bool                    `json:"success"`
+}
+
+// GetJenkinsNodeStatus	获取jenkins中node的状态信息
+func (jm *JenkinsManager) GetJenkinsNodeStatus() (*Nodes, error) {
+	ctx := context.Background()
+	if Jenkins == nil {
+		return nil, errors.New("jenkins not initialized")
+	}
+	nodes, err := Jenkins.GetAllNodes(ctx)
+	if err != nil {
+		slog.Error("Failed to get all nodes", slog.Any("error", err))
+		return nil, err
+	}
+	var nodeInfo Nodes
+	for _, node := range nodes {
+		poll, err := node.Poll(ctx)
+		if err != nil {
+			slog.Error("Failed to poll node", slog.Any("error", err))
+			return nil, err
+		}
+		slog.Debug("获取node信息，poll的值为：", slog.Any("poll", poll))
+		slog.Debug("当前node为：", slog.Any("node", node.Base))
+		nodeStatus, err := node.IsOnline(ctx)
+		if err != nil {
+			slog.Error("Failed to get node status", slog.Any("error", err))
+			return nil, err
+		}
+		if nodeStatus {
+			slog.Debug("当前node在线", slog.Any("node", node))
+			nodeInfo = append(nodeInfo, Node{NodeName: node.Base, NodeStatus: "在线"})
+		} else {
+			slog.Warn("当前node离线", slog.Any("node", node))
+			nodeInfo = append(nodeInfo, Node{NodeName: node.Base, NodeStatus: "离线"})
+			continue
+		}
+	}
+	return &nodeInfo, nil
+}
+
 type Nodes []Node
 
 type Node struct {

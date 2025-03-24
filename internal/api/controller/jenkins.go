@@ -5,7 +5,6 @@ import (
 	"gitlab.ttpai.work/sre/pipeline/ares/internal/jenkins"
 	"io"
 	"log/slog"
-	"net/http"
 	"strconv"
 	"sync"
 
@@ -21,7 +20,7 @@ import (
 // @Router /home [get]
 func Home(c *gin.Context) {
 	home.Home()
-	c.String(http.StatusOK, "Hello, World!")
+	c.JSON(200, util.Response(200, "Hello, World!", ""))
 }
 
 // GetJenkinsNodeStatus godoc
@@ -33,10 +32,10 @@ func Home(c *gin.Context) {
 func GetJenkinsNodeStatus(c *gin.Context) {
 	nodeInfo, err := jenkins.GetJenkinsNodeStatus()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, util.ResponseError(err.Error()))
+		c.JSON(200, util.Response(500, err.Error(), ""))
 		return
 	}
-	c.JSON(http.StatusOK, util.ResponseSuccess(nodeInfo))
+	c.JSON(200, util.Response(200, "", nodeInfo))
 }
 
 // GetJenkinsBuildLog godoc
@@ -53,15 +52,15 @@ func GetJenkinsBuildLog(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64) // 将 id 字符串转换为 int64
 	if err != nil {
-		c.JSON(http.StatusBadRequest, util.ResponseError("buildNumber转换失败"+err.Error()))
+		c.JSON(200, util.Response(400, "buildNumber转换失败"+err.Error(), ""))
 		return
 	}
 	log, err := jenkins.GetJenkinsBuildLog(job, id)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, util.ResponseError(err.Error()))
+		c.JSON(200, util.Response(502, err.Error(), ""))
 		return
 	}
-	c.JSON(http.StatusOK, util.ResponseSuccess(log))
+	c.JSON(200, util.Response(200, "", log))
 }
 
 // StreamJenkinsBuildLogHandler godoc
@@ -79,7 +78,7 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 
 	buildNumber, err := strconv.ParseInt(buildNumberStr, 10, 64) // 将 id 字符串转换为 int64
 	if err != nil {
-		c.JSON(http.StatusBadRequest, util.ResponseError("buildNumber转换失败"+err.Error()))
+		c.JSON(200, util.Response(400, "buildNumber转换失败"+err.Error(), ""))
 		return
 	}
 
@@ -97,7 +96,7 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 			close(errChan) // 关闭错误通道
 		} else {
 			err := <-errChan
-			c.JSON(http.StatusFailedDependency, util.ResponseError(err.Error()))
+			c.JSON(200, util.Response(424, err.Error(), ""))
 		}
 	}()
 
@@ -157,11 +156,11 @@ func CreateBuildTask1(c *gin.Context) {
 	}
 	job := c.Param("job")
 	if job == "" {
-		c.JSON(http.StatusBadRequest, util.ResponseError("未指定job名称"))
+		c.JSON(200, util.Response(400, "未指定job名称", ""))
 		return
 	}
 	if err := c.ShouldBindJSON(&requestData); err != nil {
-		c.JSON(http.StatusBadRequest, util.ResponseError("请求数据格式错误"+err.Error()))
+		c.JSON(200, util.Response(400, "请求数据格式错误"+err.Error(), ""))
 		return
 	}
 	// 将 requestData 转换为 map[string]string
@@ -182,10 +181,10 @@ func CreateBuildTask1(c *gin.Context) {
 	slog.Info("构建的任务参数为：", requestMap)
 	jobBuildId, _, err := jenkins.CreateBuildTask(job, requestMap)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, util.ResponseError(err.Error()))
+		c.JSON(200, util.Response(500, err.Error(), ""))
 		return
 	}
-	c.JSON(http.StatusOK, util.ResponseSuccess(jobBuildId))
+	c.JSON(200, util.Response(200, "", jobBuildId))
 }
 
 // GetBuildTaskStatus godoc
@@ -203,13 +202,13 @@ func GetBuildTaskStatus(c *gin.Context) {
 
 	buildNumber, err := strconv.ParseInt(buildNumberStr, 10, 64) // 将 id 字符串转换为 int64
 	if err != nil {
-		c.JSON(http.StatusBadRequest, util.ResponseError("buildNumber转换失败"+err.Error()))
+		c.JSON(200, util.Response(400, "buildNumber转换失败:"+err.Error(), ""))
 		return
 	}
 	buildStatus, err := jenkins.GetBuildStatus(jobName, buildNumber)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, util.ResponseError(err.Error()))
+		c.JSON(400, util.Response(502, err.Error(), ""))
 		return
 	}
-	c.JSON(http.StatusOK, util.ResponseSuccess(buildStatus))
+	c.JSON(200, util.Response(200, "", buildStatus))
 }

@@ -33,6 +33,9 @@ func Router(r gin.IRouter) {
 			// 应用批量发布
 			deploy.POST("/publish/batch", publishController.CreateBatchBuildTask)
 
+			// 获取当前还在发布中的任务
+			deploy.GET("/publish/jobs/status", publishController.GetBuildTaskList)
+
 			// 单个应用进行发布动作（未投产）
 			deploy.POST("/publish/v1", controller.CreateBuildTask)
 			// 获取构建任务状态
