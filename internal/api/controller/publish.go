@@ -29,7 +29,7 @@ func (pc *PublishController) CreateBuildTask(c *gin.Context) {
 		c.JSON(200, util.Response(500, err.Error(), ""))
 		return
 	}
-	c.JSON(200, util.ResponseSuccess(publishResult))
+	c.JSON(200, util.Response(200, "", publishResult))
 }
 
 // CreateBatchBuildTask godoc
