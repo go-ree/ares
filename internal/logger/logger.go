@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/config"
+	"ares/internal/config"
 	"log/slog"
 	"os"
 	"path"

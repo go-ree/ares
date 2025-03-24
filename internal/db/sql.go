@@ -1,9 +1,9 @@
 package db
 
 import (
+	"ares/internal/config"
+	"ares/internal/entity"
 	"context"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/config"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/entity"
 	"log/slog"
 	"time"
 

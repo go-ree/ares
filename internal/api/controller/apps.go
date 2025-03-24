@@ -1,9 +1,9 @@
 package controller
 
 import (
+	"ares/internal/api/util"
+	"ares/internal/app"
 	"github.com/gin-gonic/gin"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/api/util"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/app"
 )
 
 type AppsController struct {

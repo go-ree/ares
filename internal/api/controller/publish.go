@@ -3,10 +3,10 @@ package controller
 import (
 	"log/slog"
 
+	"ares/internal/api/util"
+	"ares/internal/publish"
+	"ares/internal/tool"
 	"github.com/gin-gonic/gin"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/api/util"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/publish"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/tool"
 )
 
 type PublishController struct {

@@ -1,8 +1,8 @@
 package app
 
 import (
+	"ares/internal/entity"
 	"fmt"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/entity"
 	"reflect"
 	"strings"
 )

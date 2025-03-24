@@ -3,7 +3,7 @@ package job
 import (
 	"log/slog"
 
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/config"
+	"ares/internal/config"
 
 	"github.com/robfig/cron/v3"
 )

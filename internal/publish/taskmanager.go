@@ -1,11 +1,11 @@
 package publish
 
 import (
+	"ares/internal/db"
+	"ares/internal/entity"
+	"ares/internal/jenkins"
+	"ares/internal/tool"
 	"fmt"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/db"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/entity"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/jenkins"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/tool"
 	"log/slog"
 	"sync"
 )

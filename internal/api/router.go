@@ -3,11 +3,11 @@ package api
 import (
 	"net/http"
 
+	_ "ares/docs"
+	"ares/internal/api/controller"
 	"github.com/gin-gonic/gin"
 	"github.com/swaggo/files"                  // swagger embed files
 	ginSwagger "github.com/swaggo/gin-swagger" // gin-swagger middleware
-	_ "gitlab.ttpai.work/sre/pipeline/ares/cmd/server/docs"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/api/controller"
 )
 
 func Router(r gin.IRouter) {

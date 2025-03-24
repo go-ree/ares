@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/config"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/logger"
+	"ares/internal/config"
+	"ares/internal/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"

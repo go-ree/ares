@@ -1,15 +1,15 @@
 package controller
 
 import (
+	"ares/internal/api/util"
+	"ares/internal/jenkins"
 	"encoding/json"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/api/util"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/jenkins"
 	"io"
 	"log/slog"
 	"strconv"
 	"sync"
 
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/home"
+	"ares/internal/home"
 
 	"github.com/gin-gonic/gin"
 )

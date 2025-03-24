@@ -1,9 +1,9 @@
 package jenkins
 
 import (
+	"ares/internal/config"
 	"context"
 	"github.com/bndr/gojenkins"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/config"
 	"log/slog"
 )
 

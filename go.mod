@@ -1,4 +1,4 @@
-module gitlab.ttpai.work/sre/pipeline/ares
+module ares
 
 go 1.23.3
 

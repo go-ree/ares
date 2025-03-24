@@ -1,8 +1,8 @@
 package job
 
 import (
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/home"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/publish"
+	"ares/internal/home"
+	"ares/internal/publish"
 )
 
 func init() {

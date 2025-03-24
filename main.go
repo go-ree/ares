@@ -1,19 +1,19 @@
 package main
 
 import (
+	"ares/internal/jenkins"
 	"context"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/jenkins"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/api"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/cli"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/config"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/db"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/job"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/logger"
-	"gitlab.ttpai.work/sre/pipeline/ares/internal/webserver"
+	"ares/internal/api"
+	"ares/internal/cli"
+	"ares/internal/config"
+	"ares/internal/db"
+	"ares/internal/job"
+	"ares/internal/logger"
+	"ares/internal/webserver"
 )
 
 func main() {
