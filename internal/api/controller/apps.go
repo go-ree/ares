@@ -23,7 +23,7 @@ func NewAppsController() *AppsController {
 //	@Tags			应用管理
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body		publish.CreateAppRequest	true	"应用信息"
+//	@Param			request	body		app.CreateAppRequest	true	"应用信息"
 //	@Success		200		{object}	publish.App
 //	@Router			/api/v1/apps [post]
 func (ac *AppsController) CreateApp(c *gin.Context) {
@@ -49,7 +49,7 @@ func (ac *AppsController) CreateApp(c *gin.Context) {
 //	@Tags			应用管理
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body	publish.CreateAppsRequest	true	"应用信息列表"
+//	@Param			request	body	app.CreateAppsRequest	true	"应用信息列表"
 //	@Success		200		{array}	publish.App
 //	@Router			/api/v1/apps/batch [post]
 func (ac *AppsController) CreateApps(c *gin.Context) {

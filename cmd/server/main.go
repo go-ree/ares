@@ -31,6 +31,7 @@ func main() {
 	if err != nil {
 		os.Exit(5)
 	}
+	config.InitSwagger()
 
 	err = logger.Init2(config.Main.Log.Level)
 	if err != nil {

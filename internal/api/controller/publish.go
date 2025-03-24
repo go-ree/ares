@@ -1,11 +1,12 @@
 package controller
 
 import (
+	"log/slog"
+
 	"github.com/gin-gonic/gin"
 	"gitlab.ttpai.work/sre/pipeline/ares/internal/api/util"
 	"gitlab.ttpai.work/sre/pipeline/ares/internal/publish"
 	"gitlab.ttpai.work/sre/pipeline/ares/internal/tool"
-	"log/slog"
 )
 
 type PublishController struct {
@@ -45,7 +46,7 @@ func (pc *PublishController) CreateBuildTask(c *gin.Context) {
 //	@Produce		json
 //	@Param			request	body		publish.CreateBatchPublishRequest	true	"发布信息"
 //	@Success		200		{object}	util.ResponseSuccess
-//	@Router			[post]
+//	@Router		/api/v1/deploy/batch-publish [post]
 func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
 	var req publish.CreateBatchPublishRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
