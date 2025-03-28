@@ -6,8 +6,8 @@ web:
 
 log:
   level: "info"
-  accessLogfile: "log/access.log"
-  runtimeLogfile: "log/runtime.log"
+  accessLogfile: "/opt/logs/app/access.log"
+  runtimeLogfile: "/opt/logs/app/runtime.log"
 
 # 精确到秒
 job:
