@@ -22,7 +22,6 @@ func Router(r gin.IRouter) {
 	{
 		apiRouter.GET("/job/log/:job/:id", controller.GetJenkinsBuildLog)
 		apiRouter.GET("/job/stream/log", controller.StreamJenkinsBuildLogHandler)
-		apiRouter.POST("/job/build/:job", controller.CreateBuildTask1)
 		// 状态查询
 		status := apiRouter.Group("/status")
 		{
@@ -40,8 +39,6 @@ func Router(r gin.IRouter) {
 			// 获取当前还在发布中的任务
 			deploy.GET("/publish/jobs/status", publishController.GetBuildTaskList)
 
-			// 单个应用进行发布动作（未投产）
-			deploy.POST("/publish/v1", controller.CreateBuildTask)
 			// 获取构建任务状态
 			deploy.GET("/query/status", controller.GetBuildTaskStatus)
 			// 获取job任务构建日志

@@ -27,6 +27,7 @@ CREATE TABLE ares.app_configs (
     pod_count INT(11) DEFAULT 1,
     # 这里规定只能使用Gi
     limits_memory INT(11) DEFAULT 2,
+    gpu_count   INT(11) DEFAULT 1,
     probe_type  VARCHAR(100) DEFAULT 'TCP',
     probe_check_path VARCHAR(100) DEFAULT '/ttpai/inside/checkup',
     pre_stop_type VARCHAR(100) DEFAULT 'TCP',

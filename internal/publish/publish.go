@@ -227,6 +227,7 @@ func (pm *PublishManager) ComposePublishData(req *CreatePublishRequest, app *ent
 	JenkinsParam["base_image"] = appConfig.BaseImage
 	JenkinsParam["pod_count"] = strconv.Itoa(appConfig.PodCount)
 	JenkinsParam["limits_memory"] = strconv.Itoa(appConfig.LimitsMemory)
+	JenkinsParam["gpu_count"] = strconv.Itoa(appConfig.GpuCount)
 	JenkinsParam["probe_type"] = appConfig.ProbeType
 	JenkinsParam["probe_check_path"] = appConfig.ProbeCheckPath
 	JenkinsParam["pre_stop_type"] = appConfig.PreStopType

@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Apps 应用信息
 type Apps struct {
 	AppId         int        `xorm:"INT(11) pk autoincr 'app_id'" json:"app_id"`
 	AppName       string     `xorm:"varchar(255) notnull 'app_name'" json:"app_name"`
@@ -14,11 +15,12 @@ type Apps struct {
 	DevLanguage   string     `xorm:"varchar(100) notnull 'dev_language'" json:"dev_language"`
 	DescriptionCN string     `xorm:"varchar(255) default 'NULL' 'description_cn'" json:"description_cn"`
 	GitUrl        string     `xorm:"varchar(255) notnull 'git_url'" json:"git_url"`
-	CreatedTime   time.Time  `xorm:"timestamp created notnull default CURRENT_TIMESTAMP 'created_at'" json:"created_at"`
-	UpdatedTime   time.Time  `xorm:"timestamp updated notnull default CURRENT_TIMESTAMP 'updated_at'" json:"updated_at"`
-	DeletedTime   *time.Time `xorm:"timestamp deleted 'deleted_at'" json:"deleted_at"`
+	CreatedTime   time.Time  `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at" swaggertype:"string" format:"date-time"`
+	UpdatedTime   time.Time  `xorm:"timestamp updated notnull DEFAULT CURRENT_TIMESTAMP 'updated_at'" json:"updated_at" swaggertype:"string" format:"date-time"`
+	DeletedTime   *time.Time `xorm:"timestamp deleted 'deleted_at'" json:"deleted_at" swaggertype:"string" format:"date-time"`
 }
 
+// AppConfigs 应用配置
 type AppConfigs struct {
 	ConfigID        int    `xorm:"INT(11) pk autoincr 'config_id'" json:"config_id"`
 	AppID           int    `xorm:"INT(11) not null 'app_id' index" json:"app_id"`
@@ -30,6 +32,7 @@ type AppConfigs struct {
 
 	PodCount         int    `xorm:"int(11) default 1 'pod_count'" json:"pod_count"`
 	LimitsMemory     int    `xorm:"int(11) default 2 'limits_memory'" json:"limits_memory"`
+	GpuCount         int    `xorm:"int(11) default 0 'gpu_count'" json:"gpu_count"`
 	ProbeType        string `xorm:"varchar(100) default 'TCP' 'probe_type'" json:"probe_type"`
 	ProbeCheckPath   string `xorm:"varchar(100) default '/ttpai/inside/checkup' 'probe_check_path'" json:"probe_check_path"`
 	PreStopType      string `xorm:"varchar(100) default 'TCP' 'pre_stop_type'" json:"pre_stop_type"`
@@ -38,9 +41,9 @@ type AppConfigs struct {
 	Domain           string `xorm:"varchar(255) default 'NULL' 'domain'" json:"domain"`
 	DomainPath       string `xorm:"varchar(255) default '/' 'domain_path'" json:"domain_path"`
 
-	CreatedTime time.Time  `xorm:"timestamp created notnull default CURRENT_TIMESTAMP 'created_at'" json:"created_at"`
-	UpdatedTime time.Time  `xorm:"timestamp updated notnull default CURRENT_TIMESTAMP 'updated_at'" json:"updated_at"`
-	DeletedTime *time.Time `xorm:"timestamp deleted 'deleted_at'" json:"deleted_at"`
+	CreatedTime time.Time  `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at" swaggertype:"string" format:"date-time"`
+	UpdatedTime time.Time  `xorm:"timestamp updated notnull DEFAULT CURRENT_TIMESTAMP 'updated_at'" json:"updated_at" swaggertype:"string" format:"date-time"`
+	DeletedTime *time.Time `xorm:"timestamp deleted 'deleted_at'" json:"deleted_at" swaggertype:"string" format:"date-time"`
 }
 
 //

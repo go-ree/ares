@@ -1,10 +1,501 @@
+definitions:
+  app.CreateAppResult:
+    properties:
+      app:
+        $ref: '#/definitions/entity.Apps'
+      error:
+        type: string
+      success:
+        type: boolean
+    type: object
+  app.CreateAppsResponse:
+    properties:
+      apps:
+        items:
+          $ref: '#/definitions/app.CreateAppResult'
+        type: array
+      failure_count:
+        description: 失败数量
+        type: integer
+      success_count:
+        description: 成功数量
+        type: integer
+      total_count:
+        type: integer
+    type: object
+  entity.Apps:
+    properties:
+      app_id:
+        type: integer
+      app_name:
+        type: string
+      app_name_cn:
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      deleted_at:
+        format: date-time
+        type: string
+      description_cn:
+        type: string
+      dev_language:
+        type: string
+      git_url:
+        type: string
+      owner:
+        type: string
+      owner_cn:
+        type: string
+      updated_at:
+        format: date-time
+        type: string
+    type: object
+  entity.TaskRecord:
+    properties:
+      app_name:
+        type: string
+      auto_deploy:
+        type: integer
+      cd_build_id:
+        type: integer
+      cd_job_name:
+        type: string
+      ci_build_id:
+        type: integer
+      ci_job_name:
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      deleted_at:
+        format: date-time
+        type: string
+      message:
+        type: string
+      pipeline_param:
+        type: string
+      products:
+        type: string
+      status:
+        type: string
+      task_id:
+        type: integer
+      updated_at:
+        format: date-time
+        type: string
+    type: object
+  jenkins.Node:
+    properties:
+      node_name:
+        type: string
+      node_status:
+        type: string
+    type: object
+  publish.CreateBatchPublishResponse:
+    properties:
+      failure_count:
+        description: 失败数量
+        type: integer
+      success_count:
+        description: 成功数量
+        type: integer
+      task_records:
+        items:
+          $ref: '#/definitions/publish.CreatePublishResult'
+        type: array
+      total_count:
+        description: 总体数量
+        type: integer
+    type: object
+  publish.CreatePublishResult:
+    properties:
+      error:
+        type: string
+      success:
+        type: boolean
+      task_record:
+        $ref: '#/definitions/entity.TaskRecord'
+    type: object
+  util.ResponseTemplate:
+    properties:
+      code:
+        description: 此处约定：1代表成功，0代表失败
+        type: integer
+      error:
+        description: 如果请求失败，这里一定要给出错误的信息
+      help:
+        description: 显示接口文档地址，便于别人排错
+        type: string
+      msg:
+        description: 对请求结果的描述消息，可以为空
+        type: string
+      result:
+        description: 如果请求成功，这里给出成功的结果
+    type: object
 info:
   contact: {}
 paths:
+  /api/v1/apps:
+    post:
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/entity.Apps'
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 创建单应用
+      tags:
+      - App
+  /api/v1/apps/batch:
+    post:
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/app.CreateAppsResponse'
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 批量创建应用
+      tags:
+      - App
   /api/v1/deploy/publish:
     post:
-      responses: {}
-      summary: 单应用进行下发布动作
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/entity.TaskRecord'
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 单应用进行发布动作
       tags:
       - Publish
+  /api/v1/deploy/publish/batch:
+    get:
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 创建构建任务
+      tags:
+      - Publish
+    post:
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/publish.CreateBatchPublishResponse'
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 应用进行批量发布动作
+      tags:
+      - Publish
+  /api/v1/deploy/publish/jobs/status:
+    get:
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/entity.TaskRecord'
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 获取任务构建列表
+      tags:
+      - Publish
+  /api/v1/deploy/query/status:
+    get:
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  type: string
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "502":
+          description: 调用链异常
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 获取构建任务的状态
+      tags:
+      - Publish
+  /api/v1/job/log/:
+    get:
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  type: string
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "502":
+          description: 调用链异常
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 获取流式的构建日志
+      tags:
+      - Publish
+  /api/v1/status/nodes:
+    get:
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  items:
+                    $ref: '#/definitions/jenkins.Node'
+                  type: array
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "502":
+          description: 调用链异常
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 获取jenkins节点的状态
+      tags:
+      - Jenkins
+  /home:
+    get:
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  type: string
+              type: object
+      summary: 健康检测
+      tags:
+      - Health
 swagger: "2.0"

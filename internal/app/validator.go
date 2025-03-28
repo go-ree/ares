@@ -1,0 +1,93 @@
+package app
+
+import (
+	"errors"
+	"fmt"
+	"reflect"
+	"regexp"
+	"strings"
+)
+
+// AppValidator 应用验证器
+type AppValidator struct {
+}
+
+// NewAppValidator 创建应用验证器实例
+func NewAppValidator() *AppValidator {
+	return &AppValidator{}
+}
+
+// ValidateCreateApp 验证创建应用请求
+func (v *AppValidator) ValidateCreateApp(req *CreateAppRequest) error {
+	err := validateStruct(req)
+	if err != nil {
+		return err
+	}
+
+	// 名称格式验证
+	namePattern := regexp.MustCompile(`^[a-z][a-z0-9\-]{2,24}$`)
+	if !namePattern.MatchString(req.AppName) {
+		return errors.New("应用名称必须以小写字母开头，只能包含小写字母、数字和连字符，长度3-25")
+	}
+
+	// Git URL格式验证
+	if !isValidGitURL(req.GitUrl) {
+		return errors.New("git地址必须使用SSH协议，且以.git结尾。示例：git@gitlab.ttpai.work:group/repo.git")
+	}
+
+	return nil
+}
+
+// 辅助函数：获取map的所有key
+func getMapKeys(m map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// isValidGitURL 验证Git URL的格式
+func isValidGitURL(url string) bool {
+	// 只支持SSH协议的Git仓库地址(git@)
+	if !strings.HasPrefix(url, "git@") {
+		return false
+	}
+
+	// 进一步验证格式: git@gitlab.ttpai.work:group/repo.git
+	pattern := regexp.MustCompile(`^git@[\w\.-]+:[\w\.-]+/[\w\.-]+\.git$`)
+	return pattern.MatchString(url)
+}
+
+// validateStruct 通用的结构体验证函数
+func validateStruct(s interface{}) error {
+	if s == nil {
+		return fmt.Errorf("请求不能为空")
+	}
+
+	v := reflect.ValueOf(s)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+
+	t := v.Type()
+	var emptyFields []string
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		if field.Kind() == reflect.String && field.String() == "" {
+			// 获取json标签
+			jsonTag := t.Field(i).Tag.Get("json")
+			// 处理json标签，去除可能存在的选项（如 omitempty）
+			jsonField := strings.Split(jsonTag, ",")[0]
+			if jsonField != "" {
+				emptyFields = append(emptyFields, jsonField)
+			}
+		}
+	}
+
+	if len(emptyFields) > 0 {
+		return fmt.Errorf("以下字段不能为空: %s", strings.Join(emptyFields, ", "))
+	}
+
+	return nil
+}
