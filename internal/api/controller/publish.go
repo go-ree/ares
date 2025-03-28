@@ -1,12 +1,11 @@
 package controller
 
 import (
-	"log/slog"
-
 	"ares/internal/api/util"
 	"ares/internal/publish"
 	"ares/internal/tool"
 	"github.com/gin-gonic/gin"
+	"log/slog"
 )
 
 type PublishController struct {
@@ -22,6 +21,7 @@ func NewPublishController() *PublishController {
 // CreateBuildTask
 // @Tags Publish
 // @Summary 单应用进行发布动作
+// @Param request body publish.CreatePublishRequest true "发布请求参数"
 // @Success 200 {object} util.ResponseTemplate{code=int,result=entity.TaskRecord} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
@@ -43,6 +43,7 @@ func (pc *PublishController) CreateBuildTask(c *gin.Context) {
 // CreateBatchBuildTask
 // @Tags Publish
 // @Summary 应用进行批量发布动作
+// @Param request body publish.CreateBatchPublishRequest true "发布请求参数"
 // @Success 200 {object} util.ResponseTemplate{code=int,result=publish.CreateBatchPublishResponse} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"

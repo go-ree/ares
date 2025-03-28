@@ -92,6 +92,13 @@ definitions:
       node_status:
         type: string
     type: object
+  publish.CreateBatchPublishRequest:
+    properties:
+      batch_publish:
+        items:
+          $ref: '#/definitions/publish.CreatePublishRequest'
+        type: array
+    type: object
   publish.CreateBatchPublishResponse:
     properties:
       failure_count:
@@ -107,6 +114,15 @@ definitions:
       total_count:
         description: 总体数量
         type: integer
+    type: object
+  publish.CreatePublishRequest:
+    properties:
+      app_name:
+        type: string
+      branch:
+        type: string
+      env:
+        type: string
     type: object
   publish.CreatePublishResult:
     properties:
@@ -208,6 +224,13 @@ paths:
       - App
   /api/v1/deploy/publish:
     post:
+      parameters:
+      - description: 发布请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/publish.CreatePublishRequest'
       responses:
         "200":
           description: 成功
@@ -279,6 +302,13 @@ paths:
       tags:
       - Publish
     post:
+      parameters:
+      - description: 发布请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/publish.CreateBatchPublishRequest'
       responses:
         "200":
           description: 成功

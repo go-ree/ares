@@ -155,6 +155,17 @@ const docTemplate = `{
                     "Publish"
                 ],
                 "summary": "单应用进行发布动作",
+                "parameters": [
+                    {
+                        "description": "发布请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/publish.CreatePublishRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "成功",
@@ -290,6 +301,17 @@ const docTemplate = `{
                     "Publish"
                 ],
                 "summary": "应用进行批量发布动作",
+                "parameters": [
+                    {
+                        "description": "发布请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/publish.CreateBatchPublishRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "成功",
@@ -847,6 +869,17 @@ const docTemplate = `{
                 }
             }
         },
+        "publish.CreateBatchPublishRequest": {
+            "type": "object",
+            "properties": {
+                "batch_publish": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/publish.CreatePublishRequest"
+                    }
+                }
+            }
+        },
         "publish.CreateBatchPublishResponse": {
             "type": "object",
             "properties": {
@@ -867,6 +900,20 @@ const docTemplate = `{
                 "total_count": {
                     "description": "总体数量",
                     "type": "integer"
+                }
+            }
+        },
+        "publish.CreatePublishRequest": {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string"
+                },
+                "branch": {
+                    "type": "string"
+                },
+                "env": {
+                    "type": "string"
                 }
             }
         },

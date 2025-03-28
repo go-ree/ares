@@ -25,8 +25,8 @@ type CreatePublishRequest struct {
 	AppName         string `json:"app_name"`
 	Branch          string `json:"branch"`
 	Env             string `json:"env"`
-	AppId           int    `json:"app_id"`
-	CodePackageType string `json:"code_package_type"`
+	AppId           int    `json:"-"`
+	CodePackageType string `json:"-"`
 }
 
 // CreateBatchPublishRequest 批量触发发布动作请求
