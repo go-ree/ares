@@ -3,9 +3,7 @@ package controller
 import (
 	"ares/internal/api/util"
 	"ares/internal/publish"
-	"ares/internal/tool"
 	"github.com/gin-gonic/gin"
-	"log/slog"
 )
 
 type PublishController struct {
@@ -76,38 +74,4 @@ func (pc *PublishController) GetBuildTaskList(c *gin.Context) {
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("", status))
-}
-
-// CreateBuildTask
-// @Tags Publish
-// @Summary 创建构建任务
-// @Success 200 {object} util.ResponseTemplate{code=int,result=map[string]string} "成功"
-// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
-// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
-// @Router	/api/v1/deploy/publish/batch [get]
-func CreateBuildTask(c *gin.Context) {
-	var requestData struct {
-		AppName string `json:"app_name"`
-		Env     string `json:"env"`
-	}
-	if err := c.ShouldBindJSON(&requestData); err != nil {
-		c.JSON(400, util.ResponseFailure("请求数据格式错误", err.Error()))
-		return
-	}
-	slog.Info("Data", requestData)
-	requestDataMap, err := tool.ToMapStringString(requestData)
-	if err != nil {
-		c.JSON(400, util.ResponseFailure("转换map类型错误", err.Error()))
-		return
-	}
-	slog.Info("构建的任务参数为：", requestData)
-	slog.Info("构建的任务参数为：", requestDataMap)
-
-	//jobBuildId, _, err := jenkins.CreateBuildTask("job", requestData)
-	//if err != nil {
-	//	c.JSON(http.StatusInternalServerError, util.ResponseError(err.Error()))
-	//	return
-	//}
-	//c.JSON(http.StatusOK, util.ResponseSuccess(jobBuildId))
-	c.JSON(200, util.ResponseSuccessful("", requestDataMap))
 }
