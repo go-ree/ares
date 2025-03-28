@@ -16,6 +16,7 @@ tmp_logs
 tmp
 logs
 log
+cmd
 venv
 env
 build
