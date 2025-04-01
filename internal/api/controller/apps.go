@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/gin-gonic/gin"
 	"log/slog"
+	"strconv"
 )
 
 type AppsController struct {
@@ -21,7 +22,8 @@ func NewAppsController() *AppsController {
 // CreateApp
 // @Tags App
 // @Summary 创建单应用
-// @Success 200 {object} util.ResponseTemplate{code=int,result=entity.Apps} "成功"
+// @Param request body app.CreateAppRequest true "创建单应用参数"
+// @Success 200 {object} util.ResponseTemplate{code=int,result=app.CreateAppResult} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router	/api/v1/apps [post]
@@ -33,72 +35,165 @@ func (ac *AppsController) CreateApp(c *gin.Context) {
 		return
 	}
 
-	// 使用验证器模式进行业务规则校验
-	validator := app.NewAppValidator()
-	if err := validator.ValidateCreateApp(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("业务规则校验失败", err.Error()))
-		return
-	}
-
-	// 使用事务确保数据一致性
-	appResult, err := ac.appManager.CreateAppWithTx(ctx, &req)
+	appResult, err := ac.appManager.CreateApp(ctx, req)
 	if err != nil {
 		// 细分错误类型，提供更精确的HTTP状态码
-		var duplicateAppError *app.DuplicateAppError
-		switch {
-		case errors.As(err, &duplicateAppError):
-			c.JSON(409, util.ResponseFailure("应用已存在", err.Error()))
-		default:
-			c.JSON(500, util.ResponseFailure("应用创建失败", err.Error()))
-		}
+		handleAppCreationError(c, err)
 		return
 	}
-
-	// 异步触发后续流程
-	go ac.appManager.TriggerPostCreateHooks(appResult)
-
 	c.JSON(200, util.ResponseSuccessful("应用基本信息创建成功，请根据实际发布参数调整应用配置", appResult))
 }
 
 // CreateApps
 // @Tags App
 // @Summary 批量创建应用
+// @Param request body app.CreateAppsRequest true "批量创建应用参数"
 // @Success 200 {object} util.ResponseTemplate{code=int,result=app.CreateAppsResponse} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router	/api/v1/apps/batch [post]
 func (ac *AppsController) CreateApps(c *gin.Context) {
 	ctx := c.Request.Context()
-	var req app.CreateAppRequest
+	var req app.CreateAppsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, util.ResponseFailure("请求数据格式错误", err.Error()))
 		return
 	}
 
-	// 使用验证器模式进行业务规则校验
-	validator := app.NewAppValidator()
-	if err := validator.ValidateCreateApp(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("业务规则校验失败", err.Error()))
+	appResult, err := ac.appManager.CreateApps(ctx, req)
+	if err != nil {
+		// 细分错误类型，提供更精确的HTTP状态码
+		handleAppCreationError(c, err)
+		return
+	}
+	if appResult.FailureCount != 0 {
+		c.JSON(200, util.ResponseSuccessful("部分应用创建失败，请根据报错信息进行修改", appResult))
+		return
+	}
+	c.JSON(200, util.ResponseSuccessful("应用基本信息创建成功，请根据实际发布参数调整应用配置", appResult))
+}
+
+// handleAppCreationError 辅助函数，处理应用创建错误
+func handleAppCreationError(c *gin.Context, err error) {
+	var duplicateAppError *app.DuplicateAppError
+	switch {
+	case errors.As(err, &duplicateAppError):
+		c.JSON(400, util.ResponseFailure("应用已存在", err.Error()))
+	default:
+		c.JSON(500, util.ResponseFailure("应用创建失败", err.Error()))
+		slog.Error("应用创建失败", "error", err.Error())
+	}
+}
+
+// QueryApps
+// @Tags App
+// @Summary 查询应用列表
+// @Description 支持多条件组合查询应用列表，包括应用ID、应用名称、开发语言、负责人等
+// @Param request body app.AppQuery true "应用查询参数"
+// @Success 200 {object} util.ResponseTemplate{code=int,result=app.AppQueryResult} "成功"
+// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
+// @Router /api/v1/apps/query [post]
+func (ac *AppsController) QueryApps(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	// 从请求中绑定查询参数
+	var params app.AppQuery
+	if err := c.ShouldBindJSON(&params); err != nil {
+		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
 		return
 	}
 
-	// 使用事务确保数据一致性
-	appResult, err := ac.appManager.CreateAppWithTx(ctx, &req)
+	// 调用应用管理器查询应用
+	result, err := ac.appManager.QueryApps(ctx, params)
 	if err != nil {
-		// 细分错误类型，提供更精确的HTTP状态码
-		var duplicateAppError *app.DuplicateAppError
-		switch {
-		case errors.As(err, &duplicateAppError):
-			c.JSON(409, util.ResponseFailure("应用已存在", err.Error()))
-		default:
-			c.JSON(500, util.ResponseFailure("应用创建失败", err.Error()))
-			slog.Info(err.Error())
+		c.JSON(500, util.ResponseFailure("查询应用失败", err.Error()))
+		slog.Error("查询应用失败", "error", err)
+		return
+	}
+
+	c.JSON(200, util.ResponseSuccessful("查询成功", result))
+}
+
+// GetAppByID
+// @Tags App
+// @Summary 根据ID获取应用详情
+// @Description 根据应用ID获取单个应用的详细信息
+// @Accept json
+// @Produce json
+// @Param app_id path int true "应用ID"
+// @Success 200 {object} util.ResponseTemplate{code=int,result=entity.Apps} "成功"
+// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 404 {object} util.ResponseTemplate{code=int} "应用不存在"
+// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
+// @Router /api/v1/apps/{app_id} [get]
+func (ac *AppsController) GetAppByID(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	// 获取路径参数中的应用ID
+	appIDStr := c.Param("app_id")
+	appID, err := strconv.ParseInt(appIDStr, 10, 64)
+	if err != nil {
+		c.JSON(400, util.ResponseFailure("无效的应用ID", err.Error()))
+		return
+	}
+
+	// 调用应用管理器获取应用
+	apps, err := ac.appManager.GetAppByID(ctx, appID)
+	if err != nil {
+		// 区分不同类型的错误
+		var validationError *app.ValidationError
+		if errors.As(err, &validationError) {
+			c.JSON(400, util.ResponseFailure("参数验证失败", err.Error()))
+		} else if errors.Is(err, app.NewAppNotFoundError(appID)) {
+			c.JSON(404, util.ResponseFailure("应用不存在", err.Error()))
+		} else {
+			c.JSON(500, util.ResponseFailure("获取应用失败", err.Error()))
+			slog.Error("获取应用失败", "app_id", appID, "error", err)
 		}
 		return
 	}
 
-	// 异步触发后续流程
-	go ac.appManager.TriggerPostCreateHooks(appResult)
+	c.JSON(200, util.ResponseSuccessful("获取成功", apps))
+}
 
-	c.JSON(200, util.ResponseSuccessful("应用基本信息创建成功，请根据实际发布参数调整应用配置", appResult))
+// GetAppByName
+// @Tags App
+// @Summary 根据名称获取应用详情
+// @Description 根据应用名称获取单个应用的详细信息
+// @Accept json
+// @Produce json
+// @Param app_name path string true "应用名称"
+// @Success 200 {object} util.ResponseTemplate{code=int,result=entity.Apps} "成功"
+// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 404 {object} util.ResponseTemplate{code=int} "应用不存在"
+// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
+// @Router /api/v1/apps/name/{app_name} [get]
+func (ac *AppsController) GetAppByName(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	// 获取路径参数中的应用名称
+	appName := c.Param("app_name")
+	if appName == "" {
+		c.JSON(400, util.ResponseFailure("应用名称不能为空", ""))
+		return
+	}
+
+	// 调用应用管理器获取应用
+	apps, err := ac.appManager.GetAppByName(ctx, appName)
+	if err != nil {
+		// 区分不同类型的错误
+		var validationError *app.ValidationError
+		if errors.As(err, &validationError) {
+			c.JSON(400, util.ResponseFailure("参数验证失败", err.Error()))
+		} else if errors.Is(err, app.NewAppNotFoundError(0)) {
+			c.JSON(404, util.ResponseFailure("应用不存在", err.Error()))
+		} else {
+			c.JSON(500, util.ResponseFailure("获取应用失败", err.Error()))
+			slog.Error("获取应用失败", "app_name", appName, "error", err)
+		}
+		return
+	}
+
+	c.JSON(200, util.ResponseSuccessful("获取成功", apps))
 }
