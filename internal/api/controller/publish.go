@@ -35,7 +35,7 @@ func (pc *PublishController) CreateBuildTask(c *gin.Context) {
 		c.JSON(500, util.ResponseFailure("", err.Error()))
 		return
 	}
-	c.JSON(200, util.ResponseSuccessful("", publishResult))
+	c.JSON(200, util.ResponseSuccessful("发布任务创建成功", publishResult))
 }
 
 // CreateBatchBuildTask
@@ -57,7 +57,7 @@ func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
 		c.JSON(500, util.ResponseFailure("", err.Error()))
 		return
 	}
-	c.JSON(200, util.ResponseSuccessful("", publishBatchResult))
+	c.JSON(200, util.ResponseSuccessful("发布任务创建成功", publishBatchResult))
 }
 
 // GetBuildTaskList
@@ -73,5 +73,5 @@ func (pc *PublishController) GetBuildTaskList(c *gin.Context) {
 		c.JSON(500, util.ResponseFailure("", err.Error()))
 		return
 	}
-	c.JSON(200, util.ResponseSuccessful("", status))
+	c.JSON(200, util.ResponseSuccessful("任务列表获取成功", status))
 }

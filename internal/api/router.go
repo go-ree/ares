@@ -51,6 +51,15 @@ func Router(r gin.IRouter) {
 			apps.POST("", appsController.CreateApp)
 			// 批量创建应用
 			apps.POST("/batch", appsController.CreateApps)
+
+			// 查询应用列表
+			// 支持多条件组合查询应用列表，包括应用ID、应用名称、开发语言、负责人等
+			apps.POST("/query", appsController.QueryApps)
+			// 根据应用名称获取应用详情
+			apps.GET("/name/:app_name", appsController.GetAppByName)
+			// 根据APPID获取应用详情
+			apps.GET(":app_id", appsController.GetAppByID)
+
 			// 下线单个应用
 			//apps.DELETE("")
 			// 批量下线应用

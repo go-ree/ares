@@ -22,7 +22,7 @@ type DuplicateAppError struct {
 }
 
 func (e *DuplicateAppError) Error() string {
-	return fmt.Sprintf("应用 '%s' 在环境 '%s' 中已存在", e.AppName)
+	return fmt.Sprintf("应用名称 '%s 已存在，请重新命名", e.AppName)
 }
 
 // NewDuplicateAppError 创建应用重复错误

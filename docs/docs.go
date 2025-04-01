@@ -21,6 +21,17 @@ const docTemplate = `{
                     "App"
                 ],
                 "summary": "创建单应用",
+                "parameters": [
+                    {
+                        "description": "创建单应用参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/app.CreateAppRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "成功",
@@ -36,7 +47,7 @@ const docTemplate = `{
                                             "type": "integer"
                                         },
                                         "result": {
-                                            "$ref": "#/definitions/entity.Apps"
+                                            "$ref": "#/definitions/app.CreateAppResult"
                                         }
                                     }
                                 }
@@ -88,6 +99,17 @@ const docTemplate = `{
                     "App"
                 ],
                 "summary": "批量创建应用",
+                "parameters": [
+                    {
+                        "description": "批量创建应用参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/app.CreateAppsRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "成功",
@@ -112,6 +134,287 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/apps/name/{app_name}": {
+            "get": {
+                "description": "根据应用名称获取单个应用的详细信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "App"
+                ],
+                "summary": "根据名称获取应用详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "应用名称",
+                        "name": "app_name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/entity.Apps"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "应用不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/apps/query": {
+            "post": {
+                "description": "支持多条件组合查询应用列表，包括应用ID、应用名称、开发语言、负责人等",
+                "tags": [
+                    "App"
+                ],
+                "summary": "查询应用列表",
+                "parameters": [
+                    {
+                        "description": "应用查询参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/app.AppQuery"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/app.AppQueryResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/apps/{app_id}": {
+            "get": {
+                "description": "根据应用ID获取单个应用的详细信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "App"
+                ],
+                "summary": "根据ID获取应用详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "应用ID",
+                        "name": "app_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/entity.Apps"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "应用不存在",
                         "schema": {
                             "allOf": [
                                 {
@@ -228,74 +531,6 @@ const docTemplate = `{
             }
         },
         "/api/v1/deploy/publish/batch": {
-            "get": {
-                "tags": [
-                    "Publish"
-                ],
-                "summary": "创建构建任务",
-                "responses": {
-                    "200": {
-                        "description": "成功",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/util.ResponseTemplate"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "code": {
-                                            "type": "integer"
-                                        },
-                                        "result": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                                "type": "string"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "400": {
-                        "description": "请求错误",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/util.ResponseTemplate"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "code": {
-                                            "type": "integer"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "500": {
-                        "description": "内部错误",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/util.ResponseTemplate"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "code": {
-                                            "type": "integer"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                }
-            },
             "post": {
                 "tags": [
                     "Publish"
@@ -731,6 +966,93 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "app.AppQuery": {
+            "type": "object",
+            "properties": {
+                "app_id": {
+                    "type": "integer"
+                },
+                "app_name": {
+                    "type": "string"
+                },
+                "dev_language": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_cn": {
+                    "type": "string"
+                },
+                "page_num": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "page_size": {
+                    "description": "前端可选 15 30 50 100 200",
+                    "type": "integer",
+                    "maximum": 200,
+                    "minimum": 1
+                },
+                "sort": {
+                    "$ref": "#/definitions/util.SortOption"
+                }
+            }
+        },
+        "app.AppQueryResult": {
+            "type": "object",
+            "properties": {
+                "apps": {
+                    "description": "应用列表",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.Apps"
+                    }
+                },
+                "page_num": {
+                    "description": "当前页码",
+                    "type": "integer"
+                },
+                "page_size": {
+                    "description": "每页大小",
+                    "type": "integer"
+                },
+                "total": {
+                    "description": "总记录数",
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "description": "总页数",
+                    "type": "integer"
+                }
+            }
+        },
+        "app.CreateAppRequest": {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string"
+                },
+                "app_name_cn": {
+                    "type": "string"
+                },
+                "description_cn": {
+                    "type": "string"
+                },
+                "dev_language": {
+                    "type": "string"
+                },
+                "git_url": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_cn": {
+                    "type": "string"
+                }
+            }
+        },
         "app.CreateAppResult": {
             "type": "object",
             "properties": {
@@ -742,6 +1064,17 @@ const docTemplate = `{
                 },
                 "success": {
                     "type": "boolean"
+                }
+            }
+        },
+        "app.CreateAppsRequest": {
+            "type": "object",
+            "properties": {
+                "apps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/app.CreateAppRequest"
+                    }
                 }
             }
         },
@@ -951,6 +1284,19 @@ const docTemplate = `{
                 },
                 "result": {
                     "description": "如果请求成功，这里给出成功的结果"
+                }
+            }
+        },
+        "util.SortOption": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "description": "排序方向：asc/desc",
+                    "type": "string"
+                },
+                "field": {
+                    "description": "排序字段",
+                    "type": "string"
                 }
             }
         }

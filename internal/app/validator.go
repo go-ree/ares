@@ -24,7 +24,7 @@ func (v *AppValidator) ValidateCreateApp(req *CreateAppRequest) error {
 		return err
 	}
 
-	// 名称格式验证
+	// 应用名称校验
 	namePattern := regexp.MustCompile(`^[a-z][a-z0-9\-]{2,24}$`)
 	if !namePattern.MatchString(req.AppName) {
 		return errors.New("应用名称必须以小写字母开头，只能包含小写字母、数字和连字符，长度3-25")
@@ -33,6 +33,25 @@ func (v *AppValidator) ValidateCreateApp(req *CreateAppRequest) error {
 	// Git URL格式验证
 	if !isValidGitURL(req.GitUrl) {
 		return errors.New("git地址必须使用SSH协议，且以.git结尾。示例：git@gitlab.ttpai.work:group/repo.git")
+	}
+
+	// 负责人 格式校验
+	ownerPattern := regexp.MustCompile(`^[a-z]+\.[a-z]+$`)
+	if !ownerPattern.MatchString(req.Owner) {
+		return errors.New("负责人格式不正确，必须为 'san.zhang' 或 'si.li' 形式")
+	}
+
+	// 开发语言校验
+	validLanguages := map[string]bool{
+		"java":    true,
+		"golang":  true,
+		"python":  true,
+		"node.js": true,
+	}
+
+	if _, ok := validLanguages[strings.ToLower(req.DevLanguage)]; !ok {
+		validLangs := getMapKeys(validLanguages)
+		return fmt.Errorf("不支持的开发语言: %s，支持的语言包括: %s。 ps.如需新增开发语言，请联系基础运维同学", req.DevLanguage, strings.Join(validLangs, ", "))
 	}
 
 	return nil
