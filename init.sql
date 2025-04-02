@@ -48,6 +48,7 @@ CREATE TABLE ares.task_record (
     app_name VARCHAR(255) NOT NULL,
     branch VARCHAR(100) NOT NULL,
     publisher VARCHAR(255) NOT NULL,
+    env     varchar(100) NOT NULL,
 
     # job流程组合
     ci_build_id INT(11) DEFAULT 0,

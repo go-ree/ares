@@ -290,6 +290,7 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 		AppName:       app.AppName,
 		Publisher:     req.Publisher,
 		Branch:        req.Branch,
+		Env:           req.Env,
 		PipelineParam: json.RawMessage(jsonStr),
 		Products:      image,
 		Status:        "init",

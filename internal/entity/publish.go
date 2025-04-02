@@ -11,6 +11,7 @@ type TaskRecord struct {
 	TaskId        int             `xorm:"INT(11) pk autoincr 'task_id'" json:"task_id"`
 	AppName       string          `xorm:"VARCHAR(255) not null 'app_name'" json:"app_name"`
 	Branch        string          `xorm:"VARCHAR(100) not null 'branch'" json:"branch"`
+	Env           string          `xorm:"VARCHAR(255) not null 'env'" json:"env"`
 	Publisher     string          `xorm:"VARCHAR(255) not null 'publisher'" json:"publisher"`
 	CiBuildId     int64           `xorm:"int(11) DEFAULT 0 'ci_build_id'" json:"ci_build_id"`
 	CdBuildId     int64           `xorm:"int(11) DEFAULT 0 'cd_build_id'" json:"cd_build_id"`
