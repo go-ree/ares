@@ -1,9 +1,9 @@
 package app
 
 import (
+	"ares/internal/tool"
 	"errors"
 	"fmt"
-	"reflect"
 	"regexp"
 	"strings"
 )
@@ -19,7 +19,7 @@ func NewAppValidator() *AppValidator {
 
 // ValidateCreateApp 验证创建应用请求
 func (v *AppValidator) ValidateCreateApp(req *CreateAppRequest) error {
-	err := validateStruct(req)
+	err := tool.ValidateStruct(req)
 	if err != nil {
 		return err
 	}
@@ -76,37 +76,4 @@ func isValidGitURL(url string) bool {
 	// 进一步验证格式: git@gitlab.ttpai.work:group/repo.git
 	pattern := regexp.MustCompile(`^git@[\w\.-]+:[\w\.-]+/[\w\.-]+\.git$`)
 	return pattern.MatchString(url)
-}
-
-// validateStruct 通用的结构体验证函数
-func validateStruct(s interface{}) error {
-	if s == nil {
-		return fmt.Errorf("请求不能为空")
-	}
-
-	v := reflect.ValueOf(s)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-
-	t := v.Type()
-	var emptyFields []string
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		if field.Kind() == reflect.String && field.String() == "" {
-			// 获取json标签
-			jsonTag := t.Field(i).Tag.Get("json")
-			// 处理json标签，去除可能存在的选项（如 omitempty）
-			jsonField := strings.Split(jsonTag, ",")[0]
-			if jsonField != "" {
-				emptyFields = append(emptyFields, jsonField)
-			}
-		}
-	}
-
-	if len(emptyFields) > 0 {
-		return fmt.Errorf("以下字段不能为空: %s", strings.Join(emptyFields, ", "))
-	}
-
-	return nil
 }

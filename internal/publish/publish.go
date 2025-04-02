@@ -21,14 +21,22 @@ func NewPublishManager() *PublishManager {
 	return &PublishManager{}
 }
 
-// CreatePublishRequest 触发发布动作请求
+// CreatePublishRequest 触发发布动作所需的请求参数
 type CreatePublishRequest struct {
+	AppName   string `json:"app_name"`
+	Branch    string `json:"branch"`
+	Env       string `json:"env"`
+	Publisher string `json:"publisher"`
+}
+
+// PublishRequest 实际发布需要用到的参数
+type PublishRequest struct {
 	AppName         string `json:"app_name"`
 	Branch          string `json:"branch"`
 	Env             string `json:"env"`
 	Publisher       string `json:"publisher"`
-	AppId           int    `json:"-"`
-	CodePackageType string `json:"-"`
+	AppId           int    `json:"app_id"`
+	CodePackageType string `json:"code_package_type"`
 }
 
 // CreateBatchPublishRequest 批量触发发布动作请求
@@ -52,7 +60,7 @@ type CreateBatchPublishResponse struct {
 }
 
 // VerifyApp 检验应用信息信息
-func (pm *PublishManager) VerifyApp(req *CreatePublishRequest) (*entity.Apps, error) {
+func (pm *PublishManager) VerifyApp(req *PublishRequest) (*entity.Apps, error) {
 	var app []entity.Apps
 	err := db.Engine.Where("app_name = ? AND deleted_at IS NULL", req.AppName).Find(&app)
 	if err != nil {
@@ -68,7 +76,7 @@ func (pm *PublishManager) VerifyApp(req *CreatePublishRequest) (*entity.Apps, er
 }
 
 // VerifyAppConfig 检测应用对应环境配置信息
-func (pm *PublishManager) VerifyAppConfig(req *CreatePublishRequest) (*entity.AppConfigs, error) {
+func (pm *PublishManager) VerifyAppConfig(req *PublishRequest) (*entity.AppConfigs, error) {
 	var appConfigs []entity.AppConfigs
 	err := db.Engine.Where("app_id = ? AND env = ? AND deleted_at IS NULL", req.AppId, req.Env).Find(&appConfigs)
 	if err != nil {
@@ -84,7 +92,7 @@ func (pm *PublishManager) VerifyAppConfig(req *CreatePublishRequest) (*entity.Ap
 }
 
 // VerifyEnvConfigs 检验指定的环境信息
-func (pm *PublishManager) VerifyEnvConfigs(req *CreatePublishRequest) (*entity.EnvConfigs, error) {
+func (pm *PublishManager) VerifyEnvConfigs(req *PublishRequest) (*entity.EnvConfigs, error) {
 	var envConfigs []entity.EnvConfigs
 	err := db.Engine.Where("env = ? ", req.Env).Find(&envConfigs)
 	if err != nil {
@@ -100,7 +108,7 @@ func (pm *PublishManager) VerifyEnvConfigs(req *CreatePublishRequest) (*entity.E
 }
 
 // VerifyPipelines 检验指定的管线信息
-func (pm *PublishManager) VerifyPipelines(req *CreatePublishRequest) (*entity.Pipelines, error) {
+func (pm *PublishManager) VerifyPipelines(req *PublishRequest) (*entity.Pipelines, error) {
 	var pipelines []entity.Pipelines
 	err := db.Engine.Where("code_package_type = ? AND deleted_at IS NULL", req.CodePackageType).Find(&pipelines)
 	if err != nil {
@@ -116,7 +124,20 @@ func (pm *PublishManager) VerifyPipelines(req *CreatePublishRequest) (*entity.Pi
 }
 
 // CreatePublish 创建单次发布动作
-func (pm *PublishManager) CreatePublish(req *CreatePublishRequest) (*entity.TaskRecord, error) {
+func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity.TaskRecord, error) {
+	// 验证所需的参数信息是否完成且不为空
+	err := tool.ValidateStruct(creatReq)
+	if err != nil {
+		return nil, err
+	}
+
+	req := &PublishRequest{
+		AppName:   creatReq.AppName,
+		Branch:    creatReq.Branch,
+		Env:       creatReq.Env,
+		Publisher: creatReq.Publisher,
+	}
+
 	app, err := pm.VerifyApp(req)
 	if err != nil {
 		return nil, err
@@ -228,7 +249,7 @@ func (pm *PublishManager) CreateBatchPublish(req *CreateBatchPublishRequest) (*C
 
 // ComposePublishData 构建发布数据
 // 这里主要是拼接各种发布参数信息
-func (pm *PublishManager) ComposePublishData(req *CreatePublishRequest, app *entity.Apps, appConfig *entity.AppConfigs, envConfig *entity.EnvConfigs) (map[string]string, *entity.TaskRecord, error) {
+func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Apps, appConfig *entity.AppConfigs, envConfig *entity.EnvConfigs) (map[string]string, *entity.TaskRecord, error) {
 	JenkinsParam := make(map[string]string)
 	// 输出当前时间的时间戳，精确到毫秒
 	milliseconds := time.Now().UnixMilli()
