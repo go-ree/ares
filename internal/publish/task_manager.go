@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 )
 
 // TaskManager 任务管理器
@@ -54,10 +55,23 @@ func (tm *TaskManager) UpdateTaskStatuses() {
 // fetchTasks 查询状态为编译中、编译成功或打包中的任务
 func (tm *TaskManager) fetchTasks() ([]entity.TaskRecord, error) {
 	var tasks []entity.TaskRecord
-	err := db.Engine.Where("status IN (?, ?, ?) AND deleted_at IS NULL", entity.StatusPackaging, entity.StatusPackaged, entity.StatusDeploying).Find(&tasks)
+
+	// 计算3小时前的时间点
+	threeHoursAgo := time.Now().Add(-3 * time.Hour)
+
+	err := db.Engine.
+		Where("status IN (?, ?, ?) AND deleted_at IS NULL", entity.StatusPackaging, entity.StatusPackaged, entity.StatusDeploying).
+		And("created_at > ?", threeHoursAgo).
+		Find(&tasks)
 	if err != nil {
 		return nil, fmt.Errorf("查询任务列表失败：%s", err)
 	}
+
+	// 添加日志记录
+	slog.Info("监听构建任务列表状态（状态机）",
+		"count", len(tasks),
+		"time_range", fmt.Sprintf("获取最近3小时数据，构建状态为packaging、packaged、deploying的数据(%s)", threeHoursAgo.Format("2006-01-02 15:04:05")))
+
 	return tasks, nil
 }
 

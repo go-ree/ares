@@ -312,7 +312,7 @@ func (pm *PublishManager) JobStatus() ([]*entity.TaskRecord, error) {
 	threeHoursAgo := time.Now().Add(-3 * time.Hour)
 
 	err := db.Engine.
-		Where("status IN (?, ?, ?)", "init", "packaging", "deploying").
+		Where("status IN (?, ?, ?)", entity.StatusInit, entity.StatusPackaging, entity.StatusDeploying).
 		And("created_at > ?", threeHoursAgo).
 		Find(&taskRecords)
 
@@ -323,7 +323,7 @@ func (pm *PublishManager) JobStatus() ([]*entity.TaskRecord, error) {
 	// 添加日志记录
 	slog.Info("查询任务状态",
 		"count", len(taskRecords),
-		"time_range", fmt.Sprintf("获取最近3小时数据，应用状态为init、packaging、deploying的数据(%s)", threeHoursAgo.Format("2006-01-02 15:04:05")))
+		"time_range", fmt.Sprintf("获取最近3小时数据，构建状态为init、packaging、deploying的数据(%s)", threeHoursAgo.Format("2006-01-02 15:04:05")))
 
 	return taskRecords, nil
 }
