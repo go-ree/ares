@@ -134,6 +134,13 @@ func (tm *TaskManager) triggerJenkinsBuild(task entity.TaskRecord) error {
 	task.CdJobName = pipelines[0].JobName
 	task.CdBuildId = jobBuildId
 	_, err = db.Engine.ID(task.TaskId).Update(&task)
+	slog.Info("任务自动部署中",
+		"task_id", task.TaskId,
+		"app_name", task.AppName,
+		"env", task.Env,
+		"publisher", task.Publisher,
+		"branch", task.Branch,
+		"image", task.Products)
 	return err
 }
 
