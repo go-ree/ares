@@ -20,7 +20,8 @@ func Router(r gin.IRouter) {
 
 	apiRouter := r.Group("/api/v1")
 	{
-		apiRouter.GET("/job/log/:job/:id", controller.GetJenkinsBuildLog)
+		//apiRouter.GET("/job/log/:job/:id", controller.GetJenkinsBuildLog)
+		// 获取构建日志，以流式获取
 		apiRouter.GET("/job/stream/log", controller.StreamJenkinsBuildLogHandler)
 		// 状态查询
 		status := apiRouter.Group("/status")

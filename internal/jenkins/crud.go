@@ -30,6 +30,11 @@ type CreateBuildTaskResult struct {
 	Success    bool                    `json:"success"`
 }
 
+type BuildLogQuery struct {
+	JobName string `form:"job_name" json:"job_name" query:"job_name"`
+	BuildId int64  `form:"build_id" json:"build_id" query:"build_id"`
+}
+
 // GetJenkinsNodeStatus	获取jenkins中node的状态信息
 func (jm *JenkinsManager) GetJenkinsNodeStatus() (*Nodes, error) {
 	ctx := context.Background()
@@ -132,21 +137,21 @@ func GetJenkinsBuildLog(jobName string, buildId int64) (string, error) {
 }
 
 // StreamJenkinsBuildLog	持续获取jenkins的构建日志
-// jobName: 执行的Job名称
-// buildId：执行的任务id
-func StreamJenkinsBuildLog(jobName string, buildId int64, logChan chan<- string, errChan chan<- error) bool {
+func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- string, errChan chan<- error) bool {
 	ctx := context.Background()
 	if Jenkins == nil {
 		errChan <- errors.New("jenkins not initialized")
 		return false
 	}
-	job, err := Jenkins.GetJob(ctx, jobName)
+	job, err := Jenkins.GetJob(ctx, req.JobName)
 	if err != nil {
+		slog.Error("获取Job失败", "job_name", req.JobName, "build_id", req.BuildId, "err", err)
 		errChan <- err
 		return false
 	}
-	build, err := job.GetBuild(ctx, buildId)
+	build, err := job.GetBuild(ctx, req.BuildId)
 	if err != nil {
+		slog.Error("获取buildId失败", "job_name", req.JobName, "build_id", req.BuildId, "err", err)
 		errChan <- err
 		return false
 	}

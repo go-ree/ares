@@ -743,12 +743,28 @@
                 }
             }
         },
-        "/api/v1/job/log/": {
+        "/api/v1/job/stream/log": {
             "get": {
                 "tags": [
                     "Publish"
                 ],
                 "summary": "获取流式的构建日志",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行job名称",
+                        "name": "job_name",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "构建ID",
+                        "name": "build_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "成功",

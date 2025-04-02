@@ -682,8 +682,19 @@ paths:
       summary: 查询构建任务历史
       tags:
       - Publish
-  /api/v1/job/log/:
+  /api/v1/job/stream/log:
     get:
+      parameters:
+      - description: 执行job名称
+        in: query
+        name: job_name
+        required: true
+        type: string
+      - description: 构建ID
+        in: query
+        name: build_id
+        required: true
+        type: integer
       responses:
         "200":
           description: 成功

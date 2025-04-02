@@ -52,7 +52,7 @@ func Init() error {
 
 func InitSwagger() {
 	docs.SwaggerInfo.Title = "Ares"
-	docs.SwaggerInfo.Version = "v2.x"
+	docs.SwaggerInfo.Version = "v1.x"
 	docs.SwaggerInfo.Description = "天天拍车发布引擎"
 	docs.SwaggerInfo.Schemes = []string{"http", "https"}
 	docs.SwaggerInfo.Host = ""
