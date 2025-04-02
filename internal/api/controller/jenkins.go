@@ -124,27 +124,27 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 	})
 }
 
-// GetBuildTaskStatus
-// @Tags Publish
-// @Summary 获取构建任务的状态
-// @Success 200 {object} util.ResponseTemplate{code=int,result=string} "成功"
-// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
-// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
-// @Failure 502 {object} util.ResponseTemplate{code=int} "调用链异常"
-// @Router	/api/v1/deploy/query/status [get]
-func GetBuildTaskStatus(c *gin.Context) {
-	jobName := c.Query("job_name")
-	buildNumberStr := c.Query("build_number")
-
-	buildNumber, err := strconv.ParseInt(buildNumberStr, 10, 64) // 将 id 字符串转换为 int64
-	if err != nil {
-		c.JSON(400, util.ResponseFailure("buildNumber转换失败:", err.Error()))
-		return
-	}
-	buildStatus, err := jenkins.GetBuildStatus(jobName, buildNumber)
-	if err != nil {
-		c.JSON(502, util.ResponseFailure("", err.Error()))
-		return
-	}
-	c.JSON(200, util.ResponseSuccessful("", buildStatus))
-}
+//// GetBuildTaskStatus
+//// @Tags Publish
+//// @Summary 获取构建任务的状态
+//// @Success 200 {object} util.ResponseTemplate{code=int,result=string} "成功"
+//// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+//// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
+//// @Failure 502 {object} util.ResponseTemplate{code=int} "调用链异常"
+//// @Router	/api/v1/deploy/query/status [get]
+//func GetBuildTaskStatus(c *gin.Context) {
+//	jobName := c.Query("job_name")
+//	buildNumberStr := c.Query("build_number")
+//
+//	buildNumber, err := strconv.ParseInt(buildNumberStr, 10, 64) // 将 id 字符串转换为 int64
+//	if err != nil {
+//		c.JSON(400, util.ResponseFailure("buildNumber转换失败:", err.Error()))
+//		return
+//	}
+//	buildStatus, err := jenkins.GetBuildStatus(jobName, buildNumber)
+//	if err != nil {
+//		c.JSON(502, util.ResponseFailure("", err.Error()))
+//		return
+//	}
+//	c.JSON(200, util.ResponseSuccessful("", buildStatus))
+//}

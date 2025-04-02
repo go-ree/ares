@@ -1,0 +1,66 @@
+package publish
+
+import (
+	"fmt"
+	"strings"
+	"time"
+)
+
+// Validate 验证查询参数
+func (q *PublishQuery) Validate() error {
+	// 验证时间范围
+	if err := q.validateTimeRange(); err != nil {
+		return err
+	}
+
+	// 验证排序参数
+	if err := q.validateSort(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateTimeRange 验证时间范围
+func (q *PublishQuery) validateTimeRange() error {
+	if !q.StartTime.IsZero() {
+		if q.EndTime.IsZero() {
+			return fmt.Errorf("结束时间不能为空")
+		}
+		if q.EndTime.Before(q.StartTime) {
+			return fmt.Errorf("结束时间不能早于开始时间")
+		}
+		// 可选：添加时间范围限制
+		if q.EndTime.Sub(q.StartTime) > 30*24*time.Hour {
+			return fmt.Errorf("时间范围不能超过30天")
+		}
+	}
+	return nil
+}
+
+// validateSort 验证排序参数
+func (q *PublishQuery) validateSort() error {
+	if q.Sort == nil {
+		return nil
+	}
+
+	validFields := map[string]bool{
+		"app_name":   true,
+		"env":        true,
+		"publisher":  true,
+		"branch":     true,
+		"created_at": true,
+		"updated_at": true,
+	}
+
+	if !validFields[q.Sort.Field] {
+		return fmt.Errorf("无效的排序字段: %s", q.Sort.Field)
+	}
+
+	direction := strings.ToLower(q.Sort.Direction)
+	if direction != "asc" && direction != "desc" {
+		return fmt.Errorf("无效的排序方向: %s", q.Sort.Direction)
+	}
+
+	return nil
+}

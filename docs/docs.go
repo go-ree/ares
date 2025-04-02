@@ -608,12 +608,12 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/v1/deploy/publish/jobs/status": {
+        "/api/v1/deploy/publish/publish/status": {
             "get": {
                 "tags": [
                     "Publish"
                 ],
-                "summary": "获取任务构建列表",
+                "summary": "获取发布中的任务列表",
                 "responses": {
                     "200": {
                         "description": "成功",
@@ -675,12 +675,24 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/v1/deploy/query/status": {
-            "get": {
+        "/api/v1/deploy/publish/query": {
+            "post": {
+                "description": "支持多条件组合查询，如：应用名称、环境、发布人、分支、发布起始时间等",
                 "tags": [
                     "Publish"
                 ],
-                "summary": "获取构建任务的状态",
+                "summary": "查询构建任务历史",
+                "parameters": [
+                    {
+                        "description": "查询参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/publish.PublishQuery"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "成功",
@@ -696,7 +708,7 @@ const docTemplate = `{
                                             "type": "integer"
                                         },
                                         "result": {
-                                            "type": "string"
+                                            "$ref": "#/definitions/publish.PublishQueryResult"
                                         }
                                     }
                                 }
@@ -723,24 +735,6 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "内部错误",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/util.ResponseTemplate"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "code": {
-                                            "type": "integer"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "502": {
-                        "description": "调用链异常",
                         "schema": {
                             "allOf": [
                                 {
@@ -1173,6 +1167,9 @@ const docTemplate = `{
                     "type": "string",
                     "format": "date-time"
                 },
+                "env": {
+                    "type": "string"
+                },
                 "message": {
                     "type": "string"
                 },
@@ -1270,6 +1267,72 @@ const docTemplate = `{
                 },
                 "task_record": {
                     "$ref": "#/definitions/entity.TaskRecord"
+                }
+            }
+        },
+        "publish.PublishQuery": {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string"
+                },
+                "branch": {
+                    "type": "string"
+                },
+                "end_time": {
+                    "description": "结束时间",
+                    "type": "string"
+                },
+                "env": {
+                    "type": "string"
+                },
+                "page_num": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "page_size": {
+                    "description": "前端可选 15 30 50 100 200",
+                    "type": "integer",
+                    "maximum": 200,
+                    "minimum": 1
+                },
+                "publisher": {
+                    "type": "string"
+                },
+                "sort": {
+                    "$ref": "#/definitions/util.SortOption"
+                },
+                "start_time": {
+                    "description": "开始时间",
+                    "type": "string"
+                }
+            }
+        },
+        "publish.PublishQueryResult": {
+            "type": "object",
+            "properties": {
+                "page_num": {
+                    "description": "当前页码",
+                    "type": "integer"
+                },
+                "page_size": {
+                    "description": "每页大小",
+                    "type": "integer"
+                },
+                "task_record": {
+                    "description": "构建任务列表",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.TaskRecord"
+                    }
+                },
+                "total": {
+                    "description": "总记录数",
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "description": "总页数",
+                    "type": "integer"
                 }
             }
         },

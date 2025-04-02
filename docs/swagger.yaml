@@ -140,6 +140,8 @@ definitions:
       deleted_at:
         format: date-time
         type: string
+      env:
+        type: string
       message:
         type: string
       pipeline_param:
@@ -205,6 +207,53 @@ definitions:
         type: boolean
       task_record:
         $ref: '#/definitions/entity.TaskRecord'
+    type: object
+  publish.PublishQuery:
+    properties:
+      app_name:
+        type: string
+      branch:
+        type: string
+      end_time:
+        description: 结束时间
+        type: string
+      env:
+        type: string
+      page_num:
+        minimum: 1
+        type: integer
+      page_size:
+        description: 前端可选 15 30 50 100 200
+        maximum: 200
+        minimum: 1
+        type: integer
+      publisher:
+        type: string
+      sort:
+        $ref: '#/definitions/util.SortOption'
+      start_time:
+        description: 开始时间
+        type: string
+    type: object
+  publish.PublishQueryResult:
+    properties:
+      page_num:
+        description: 当前页码
+        type: integer
+      page_size:
+        description: 每页大小
+        type: integer
+      task_record:
+        description: 构建任务列表
+        items:
+          $ref: '#/definitions/entity.TaskRecord'
+        type: array
+      total:
+        description: 总记录数
+        type: integer
+      total_pages:
+        description: 总页数
+        type: integer
     type: object
   util.ResponseTemplate:
     properties:
@@ -555,7 +604,7 @@ paths:
       summary: 应用进行批量发布动作
       tags:
       - Publish
-  /api/v1/deploy/publish/jobs/status:
+  /api/v1/deploy/publish/publish/status:
     get:
       responses:
         "200":
@@ -587,11 +636,19 @@ paths:
                 code:
                   type: integer
               type: object
-      summary: 获取任务构建列表
+      summary: 获取发布中的任务列表
       tags:
       - Publish
-  /api/v1/deploy/query/status:
-    get:
+  /api/v1/deploy/publish/query:
+    post:
+      description: 支持多条件组合查询，如：应用名称、环境、发布人、分支、发布起始时间等
+      parameters:
+      - description: 查询参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/publish.PublishQuery'
       responses:
         "200":
           description: 成功
@@ -602,7 +659,7 @@ paths:
                 code:
                   type: integer
                 result:
-                  type: string
+                  $ref: '#/definitions/publish.PublishQueryResult'
               type: object
         "400":
           description: 请求错误
@@ -622,16 +679,7 @@ paths:
                 code:
                   type: integer
               type: object
-        "502":
-          description: 调用链异常
-          schema:
-            allOf:
-            - $ref: '#/definitions/util.ResponseTemplate'
-            - properties:
-                code:
-                  type: integer
-              type: object
-      summary: 获取构建任务的状态
+      summary: 查询构建任务历史
       tags:
       - Publish
   /api/v1/job/log/:

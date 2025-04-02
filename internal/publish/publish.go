@@ -1,6 +1,7 @@
 package publish
 
 import (
+	"ares/internal/api/util"
 	"ares/internal/db"
 	"ares/internal/entity"
 	"ares/internal/jenkins"
@@ -14,11 +15,14 @@ import (
 
 // PublishManager 发布管理器
 type PublishManager struct {
+	utilManager *util.ParamPage
 }
 
 // NewPublishManager 创建新的发布管理器
 func NewPublishManager() *PublishManager {
-	return &PublishManager{}
+	return &PublishManager{
+		utilManager: util.NewUtilManager(),
+	}
 }
 
 // CreatePublishRequest 触发发布动作所需的请求参数

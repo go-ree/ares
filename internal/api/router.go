@@ -36,11 +36,14 @@ func Router(r gin.IRouter) {
 			// 应用批量发布
 			deploy.POST("/publish/batch", publishController.CreateBatchBuildTask)
 
+			// 多条件分页查询，查询所有任务列表
+			deploy.POST("/publish/query", publishController.QueryBuildTaskList)
+
 			// 获取当前还在发布中的任务
-			deploy.GET("/publish/jobs/status", publishController.GetBuildTaskList)
+			deploy.GET("/publish/status", publishController.GetBuildTaskList)
 
 			// 获取构建任务状态
-			deploy.GET("/query/status", controller.GetBuildTaskStatus)
+			//deploy.GET("/query/status", controller.GetBuildTaskStatus)
 			// 获取job任务构建日志
 			deploy.GET("/log/stream", controller.StreamJenkinsBuildLogHandler)
 		}
