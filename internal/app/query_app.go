@@ -98,9 +98,6 @@ func (am *AppManager) QueryApps(ctx context.Context, params AppQuery) (*AppQuery
 		"owner", params.Owner,
 		"owner_cn", params.OwnerCn)
 
-	// 规范化分页参数
-	pageSize, offset := am.utilManager.NormalizePagination(&params.ParamPage)
-
 	// 构建查询条件
 	query := am.buildAppQuery(ctx, params)
 
@@ -110,8 +107,16 @@ func (am *AppManager) QueryApps(ctx context.Context, params AppQuery) (*AppQuery
 		return nil, err
 	}
 
+	// 规范化分页参数
+	pageSize, offset := am.utilManager.NormalizePagination(&params.ParamPage)
+
 	// 计算总页数
 	totalPages := am.utilManager.CalculateTotalPages(total, pageSize)
+
+	// 验证页码是否合法
+	if totalPages > 0 && params.PageNum > totalPages {
+		return nil, fmt.Errorf("请求的页码 %d 超出总页数 %d", params.PageNum, totalPages)
+	}
 
 	// 如果有数据，再进行分页查询
 	var apps []entity.Apps
@@ -190,12 +195,4 @@ func (am *AppManager) GetAppByName(ctx context.Context, appName string) (*entity
 	}
 
 	return &app, nil
-}
-
-// NewAppNotFoundError 创建应用未找到错误
-func NewAppNotFoundError(appID int64) error {
-	if appID > 0 {
-		return fmt.Errorf("应用ID %d 不存在", appID)
-	}
-	return fmt.Errorf("应用不存在")
 }

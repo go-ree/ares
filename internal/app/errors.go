@@ -31,3 +31,11 @@ func NewDuplicateAppError(appName string) *DuplicateAppError {
 		AppName: appName,
 	}
 }
+
+// NewAppNotFoundError 创建应用未找到错误
+func NewAppNotFoundError(appID int64) error {
+	if appID > 0 {
+		return fmt.Errorf("应用ID %d 不存在", appID)
+	}
+	return fmt.Errorf("应用不存在")
+}
