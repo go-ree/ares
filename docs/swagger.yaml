@@ -124,6 +124,8 @@ definitions:
         type: string
       auto_deploy:
         type: integer
+      branch:
+        type: string
       cd_build_id:
         type: integer
       cd_job_name:
@@ -143,6 +145,8 @@ definitions:
       pipeline_param:
         type: string
       products:
+        type: string
+      publisher:
         type: string
       status:
         type: string
@@ -189,6 +193,8 @@ definitions:
       branch:
         type: string
       env:
+        type: string
+      publisher:
         type: string
     type: object
   publish.CreatePublishResult:

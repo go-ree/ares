@@ -1150,6 +1150,9 @@ const docTemplate = `{
                 "auto_deploy": {
                     "type": "integer"
                 },
+                "branch": {
+                    "type": "string"
+                },
                 "cd_build_id": {
                     "type": "integer"
                 },
@@ -1177,6 +1180,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "products": {
+                    "type": "string"
+                },
+                "publisher": {
                     "type": "string"
                 },
                 "status": {
@@ -1246,6 +1252,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "env": {
+                    "type": "string"
+                },
+                "publisher": {
                     "type": "string"
                 }
             }

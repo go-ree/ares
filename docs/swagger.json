@@ -1139,6 +1139,9 @@
                 "auto_deploy": {
                     "type": "integer"
                 },
+                "branch": {
+                    "type": "string"
+                },
                 "cd_build_id": {
                     "type": "integer"
                 },
@@ -1166,6 +1169,9 @@
                     "type": "string"
                 },
                 "products": {
+                    "type": "string"
+                },
+                "publisher": {
                     "type": "string"
                 },
                 "status": {
@@ -1235,6 +1241,9 @@
                     "type": "string"
                 },
                 "env": {
+                    "type": "string"
+                },
+                "publisher": {
                     "type": "string"
                 }
             }

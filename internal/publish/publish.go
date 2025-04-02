@@ -7,6 +7,7 @@ import (
 	"ares/internal/tool"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 )
@@ -25,6 +26,7 @@ type CreatePublishRequest struct {
 	AppName         string `json:"app_name"`
 	Branch          string `json:"branch"`
 	Env             string `json:"env"`
+	Publisher       string `json:"publisher"`
 	AppId           int    `json:"-"`
 	CodePackageType string `json:"-"`
 }
@@ -43,10 +45,10 @@ type CreatePublishResult struct {
 
 // CreateBatchPublishResponse 表示批量应用发布动作的结果
 type CreateBatchPublishResponse struct {
-	TaskRecords  []CreatePublishResult `json:"task_records"`
 	SuccessCount int                   `json:"success_count"` // 成功数量
 	FailureCount int                   `json:"failure_count"` // 失败数量
 	TotalCount   int                   `json:"total_count"`   // 总体数量
+	TaskRecords  []CreatePublishResult `json:"task_records"`
 }
 
 // VerifyApp 检验应用信息信息
@@ -139,7 +141,7 @@ func (pm *PublishManager) CreatePublish(req *CreatePublishRequest) (*entity.Task
 	}
 
 	// 这里需要构建实际的发布数据
-	jenkinsParam, taskId, err := pm.ComposePublishData(req, app, appConfig, envConfigs)
+	jenkinsParam, taskRecordResult, err := pm.ComposePublishData(req, app, appConfig, envConfigs)
 	if err != nil {
 		return nil, err
 	}
@@ -149,18 +151,36 @@ func (pm *PublishManager) CreatePublish(req *CreatePublishRequest) (*entity.Task
 	if err != nil {
 		return nil, err
 	}
-	// 回写数据库中的数据，将编译阶段产生的taskId回写到表中
 	var taskRecord entity.TaskRecord
+	// 回写数据库中的数据，将编译阶段产生的taskId回写到表中
+	taskRecord.TaskId = taskRecordResult.TaskId
 	taskRecord.CiBuildId = jobBuildId
 	taskRecord.Status = "packaging"
 	taskRecord.CiJobName = pipelines.JobName
 	// 更新指定id的数据
-	_, err = db.Engine.ID(taskId).Update(&taskRecord)
+	affected, err := db.Engine.ID(taskRecord.TaskId).Update(&taskRecord)
 	if err != nil {
 		return nil, fmt.Errorf("ci阶段taskId回写失败：%s", err)
 	}
-	response := &taskRecord
-	return response, nil
+	// 检查更新结果
+	if affected == 0 {
+		return nil, fmt.Errorf("任务记录未更新，可能记录不存在，ID: %d", taskRecord.TaskId)
+	}
+	slog.Info("ci阶段taskId回写成功",
+		"task_id", taskRecord.TaskId,
+		"affected_rows", affected,
+		"taskRecord", taskRecord)
+
+	// 如果需要获取最新的记录（包括可能的数据库触发器更新等）
+	var updatedRecord entity.TaskRecord
+	exists, err := db.Engine.ID(taskRecord.TaskId).Get(&updatedRecord)
+	if err != nil {
+		return nil, fmt.Errorf("获取更新后的记录失败：%v", err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("更新后的记录未找到，ID: %d", taskRecord.TaskId)
+	}
+	return &updatedRecord, nil
 }
 
 // CreateBatchPublish 批量创建发布任务
@@ -208,7 +228,7 @@ func (pm *PublishManager) CreateBatchPublish(req *CreateBatchPublishRequest) (*C
 
 // ComposePublishData 构建发布数据
 // 这里主要是拼接各种发布参数信息
-func (pm *PublishManager) ComposePublishData(req *CreatePublishRequest, app *entity.Apps, appConfig *entity.AppConfigs, envConfig *entity.EnvConfigs) (map[string]string, int, error) {
+func (pm *PublishManager) ComposePublishData(req *CreatePublishRequest, app *entity.Apps, appConfig *entity.AppConfigs, envConfig *entity.EnvConfigs) (map[string]string, *entity.TaskRecord, error) {
 	JenkinsParam := make(map[string]string)
 	// 输出当前时间的时间戳，精确到毫秒
 	milliseconds := time.Now().UnixMilli()
@@ -239,7 +259,7 @@ func (pm *PublishManager) ComposePublishData(req *CreatePublishRequest, app *ent
 	JenkinsParam["dev_language"] = app.DevLanguage
 	jsonStr, err := tool.ToJSON(JenkinsParam)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	//fmt.Println(jsonStr)
 	// 先直接在数据库中写入数据，此时记录状态信息
@@ -247,6 +267,8 @@ func (pm *PublishManager) ComposePublishData(req *CreatePublishRequest, app *ent
 	//
 	taskRecord := &entity.TaskRecord{
 		AppName:       app.AppName,
+		Publisher:     req.Publisher,
+		Branch:        req.Branch,
 		PipelineParam: json.RawMessage(jsonStr),
 		Products:      image,
 		Status:        "init",
@@ -254,9 +276,12 @@ func (pm *PublishManager) ComposePublishData(req *CreatePublishRequest, app *ent
 	// 需要在这里显式的把一些有默认值的给排除掉，golang会将未使用的值赋值为零值，而不是使用默认值
 	_, err = db.Engine.Omit("ci_build_id", "cd_build_id", "message", "ci_job_name", "cd_job_name", "auto_deploy").Insert(taskRecord)
 	if err != nil {
-		return nil, 0, fmt.Errorf("任务记录创建失败: %s", err)
+		return nil, nil, fmt.Errorf("任务记录创建失败: %s", err)
 	}
-	return JenkinsParam, taskRecord.TaskId, nil
+	slog.Info("Jenkins构建任务记录创建成功",
+		"task_id", taskRecord.TaskId,
+		"taskRecord", taskRecord)
+	return JenkinsParam, taskRecord, nil
 }
 
 func (pm *PublishManager) JobStatus() ([]*entity.TaskRecord, error) {
