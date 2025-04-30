@@ -193,7 +193,7 @@ func (ac *AppsController) handleAppError(c *gin.Context, err error, context map[
 	case errors.As(err, &validationError):
 		c.JSON(400, util.ResponseFailure("参数验证失败", err.Error()))
 	case errors.As(err, &notFoundError):
-		c.JSON(404, util.ResponseFailure("应用不存在", err.Error()))
+		c.JSON(200, util.ResponseFailure("应用不存在", err.Error()))
 	default:
 		c.JSON(500, util.ResponseFailure("获取应用失败", err.Error()))
 		slog.Error("获取应用失败", "error", err, "context", context)
