@@ -145,13 +145,15 @@ func (ac *AppsController) GetAppByID(c *gin.Context) {
 		var validationError *app.ValidationError
 		if errors.As(err, &validationError) {
 			c.JSON(400, util.ResponseFailure("参数验证失败", err.Error()))
+			return
 		} else if errors.Is(err, app.NewAppNotFoundError(appID)) {
 			c.JSON(404, util.ResponseFailure("应用不存在", err.Error()))
+			return
 		} else {
 			c.JSON(500, util.ResponseFailure("获取应用失败", err.Error()))
 			slog.Error("获取应用失败", "app_id", appID, "error", err)
+			return
 		}
-		return
 	}
 
 	c.JSON(200, util.ResponseSuccessful("获取成功", apps))
@@ -186,13 +188,15 @@ func (ac *AppsController) GetAppByName(c *gin.Context) {
 		var validationError *app.ValidationError
 		if errors.As(err, &validationError) {
 			c.JSON(400, util.ResponseFailure("参数验证失败", err.Error()))
+			return
 		} else if errors.Is(err, app.NewAppNotFoundError(0)) {
 			c.JSON(404, util.ResponseFailure("应用不存在", err.Error()))
+			return
 		} else {
 			c.JSON(500, util.ResponseFailure("获取应用失败", err.Error()))
 			slog.Error("获取应用失败", "app_name", appName, "error", err)
+			return
 		}
-		return
 	}
 
 	c.JSON(200, util.ResponseSuccessful("获取成功", apps))
