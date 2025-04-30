@@ -17,6 +17,14 @@ func NewAppValidator() *AppValidator {
 	return &AppValidator{}
 }
 
+// ValidateAppID 验证应用ID是否在有效范围内
+func (v *AppValidator) ValidateAppID(appID int64) error {
+	if appID < 10000 || appID > 99999 {
+		return errors.New("应用ID必须在10000-99999范围内")
+	}
+	return nil
+}
+
 // ValidateCreateApp 验证创建应用请求
 func (v *AppValidator) ValidateCreateApp(req *CreateAppRequest) error {
 	err := tool.ValidateStruct(req)

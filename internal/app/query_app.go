@@ -153,8 +153,9 @@ func (am *AppManager) QueryApps(ctx context.Context, params AppQuery) (*AppQuery
 
 // GetAppByID 根据ID获取单个应用
 func (am *AppManager) GetAppByID(ctx context.Context, appID int64) (*entity.Apps, error) {
-	if appID <= 0 {
-		return nil, NewValidationError("无效的应用ID")
+	validator := NewAppValidator()
+	if err := validator.ValidateAppID(appID); err != nil {
+		return nil, NewValidationError(err.Error())
 	}
 
 	var app entity.Apps
@@ -167,7 +168,7 @@ func (am *AppManager) GetAppByID(ctx context.Context, appID int64) (*entity.Apps
 	}
 
 	if !exists {
-		return nil, NewAppNotFoundError(appID)
+		return nil, NewAppNotFoundError(appID, "")
 	}
 
 	return &app, nil
@@ -191,7 +192,7 @@ func (am *AppManager) GetAppByName(ctx context.Context, appName string) (*entity
 	}
 
 	if !exists {
-		return nil, NewAppNotFoundError(0)
+		return nil, NewAppNotFoundError(0, appName)
 	}
 
 	return &app, nil

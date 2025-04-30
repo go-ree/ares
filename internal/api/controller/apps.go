@@ -141,19 +141,10 @@ func (ac *AppsController) GetAppByID(c *gin.Context) {
 	// 调用应用管理器获取应用
 	apps, err := ac.appManager.GetAppByID(ctx, appID)
 	if err != nil {
-		// 区分不同类型的错误
-		var validationError *app.ValidationError
-		if errors.As(err, &validationError) {
-			c.JSON(400, util.ResponseFailure("参数验证失败", err.Error()))
-			return
-		} else if errors.Is(err, app.NewAppNotFoundError(appID)) {
-			c.JSON(404, util.ResponseFailure("应用不存在", err.Error()))
-			return
-		} else {
-			c.JSON(500, util.ResponseFailure("获取应用失败", err.Error()))
-			slog.Error("获取应用失败", "app_id", appID, "error", err)
-			return
-		}
+		ac.handleAppError(c, err, map[string]interface{}{
+			"app_id": appID,
+		})
+		return
 	}
 
 	c.JSON(200, util.ResponseSuccessful("获取成功", apps))
@@ -184,20 +175,27 @@ func (ac *AppsController) GetAppByName(c *gin.Context) {
 	// 调用应用管理器获取应用
 	apps, err := ac.appManager.GetAppByName(ctx, appName)
 	if err != nil {
-		// 区分不同类型的错误
-		var validationError *app.ValidationError
-		if errors.As(err, &validationError) {
-			c.JSON(400, util.ResponseFailure("参数验证失败", err.Error()))
-			return
-		} else if errors.Is(err, app.NewAppNotFoundError(0)) {
-			c.JSON(404, util.ResponseFailure("应用不存在", err.Error()))
-			return
-		} else {
-			c.JSON(500, util.ResponseFailure("获取应用失败", err.Error()))
-			slog.Error("获取应用失败", "app_name", appName, "error", err)
-			return
-		}
+		ac.handleAppError(c, err, map[string]interface{}{
+			"app_name": appName,
+		})
+		return
 	}
 
 	c.JSON(200, util.ResponseSuccessful("获取成功", apps))
+}
+
+// handleAppError 统一处理应用相关错误
+func (ac *AppsController) handleAppError(c *gin.Context, err error, context map[string]interface{}) {
+	var validationError *app.ValidationError
+	var notFoundError *app.AppNotFoundError
+
+	switch {
+	case errors.As(err, &validationError):
+		c.JSON(400, util.ResponseFailure("参数验证失败", err.Error()))
+	case errors.As(err, &notFoundError):
+		c.JSON(404, util.ResponseFailure("应用不存在", err.Error()))
+	default:
+		c.JSON(500, util.ResponseFailure("获取应用失败", err.Error()))
+		slog.Error("获取应用失败", "error", err, "context", context)
+	}
 }

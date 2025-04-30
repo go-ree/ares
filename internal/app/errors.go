@@ -7,6 +7,12 @@ type ValidationError struct {
 	Message string
 }
 
+// AppNotFoundError 应用未找到错误
+type AppNotFoundError struct {
+	AppID   int64
+	AppName string
+}
+
 func (e *ValidationError) Error() string {
 	return e.Message
 }
@@ -32,10 +38,20 @@ func NewDuplicateAppError(appName string) *DuplicateAppError {
 	}
 }
 
-// NewAppNotFoundError 创建应用未找到错误
-func NewAppNotFoundError(appID int64) error {
-	if appID > 0 {
-		return fmt.Errorf("应用ID %d 不存在", appID)
+func (e *AppNotFoundError) Error() string {
+	if e.AppID > 0 {
+		return fmt.Sprintf("应用ID %d 不存在", e.AppID)
 	}
-	return fmt.Errorf("应用不存在")
+	if e.AppName != "" {
+		return fmt.Sprintf("应用名称 '%s' 不存在", e.AppName)
+	}
+	return "应用不存在"
+}
+
+// NewAppNotFoundError 应用未找到错误
+func NewAppNotFoundError(appID int64, appName string) *AppNotFoundError {
+	return &AppNotFoundError{
+		AppID:   appID,
+		AppName: appName,
+	}
 }
