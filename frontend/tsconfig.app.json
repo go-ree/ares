@@ -1,0 +1,27 @@
+{
+  "extends": "@vue/tsconfig/tsconfig.dom.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./app/web/*"],
+      "@components/*": ["./app/web/components/*"],
+      "@assets/*": ["./app/web/assets/*"],
+      "@services/*": ["./app/web/services/*"],
+      "@utils/*": ["./app/web/utils/*"]
+    },
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.vue",
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "app/**/*.vue"
+  ]
+}
