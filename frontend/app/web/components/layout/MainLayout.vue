@@ -119,7 +119,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowDown,
@@ -140,6 +140,34 @@ import {
 const router = useRouter()
 const isCollapse = ref(false)
 const activeMenu = computed(() => router.currentRoute.value.path)
+
+// 定义响应式变量存储窗口宽度
+const windowWidth = ref(window.innerWidth)
+// 定义自动折叠的宽度阈值
+const COLLAPSE_THRESHOLD = 1200
+
+// 监听窗口大小变化
+const handleResize = () => {
+  windowWidth.value = window.innerWidth
+  // 当窗口宽度小于阈值时自动折叠
+  if (windowWidth.value < COLLAPSE_THRESHOLD) {
+    isCollapse.value = true
+  } else {
+    isCollapse.value = false
+  }
+}
+
+// 组件挂载时添加监听器
+onMounted(() => {
+  window.addEventListener('resize', handleResize)
+  // 初始化时检查一次
+  handleResize()
+})
+
+// 组件卸载时移除监听器
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+})
 
 const user = ref({
   name: '测试用户',
@@ -195,21 +223,20 @@ const handleLogout = () => {
   border-right: 1px solid #ebeef5;
   min-height: 100vh;
   position: relative;
-  transition: width 0.2s;
+  transition: all 0.3s ease;
   box-sizing: border-box;
-  padding-bottom: 48px;
 }
 .el-menu-vertical {
   border-right: none;
-  flex: 1 1 0%;
-  min-height: 0;
+  flex: 1;
   overflow-y: auto;
+  padding-bottom: 48px;
 }
 .aside-collapse-btn {
-  position: absolute;
+  position: fixed;
   left: 0;
-  right: 0;
   bottom: 0;
+  width: inherit;
   height: 48px;
   display: flex;
   align-items: center;
@@ -217,15 +244,27 @@ const handleLogout = () => {
   cursor: pointer;
   border-top: 1px solid #ebeef5;
   background: #fff;
-  transition: background 0.2s;
+  transition: all 0.3s ease;
   z-index: 10;
 }
 .aside-collapse-btn:hover {
   background: #f5f7fa;
 }
+.hidden {
+  display: none;
+}
+.rotated {
+  transform: rotate(180deg);
+  transition: transform 0.3s ease;
+}
 .collapse-text {
   margin-left: 8px;
   color: #909399;
   font-size: 14px;
+}
+.custom-menu {
+  --el-menu-bg-color: #fff;
+  --el-menu-text-color: #303133;
+  --el-menu-active-color: #409EFF;
 }
 </style> 
