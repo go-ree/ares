@@ -3,6 +3,9 @@
   <div class="app-list-page">
     <h2>应用管理</h2>
     
+    <!-- 使用高级搜索组件 -->
+    <AppAdvancedSearch @search="handleAdvancedSearch" />
+    
     <!-- 使用搜索组件 -->
     <AppSearch @search="handleSearch" />
     
@@ -20,21 +23,28 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppSearch from '@/components/application/AppSearch.vue'
 import AppTable from '@/components/application/AppTable.vue'
+import AppAdvancedSearch from '@/components/application/AppAdvancedSearch.vue'
 
 // 应用列表数据
 const appList = ref([
-  {app_id: 10000, app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
-  {app_id: 10001, app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
-  {app_id: 10002, app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
-  {app_id: 10003, app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
-  {app_id: 10004, app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'}
+  {app_id: BigInt(10000), app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
+  {app_id: BigInt(10001), app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
+  {app_id: BigInt(10002), app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
+  {app_id: BigInt(10003), app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
+  {app_id: BigInt(10004), app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'}
 ])
+
+// 高级搜索处理函数
+const handleAdvancedSearch = (searchParams: any) => {
+  console.log('高级搜索参数:', searchParams)
+  // 这里实现高级搜索逻辑
+  // 可以根据多个条件筛选应用列表
+}
 
 // 搜索处理函数
 const handleSearch = (keyword: string) => {
-  // 实现搜索逻辑
   console.log('搜索关键词:', keyword)
-  // 这里可以调用API进行搜索
+  // 这里实现简单搜索逻辑
 }
 
 // 编辑处理函数
@@ -46,7 +56,7 @@ const handleEdit = (row: any) => {
 // 删除处理函数
 const handleDelete = (row: any) => {
   ElMessageBox.confirm(
-    `确定要删除应用 ${row.name} 吗？`,
+    `确定要删除应用 ${row.app_name} 吗？`,
     '警告',
     {
       confirmButtonText: '确定',
