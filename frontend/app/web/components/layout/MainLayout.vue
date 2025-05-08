@@ -28,83 +28,85 @@
           <el-menu
             :default-active="activeMenu"
             class="el-menu-vertical"
+            :class="{ 'is-collapsed': isCollapse }"
             :router="true"
             :collapse="isCollapse"
+            :unique-opened="!isCollapse"
             background-color="#fff"
             text-color="#303133"
             active-text-color="#409EFF"
           >
             <el-menu-item index="/">
               <el-icon><House /></el-icon>
-              <span v-if="!isCollapse">首页</span>
+              <span class="menu-text">首页</span>
             </el-menu-item>
             <el-sub-menu index="/application">
               <template #title>
                 <el-icon><Collection /></el-icon>
-                <span v-if="!isCollapse">应用管理</span>
+                <span class="menu-text">应用管理</span>
               </template>
               <el-menu-item index="/application/list">
                 <el-icon><List /></el-icon>
-                <span v-if="!isCollapse">应用信息查询</span>
+                <span class="menu-text">应用信息查询</span>
               </el-menu-item>
               <el-menu-item index="/application/config">
                 <el-icon><Setting /></el-icon>
-                <span v-if="!isCollapse">应用配置</span>
+                <span class="menu-text">应用配置</span>
               </el-menu-item>
               <el-menu-item index="/application/apply">
                 <el-icon><Edit /></el-icon>
-                <span v-if="!isCollapse">应用申请</span>
+                <span class="menu-text">应用申请</span>
               </el-menu-item>
             </el-sub-menu>
             <el-sub-menu index="/publish">
               <template #title>
                 <el-icon><UploadFilled /></el-icon>
-                <span v-if="!isCollapse">发布工具</span>
+                <span class="menu-text">发布工具</span>
               </template>
               <el-menu-item index="/publish/deploy">
                 <el-icon><Upload /></el-icon>
-                <span v-if="!isCollapse">服务发布</span>
+                <span class="menu-text">服务发布</span>
               </el-menu-item>
               <el-menu-item index="/publish/merge">
                 <el-icon><Link /></el-icon>
-                <span v-if="!isCollapse">代码合并</span>
+                <span class="menu-text">代码合并</span>
               </el-menu-item>
             </el-sub-menu>
             <el-sub-menu index="/operation">
               <template #title>
                 <el-icon><Tools /></el-icon>
-                <span v-if="!isCollapse">运维管理</span>
+                <span class="menu-text">运维管理</span>
               </template>
               <el-menu-item index="/operation/log">
                 <el-icon><Document /></el-icon>
-                <span v-if="!isCollapse">日志查询</span>
+                <span class="menu-text">日志查询</span>
               </el-menu-item>
               <el-menu-item index="/operation/monitor">
                 <el-icon><DataAnalysis /></el-icon>
-                <span v-if="!isCollapse">监控面板</span>
+                <span class="menu-text">监控面板</span>
               </el-menu-item>
             </el-sub-menu>
             <el-sub-menu index="/system">
               <template #title>
                 <el-icon><Setting /></el-icon>
-                <span v-if="!isCollapse">系统设置</span>
+                <span class="menu-text">系统设置</span>
               </template>
               <el-menu-item index="/system/settings">
                 <el-icon><Tools /></el-icon>
-                <span v-if="!isCollapse">系统配置</span>
+                <span class="menu-text">系统配置</span>
               </el-menu-item>
               <el-menu-item index="/system/version">
                 <el-icon><InfoFilled /></el-icon>
-                <span v-if="!isCollapse">版本信息</span>
+                <span class="menu-text">版本信息</span>
               </el-menu-item>
             </el-sub-menu>
           </el-menu>
           <div class="aside-collapse-btn" @click="toggleCollapse">
-            <svg viewBox="64 64 896 896" focusable="false" data-icon="menu-fold" width="22" height="22" fill="currentColor" aria-hidden="true">
+            <svg :class="{ rotated: isCollapse }" viewBox="64 64 896 896" focusable="false" data-icon="menu-fold" width="22" height="22" fill="currentColor" aria-hidden="true">
               <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6-8 8-8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6-8 8-8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 000 13.8z"></path>
             </svg>
-            <span v-if="!isCollapse" class="collapse-text">收起</span>
-            <span v-else class="collapse-text">展开</span>
+            <span class="collapse-text" :class="{ hidden: isCollapse }">收起</span>
+            <span class="collapse-text" :class="{ hidden: !isCollapse }">展开</span>
           </div>
         </el-aside>
         <!-- 主内容区 -->
@@ -141,7 +143,7 @@ const activeMenu = computed(() => router.currentRoute.value.path)
 
 const user = ref({
   name: '测试用户',
-  avatar: 'https://api.dicebear.com/7.x/miniavs/svg?seed=1'
+  avatar: 'https://gw.alipayobjects.com/zos/rmsportal/ubnKSIfAJTxIgXOKlciN.png'
 })
 
 const toggleCollapse = () => {
