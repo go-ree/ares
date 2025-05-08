@@ -1,100 +1,80 @@
+<!-- 应用列表页面 -->
 <template>
-  <div class="app-list">
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <span>应用列表</span>
-          <el-button type="primary" @click="handleAdd">新增应用</el-button>
-        </div>
-      </template>
-      
-      <el-table :data="appList" style="width: 100%">
-        <el-table-column prop="appId" label="应用ID" width="180" />
-        <el-table-column prop="appName" label="应用名称" width="180" />
-        <el-table-column prop="owner" label="负责人" />
-        <el-table-column prop="devLanguage" label="开发语言" />
-        <el-table-column prop="status" label="状态">
-          <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)">{{ row.status }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="200">
-          <template #default="{ row }">
-            <el-button-group>
-              <el-button size="small" @click="handleEdit(row)">编辑</el-button>
-              <el-button size="small" type="primary" @click="handleConfig(row)">配置</el-button>
-              <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
-            </el-button-group>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
+  <div class="app-list-page">
+    <h2>应用管理</h2>
+    
+    <!-- 使用搜索组件 -->
+    <AppSearch @search="handleSearch" />
+    
+    <!-- 使用表格组件 -->
+    <AppTable 
+      :app-list="appList" 
+      @edit="handleEdit"
+      @delete="handleDelete"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import AppSearch from '@/components/application/AppSearch.vue'
+import AppTable from '@/components/application/AppTable.vue'
 
-// 模拟数据
+// 应用列表数据
 const appList = ref([
-  {
-    appId: 'user-service',
-    appName: '用户服务',
-    owner: '张三',
-    devLanguage: 'Java',
-    status: 'RUNNING'
-  },
-  {
-    appId: 'order-service',
-    appName: '订单服务',
-    owner: '李四',
-    devLanguage: 'Go',
-    status: 'STOPPED'
-  },
-  {
-    appId: 'payment-service',
-    appName: '支付服务',
-    owner: '王五',
-    devLanguage: 'Python',
-    status: 'DEPLOYING'
-  }
+  {app_id: 10000, app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
+  {app_id: 10001, app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
+  {app_id: 10002, app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
+  {app_id: 10003, app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
+  {app_id: 10004, app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'}
 ])
 
-const getStatusType = (status: string) => {
-  const map: Record<string, string> = {
-    RUNNING: 'success',
-    STOPPED: 'info',
-    DEPLOYING: 'warning',
-    ERROR: 'danger'
-  }
-  return map[status] || 'info'
+// 搜索处理函数
+const handleSearch = (keyword: string) => {
+  // 实现搜索逻辑
+  console.log('搜索关键词:', keyword)
+  // 这里可以调用API进行搜索
 }
 
-const handleAdd = () => {
-  console.log('新增应用')
-}
-
+// 编辑处理函数
 const handleEdit = (row: any) => {
-  console.log('编辑应用', row)
+  console.log('编辑应用:', row)
+  // 这里可以实现编辑逻辑
 }
 
-const handleConfig = (row: any) => {
-  console.log('配置应用', row)
-}
-
+// 删除处理函数
 const handleDelete = (row: any) => {
-  console.log('删除应用', row)
+  ElMessageBox.confirm(
+    `确定要删除应用 ${row.name} 吗？`,
+    '警告',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }
+  ).then(() => {
+    // 这里实现删除逻辑
+    ElMessage.success('删除成功')
+  }).catch(() => {
+    ElMessage.info('已取消删除')
+  })
 }
+
+// 页面加载时获取数据
+onMounted(() => {
+  // 这里可以调用API获取应用列表
+  console.log('页面加载完成，获取应用列表')
+})
 </script>
 
 <style scoped>
-.app-list {
+.app-list-page {
   padding: 20px;
 }
 
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+h2 {
+  margin-bottom: 20px;
+  color: #303133;
 }
 </style> 

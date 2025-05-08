@@ -184,11 +184,14 @@ const handleLogout = () => {
 </script>
 
 <style scoped>
+/* 整体布局容器样式 */
 .common-layout {
   width: 100vw;
   height: 100vh;
   background: #f5f7fa;
 }
+
+/* 顶部导航栏样式 */
 .header {
   display: flex;
   align-items: center;
@@ -198,24 +201,34 @@ const handleLogout = () => {
   border-bottom: 1px solid #ebeef5;
   padding: 0 24px;
 }
+
+/* 项目标题样式 */
 .project-title {
   font-size: 20px;
   font-weight: bold;
   color: #409EFF;
 }
+
+/* 头部右侧区域样式 */
 .header-right {
   display: flex;
   align-items: center;
 }
+
+/* 用户信息区域样式 */
 .user-info {
   display: flex;
   align-items: center;
   cursor: pointer;
 }
+
+/* 用户名样式 */
 .username {
   margin: 0 8px;
   color: #303133;
 }
+
+/* 侧边栏容器样式 */
 .aside {
   display: flex;
   flex-direction: column;
@@ -226,17 +239,21 @@ const handleLogout = () => {
   transition: all 0.3s ease;
   box-sizing: border-box;
 }
+
+/* 垂直菜单样式 */
 .el-menu-vertical {
   border-right: none;
   flex: 1;
   overflow-y: auto;
-  padding-bottom: 48px;
+  padding-bottom: 48px;  /* 为折叠按钮留出空间 */
 }
+
+/* 折叠按钮容器样式 */
 .aside-collapse-btn {
-  position: fixed;
+  position: fixed;  /* 固定定位 */
   left: 0;
   bottom: 0;
-  width: inherit;
+  width: inherit;  /* 继承父元素宽度 */
   height: 48px;
   display: flex;
   align-items: center;
@@ -247,21 +264,30 @@ const handleLogout = () => {
   transition: all 0.3s ease;
   z-index: 10;
 }
+
+/* 折叠按钮悬停效果 */
 .aside-collapse-btn:hover {
   background: #f5f7fa;
 }
+
+/* 隐藏元素样式 */
 .hidden {
   display: none;
 }
+
+/* 折叠按钮旋转动画 */
 .rotated {
   transform: rotate(180deg);
   transition: transform 0.3s ease;
 }
+
+/* 折叠按钮文字样式 */
 .collapse-text {
   margin-left: 8px;
   color: #909399;
   font-size: 14px;
 }
+
 .custom-menu {
   --el-menu-bg-color: #fff;
   --el-menu-text-color: #303133;
