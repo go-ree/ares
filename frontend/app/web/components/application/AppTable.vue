@@ -55,4 +55,17 @@ const handleDelete = (row: any) => {
 .app-table {
   margin-top: 20px;
 }
+
+/* 移除按钮的焦点黑边 */
+:deep(.el-button) {
+  outline: none !important;
+}
+
+:deep(.el-button:focus) {
+  outline: none !important;
+}
+
+:deep(.el-button:focus-visible) {
+  outline: none !important;
+}
 </style> 

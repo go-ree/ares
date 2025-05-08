@@ -3,18 +3,18 @@
   <div class="app-advanced-search">
     <el-form :model="searchForm" label-width="100px" class="search-form">
       <el-row :gutter="20">
-        <el-col :span="6">
-          <el-form-item label="应用名称">
+        <el-col :span="8">
+          <el-form-item label="应用名称:">
             <el-input v-model="searchForm.app_name" placeholder="请输入应用名称" />
           </el-form-item>
         </el-col>
-        <el-col :span="6">
-          <el-form-item label="负责人">
+        <el-col :span="8">
+          <el-form-item label="负责人:">
             <el-input v-model="searchForm.owner" placeholder="请输入负责人" />
           </el-form-item>
         </el-col>
-        <el-col :span="6">
-          <el-form-item label="开发语言">
+        <el-col :span="8">
+          <el-form-item label="开发语言:">
             <el-select v-model="searchForm.dev_language" placeholder="请选择开发语言" style="width: 100%">
               <el-option label="Golang" value="golang" />
               <el-option label="Java" value="java" />
@@ -23,8 +23,10 @@
             </el-select>
           </el-form-item>
         </el-col>
-        <el-col :span="6">
-          <el-form-item label="创建时间">
+      </el-row>
+      <el-row :gutter="20">
+        <el-col :span="8">
+          <el-form-item label="创建时间:">
             <el-date-picker
               v-model="searchForm.created_at"
               type="daterange"
@@ -94,5 +96,18 @@ const handleReset = () => {
 
 :deep(.el-form-item) {
   margin-bottom: 18px;
+}
+
+/* 移除按钮的焦点黑边 */
+:deep(.el-button) {
+  outline: none !important;
+}
+
+:deep(.el-button:focus) {
+  outline: none !important;
+}
+
+:deep(.el-button:focus-visible) {
+  outline: none !important;
 }
 </style> 

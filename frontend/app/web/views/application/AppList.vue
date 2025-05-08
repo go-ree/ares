@@ -5,10 +5,7 @@
     
     <!-- 使用高级搜索组件 -->
     <AppAdvancedSearch @search="handleAdvancedSearch" />
-    
-    <!-- 使用搜索组件 -->
-    <AppSearch @search="handleSearch" />
-    
+
     <!-- 使用表格组件 -->
     <AppTable 
       :app-list="appList" 
@@ -21,7 +18,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import AppSearch from '@/components/application/AppSearch.vue'
 import AppTable from '@/components/application/AppTable.vue'
 import AppAdvancedSearch from '@/components/application/AppAdvancedSearch.vue'
 
