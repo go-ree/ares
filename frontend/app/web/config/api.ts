@@ -3,7 +3,6 @@ import type { AxiosInstance } from 'axios'
 
 // 创建axios实例
 const api: AxiosInstance = axios.create({
-  baseURL: 'http://ares.ttpai.top',  // API的基础URL
   timeout: 10000,  // 请求超时时间
   headers: {
     'Content-Type': 'application/json'

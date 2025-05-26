@@ -42,14 +42,27 @@ const loading = ref(false)
 const fetchAppList = async (params: Partial<AppQueryParams> = {}) => {
   loading.value = true
   try {
+    // 从搜索参数中提取非分页参数
+    const { page_num: searchPageNum, page_size: searchPageSize, ...searchParams } = params
+    
+    // 使用搜索参数中的分页参数（如果有），否则使用本地状态
     const queryParams: AppQueryParams = {
-      pageNum: pageNum.value,
-      pageSize: pageSize.value,
-      ...params
+      page_num: searchPageNum ?? pageNum.value,
+      page_size: searchPageSize ?? pageSize.value,
+      ...searchParams
     }
+    
     const response = await queryApps(queryParams)
-    appList.value = response.data.list
-    total.value = response.data.total
+    if (response.data.code === 1) {  // 检查响应状态码
+      appList.value = response.data.result.apps
+      total.value = response.data.result.total
+      
+      // 更新本地分页状态
+      pageNum.value = response.data.result.page_num
+      pageSize.value = response.data.result.page_size
+    } else {
+      ElMessage.error(response.data.msg || '获取应用列表失败')
+    }
   } catch (error) {
     console.error('获取应用列表失败:', error)
     ElMessage.error('获取应用列表失败')
@@ -60,7 +73,7 @@ const fetchAppList = async (params: Partial<AppQueryParams> = {}) => {
 
 // 高级搜索处理函数
 const handleAdvancedSearch = (searchParams: Partial<AppQueryParams>) => {
-  pageNum.value = 1 // 重置页码
+  // 不再需要手动重置页码，因为搜索参数中已经包含了分页信息
   fetchAppList(searchParams)
 }
 

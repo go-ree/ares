@@ -13,6 +13,14 @@ export default defineConfig({
     },
     watch: {
       usePolling: true,
+    },
+    proxy: {
+      '/api': {
+        target: 'http://ares.ttpai.top',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path
+      }
     }
   },
   resolve: {

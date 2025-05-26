@@ -1,16 +1,29 @@
 <!-- 应用列表表格组件 -->
 <template>
   <div class="app-table">
-    <el-table :data="appList" style="width: 100%" v-loading="loading">
-      <el-table-column prop="appId" label="APPID" />
-      <el-table-column prop="appName" label="应用名称" />
-      <el-table-column prop="appNameCn" label="应用中文名称" />
-      <el-table-column prop="descriptionCn" label="应用描述信息" />
-      <el-table-column prop="ownerCn" label="负责人" />
-      <el-table-column prop="devLanguage" label="开发语言" />
-      <el-table-column prop="gitUrl" label="Git仓库地址" />
-      <el-table-column prop="createdAt" label="应用创建时间" />
-      <el-table-column label="操作" width="200">
+    <el-table 
+      :data="appList" 
+      style="width: 100%" 
+      v-loading="loading"
+      :max-height="tableHeight"
+    >
+      <el-table-column prop="app_id" label="APPID" width="100" />
+      <el-table-column prop="app_name" label="应用名称" min-width="150" />
+      <el-table-column prop="app_name_cn" label="应用中文名称" min-width="150" />
+      <el-table-column prop="description_cn" label="应用描述信息" min-width="200" show-overflow-tooltip />
+      <el-table-column prop="owner_cn" label="负责人" width="120" />
+      <el-table-column prop="dev_language" label="开发语言" width="100">
+        <template #default="{ row }">
+          {{ row.dev_language.toUpperCase() }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="git_url" label="Git仓库地址" min-width="200" show-overflow-tooltip />
+      <el-table-column prop="created_at" label="应用创建时间" width="180">
+        <template #default="{ row }">
+          {{ new Date(row.created_at).toLocaleString() }}
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="150" fixed="right">
         <template #default="{ row }">
           <el-button type="primary" link @click="handleEdit(row)">编辑</el-button>
           <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
@@ -35,7 +48,7 @@
 
 <script setup lang="ts">
 import type { AppInfo } from '@/models/application'
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 
 // 定义props
 const props = defineProps<{
@@ -50,6 +63,32 @@ const emit = defineEmits(['edit', 'delete', 'page-change', 'size-change'])
 // 分页相关
 const currentPage = ref(1)
 const pageSize = ref(10)
+
+// 表格高度计算
+const tableHeight = ref(500) // 默认高度
+
+// 计算表格高度
+const calculateTableHeight = () => {
+  // 获取视窗高度
+  const windowHeight = window.innerHeight
+  // 减去其他元素的高度（头部、搜索框、分页器等）
+  // 这里假设其他元素总共占用了 300px
+  tableHeight.value = windowHeight - 300
+}
+
+// 监听窗口大小变化
+const handleResize = () => {
+  calculateTableHeight()
+}
+
+onMounted(() => {
+  calculateTableHeight()
+  window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+})
 
 // 编辑处理函数
 const handleEdit = (row: AppInfo) => {
@@ -74,13 +113,22 @@ const handleSizeChange = (size: number) => {
 
 <style scoped>
 .app-table {
-  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: #fff;
+  padding: 20px;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
 }
 
 .pagination-container {
   margin-top: 20px;
+  padding: 10px 0;
   display: flex;
   justify-content: flex-end;
+  background-color: #fff;
+  border-top: 1px solid #ebeef5;
 }
 
 /* 移除按钮的焦点黑边 */
@@ -94,5 +142,24 @@ const handleSizeChange = (size: number) => {
 
 :deep(.el-button:focus-visible) {
   outline: none !important;
+}
+
+/* 表格样式优化 */
+:deep(.el-table) {
+  --el-table-border-color: #ebeef5;
+  --el-table-header-bg-color: #f5f7fa;
+}
+
+:deep(.el-table th) {
+  font-weight: 600;
+  color: #606266;
+}
+
+:deep(.el-table td) {
+  color: #606266;
+}
+
+:deep(.el-table--enable-row-hover .el-table__body tr:hover > td) {
+  background-color: #f5f7fa;
 }
 </style> 
