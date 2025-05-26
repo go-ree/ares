@@ -189,6 +189,7 @@ const handleLogout = () => {
   width: 100vw;
   height: 100vh;
   background: #f5f7fa;
+  overflow: hidden; /* 防止出现双滚动条 */
 }
 
 /* 顶部导航栏样式 */
@@ -198,99 +199,95 @@ const handleLogout = () => {
   justify-content: space-between;
   height: 60px;
   background: #fff;
-  border-bottom: 1px solid #ebeef5;
-  padding: 0 24px;
+  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
 }
 
-/* 项目标题样式 */
-.project-title {
-  font-size: 20px;
-  font-weight: bold;
-  color: #409EFF;
-}
-
-/* 头部右侧区域样式 */
-.header-right {
-  display: flex;
-  align-items: center;
-}
-
-/* 用户信息区域样式 */
-.user-info {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-}
-
-/* 用户名样式 */
-.username {
-  margin: 0 8px;
-  color: #303133;
-}
-
-/* 侧边栏容器样式 */
+/* 侧边栏样式 */
 .aside {
+  position: fixed;
+  top: 60px; /* header的高度 */
+  bottom: 0;
+  left: 0;
+  background: #fff;
+  box-shadow: 2px 0 8px 0 rgba(29, 35, 41, 0.05);
+  z-index: 999;
+  transition: width 0.3s;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border-right: 1px solid #ebeef5;
-  min-height: 100vh;
-  position: relative;
-  transition: all 0.3s ease;
-  box-sizing: border-box;
 }
 
-/* 垂直菜单样式 */
+/* 菜单样式 */
 .el-menu-vertical {
   border-right: none;
   flex: 1;
-  overflow-y: auto;
-  padding-bottom: 48px;  /* 为折叠按钮留出空间 */
+  overflow: hidden; /* 防止菜单出现滚动条 */
 }
 
-/* 折叠按钮容器样式 */
+.el-menu-vertical:not(.el-menu--collapse) {
+  width: 200px;
+}
+
+/* 折叠按钮样式 */
 .aside-collapse-btn {
-  position: fixed;  /* 固定定位 */
-  left: 0;
-  bottom: 0;
-  width: inherit;  /* 继承父元素宽度 */
-  height: 48px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  border-top: 1px solid #ebeef5;
-  background: #fff;
-  transition: all 0.3s ease;
-  z-index: 10;
-}
-
-/* 折叠按钮悬停效果 */
-.aside-collapse-btn:hover {
-  background: #f5f7fa;
-}
-
-/* 隐藏元素样式 */
-.hidden {
-  display: none;
-}
-
-/* 折叠按钮旋转动画 */
-.rotated {
-  transform: rotate(180deg);
-  transition: transform 0.3s ease;
-}
-
-/* 折叠按钮文字样式 */
-.collapse-text {
-  margin-left: 8px;
+  border-top: 1px solid #f0f0f0;
   color: #909399;
-  font-size: 14px;
+  transition: all 0.3s;
+  flex-shrink: 0; /* 防止按钮被压缩 */
 }
 
-.custom-menu {
-  --el-menu-bg-color: #fff;
-  --el-menu-text-color: #303133;
-  --el-menu-active-color: #409EFF;
+/* 主内容区样式 */
+:deep(.el-main) {
+  margin-left: v-bind('isCollapse ? "64px" : "200px"');
+  margin-top: 60px; /* header的高度 */
+  padding: 20px;
+  height: calc(100vh - 60px); /* 减去header高度 */
+  background: #f5f7fa;
+  overflow-y: auto; /* 允许垂直滚动 */
+  overflow-x: hidden; /* 禁止水平滚动 */
+}
+
+/* 用户信息样式 */
+.user-info {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 0 12px;
+  height: 100%;
+}
+
+.user-info:hover {
+  background: rgba(0, 0, 0, 0.025);
+}
+
+.username {
+  margin: 0 8px;
+  font-size: 14px;
+  color: #606266;
+}
+
+/* 项目标题样式 */
+.project-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+  margin-left: 20px;
+}
+
+/* 头部左右布局 */
+.header-left,
+.header-right {
+  display: flex;
+  align-items: center;
+  height: 100%;
 }
 </style> 

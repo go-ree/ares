@@ -65,30 +65,7 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 
 // 表格高度计算
-const tableHeight = ref(500) // 默认高度
-
-// 计算表格高度
-const calculateTableHeight = () => {
-  // 获取视窗高度
-  const windowHeight = window.innerHeight
-  // 减去其他元素的高度（头部、搜索框、分页器等）
-  // 这里假设其他元素总共占用了 300px
-  tableHeight.value = windowHeight - 300
-}
-
-// 监听窗口大小变化
-const handleResize = () => {
-  calculateTableHeight()
-}
-
-onMounted(() => {
-  calculateTableHeight()
-  window.addEventListener('resize', handleResize)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
-})
+const tableHeight = ref(undefined)
 
 // 编辑处理函数
 const handleEdit = (row: AppInfo) => {
@@ -113,15 +90,30 @@ const handleSizeChange = (size: number) => {
 
 <style scoped>
 .app-table {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background-color: #fff;
   padding: 20px;
-  border-radius: 4px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
 }
 
+/* 表格样式 */
+:deep(.el-table) {
+  --el-table-border-color: #ebeef5;
+  --el-table-header-bg-color: #f5f7fa;
+}
+
+:deep(.el-table th) {
+  font-weight: 600;
+  color: #606266;
+  background-color: var(--el-table-header-bg-color);
+}
+
+:deep(.el-table td) {
+  color: #606266;
+}
+
+:deep(.el-table--enable-row-hover .el-table__body tr:hover > td) {
+  background-color: #f5f7fa;
+}
+
+/* 分页器容器样式 */
 .pagination-container {
   margin-top: 20px;
   padding: 10px 0;
@@ -142,24 +134,5 @@ const handleSizeChange = (size: number) => {
 
 :deep(.el-button:focus-visible) {
   outline: none !important;
-}
-
-/* 表格样式优化 */
-:deep(.el-table) {
-  --el-table-border-color: #ebeef5;
-  --el-table-header-bg-color: #f5f7fa;
-}
-
-:deep(.el-table th) {
-  font-weight: 600;
-  color: #606266;
-}
-
-:deep(.el-table td) {
-  color: #606266;
-}
-
-:deep(.el-table--enable-row-hover .el-table__body tr:hover > td) {
-  background-color: #f5f7fa;
 }
 </style> 

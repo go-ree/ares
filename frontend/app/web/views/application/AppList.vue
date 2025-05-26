@@ -128,11 +128,35 @@ onMounted(() => {
 
 <style scoped>
 .app-list-page {
-  padding: 20px;
+  min-height: 100%;
+  background-color: #f5f7fa;
 }
 
 h2 {
-  margin-bottom: 20px;
+  margin: 0 0 20px 0;
   color: #303133;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+/* 搜索组件样式 */
+:deep(.app-advanced-search) {
+  margin-bottom: 20px;
+}
+
+/* 表格组件样式 */
+:deep(.app-table) {
+  background-color: #fff;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+}
+
+/* 分页器样式 */
+:deep(.pagination-container) {
+  padding: 16px 0;
+  display: flex;
+  justify-content: flex-end;
+  background-color: #fff;
+  border-top: 1px solid #ebeef5;
 }
 </style> 
