@@ -90,13 +90,17 @@ const handleSizeChange = (size: number) => {
 
 <style scoped>
 .app-table {
-  padding: 20px;
+  padding: 20px 20px 0 20px; /* 只保留上、左、右的内边距 */
+  background-color: #fff;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
 }
 
 /* 表格样式 */
 :deep(.el-table) {
   --el-table-border-color: #ebeef5;
   --el-table-header-bg-color: #f5f7fa;
+  margin-bottom: 0; /* 移除表格底部边距 */
 }
 
 :deep(.el-table th) {
@@ -115,12 +119,14 @@ const handleSizeChange = (size: number) => {
 
 /* 分页器容器样式 */
 .pagination-container {
-  margin-top: 20px;
-  padding: 10px 0;
+  padding: 16px 20px; /* 调整内边距，与表格对齐 */
   display: flex;
   justify-content: flex-end;
   background-color: #fff;
   border-top: 1px solid #ebeef5;
+  margin: 0 -20px; /* 抵消父元素的内边距 */
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
 }
 
 /* 移除按钮的焦点黑边 */

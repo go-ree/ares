@@ -10,10 +10,10 @@ export enum AppStatus {
 export enum DevLanguage {
   JAVA = 'JAVA',
   PYTHON = 'PYTHON',
-  GO = 'GO',
-  NODE = 'NODE',
-  PHP = 'PHP',
-  OTHER = 'OTHER'
+  GO = 'GOLANG',
+  NODE = 'NODE.JS',
+  // PHP = 'PHP',
+  // OTHER = 'OTHER'
 }
 
 // API 响应接口

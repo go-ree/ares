@@ -27,13 +27,18 @@
         </el-col>
         <el-col :span="8">
           <el-form-item label="开发语言:">
-            <el-select v-model="searchForm.dev_language" placeholder="请选择开发语言" style="width: 100%">
+            <el-select 
+              v-model="searchForm.dev_language" 
+              placeholder="请选择开发语言" 
+              style="width: 100%"
+              clearable
+            >
               <el-option label="Java" :value="DevLanguage.JAVA" />
               <el-option label="Python" :value="DevLanguage.PYTHON" />
               <el-option label="Golang" :value="DevLanguage.GO" />
               <el-option label="Node.js" :value="DevLanguage.NODE" />
-              <el-option label="PHP" :value="DevLanguage.PHP" />
-              <el-option label="其他" :value="DevLanguage.OTHER" />
+              <!-- <el-option label="PHP" :value="DevLanguage.PHP" /> -->
+              <!-- <el-option label="其他" :value="DevLanguage.OTHER" /> -->
             </el-select>
           </el-form-item>
         </el-col>
