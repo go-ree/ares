@@ -14,7 +14,7 @@
       <el-table-column prop="owner_cn" label="负责人" width="120" />
       <el-table-column prop="dev_language" label="开发语言" width="100">
         <template #default="{ row }">
-          {{ row.dev_language.toUpperCase() }}
+          {{ row.dev_language.charAt(0).toUpperCase() + row.dev_language.slice(1).toLowerCase() }}
         </template>
       </el-table-column>
       <el-table-column prop="git_url" label="Git仓库地址" min-width="200" show-overflow-tooltip />
