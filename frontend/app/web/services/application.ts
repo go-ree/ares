@@ -1,7 +1,12 @@
 import axios from 'axios'
 import type { AppInfo, AppQueryParams, PageResponse } from '../models/application'
 
-const BASE_URL = '/api/app'
+const BASE_URL = '/api/v1'
+
+// 查询应用列表
+export const queryApps = async (params: AppQueryParams) => {
+  return axios.post<PageResponse<AppInfo>>(`${BASE_URL}/apps/query`, params)
+}
 
 // 获取应用列表
 export const getAppList = (params: AppQueryParams) => {

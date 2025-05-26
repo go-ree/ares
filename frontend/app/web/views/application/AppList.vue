@@ -9,8 +9,12 @@
     <!-- 使用表格组件 -->
     <AppTable 
       :app-list="appList" 
+      :loading="loading"
+      :total="total"
       @edit="handleEdit"
       @delete="handleDelete"
+      @page-change="handlePageChange"
+      @size-change="handleSizeChange"
     />
   </div>
 </template>
@@ -20,21 +24,57 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppTable from '@/components/application/AppTable.vue'
 import AppAdvancedSearch from '@/components/application/AppAdvancedSearch.vue'
+import { queryApps } from '@/services/application'
+import type { AppInfo, AppQueryParams, PageResponse } from '@/models/application'
+
+// 分页参数
+const pageNum = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 
 // 应用列表数据
-const appList = ref([
-  {app_id: BigInt(10000), app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
-  {app_id: BigInt(10001), app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
-  {app_id: BigInt(10002), app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
-  {app_id: BigInt(10003), app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'},
-  {app_id: BigInt(10004), app_name: 'ares', app_name_cn: '发布引擎',owner: 'yangyang.tian',owner_cn:'田洋杨',dev_language:'golang',description_cn:'发布引擎',git_url:'git@ttpai.cn',created_at:'2024'}
-])
+const appList = ref<AppInfo[]>([])
+
+// 加载状态
+const loading = ref(false)
+
+// 获取应用列表数据
+const fetchAppList = async (params: Partial<AppQueryParams> = {}) => {
+  loading.value = true
+  try {
+    const queryParams: AppQueryParams = {
+      pageNum: pageNum.value,
+      pageSize: pageSize.value,
+      ...params
+    }
+    const response = await queryApps(queryParams)
+    appList.value = response.data.list
+    total.value = response.data.total
+  } catch (error) {
+    console.error('获取应用列表失败:', error)
+    ElMessage.error('获取应用列表失败')
+  } finally {
+    loading.value = false
+  }
+}
 
 // 高级搜索处理函数
-const handleAdvancedSearch = (searchParams: any) => {
-  console.log('高级搜索参数:', searchParams)
-  // 这里实现高级搜索逻辑
-  // 可以根据多个条件筛选应用列表
+const handleAdvancedSearch = (searchParams: Partial<AppQueryParams>) => {
+  pageNum.value = 1 // 重置页码
+  fetchAppList(searchParams)
+}
+
+// 处理分页变化
+const handlePageChange = (newPage: number) => {
+  pageNum.value = newPage
+  fetchAppList()
+}
+
+// 处理每页条数变化
+const handleSizeChange = (newSize: number) => {
+  pageSize.value = newSize
+  pageNum.value = 1
+  fetchAppList()
 }
 
 // 搜索处理函数
@@ -69,8 +109,7 @@ const handleDelete = (row: any) => {
 
 // 页面加载时获取数据
 onMounted(() => {
-  // 这里可以调用API获取应用列表
-  console.log('页面加载完成，获取应用列表')
+  fetchAppList()
 })
 </script>
 
