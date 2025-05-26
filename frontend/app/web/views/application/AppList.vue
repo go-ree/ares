@@ -38,18 +38,19 @@ const appList = ref<AppInfo[]>([])
 // 加载状态
 const loading = ref(false)
 
+// 保存当前的搜索条件
+const currentSearchParams = ref<Partial<AppQueryParams>>({})
+
 // 获取应用列表数据
 const fetchAppList = async (params: Partial<AppQueryParams> = {}) => {
   loading.value = true
   try {
-    // 从搜索参数中提取非分页参数
-    const { page_num: searchPageNum, page_size: searchPageSize, ...searchParams } = params
-    
-    // 使用搜索参数中的分页参数（如果有），否则使用本地状态
+    // 合并当前搜索条件和传入的参数
     const queryParams: AppQueryParams = {
-      page_num: searchPageNum ?? pageNum.value,
-      page_size: searchPageSize ?? pageSize.value,
-      ...searchParams
+      ...currentSearchParams.value, // 保持当前的搜索条件
+      ...params, // 新的参数会覆盖旧的参数
+      page_num: params.page_num ?? pageNum.value,
+      page_size: params.page_size ?? pageSize.value,
     }
     
     const response = await queryApps(queryParams)
@@ -73,21 +74,25 @@ const fetchAppList = async (params: Partial<AppQueryParams> = {}) => {
 
 // 高级搜索处理函数
 const handleAdvancedSearch = (searchParams: Partial<AppQueryParams>) => {
-  // 不再需要手动重置页码，因为搜索参数中已经包含了分页信息
-  fetchAppList(searchParams)
+  // 更新当前搜索条件
+  currentSearchParams.value = { ...searchParams }
+  // 重置页码到第一页
+  pageNum.value = 1
+  // 使用新的搜索条件获取数据
+  fetchAppList({ ...searchParams, page_num: 1 })
 }
 
 // 处理分页变化
 const handlePageChange = (newPage: number) => {
   pageNum.value = newPage
-  fetchAppList()
+  fetchAppList({ page_num: newPage })
 }
 
 // 处理每页条数变化
 const handleSizeChange = (newSize: number) => {
   pageSize.value = newSize
   pageNum.value = 1
-  fetchAppList()
+  fetchAppList({ page_size: newSize, page_num: 1 })
 }
 
 // 搜索处理函数
