@@ -67,7 +67,7 @@ func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
 // @Success 200 {object} util.ResponseTemplate{code=int,result=entity.TaskRecord} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
-// @Router	/api/v1/deploy/publish/publish/status [get]
+// @Router	/api/v1/deploy/publish/status [get]
 func (pc *PublishController) GetBuildTaskList(c *gin.Context) {
 	status, err := pc.publishManager.JobStatus()
 	if err != nil {
