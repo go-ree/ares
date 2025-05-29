@@ -4,10 +4,10 @@ import (
 	"ares/internal/api/util"
 	"ares/internal/jenkins"
 	"encoding/json"
+	"fmt"
+	"github.com/gin-gonic/gin"
 	"io"
 	"sync"
-
-	"github.com/gin-gonic/gin"
 )
 
 // GetJenkinsNodeStatus
@@ -53,7 +53,7 @@ func GetJenkinsNodeStatus(c *gin.Context) {
 
 // StreamJenkinsBuildLogHandler
 // @Tags Publish
-// @Summary 获取流式的构建日志
+// @Summary 获取流式的构建日志 (SSE格式)
 // @Param job_name query string true "执行job名称"
 // @Param build_id query int64 true "构建ID"
 // @Success 200 {object} util.ResponseTemplate{code=int,result=string} "成功"
@@ -69,7 +69,7 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 	}
 
 	logChan := make(chan string)
-	errChan := make(chan error, 1) // 添加缓冲区，防止goroutine泄漏
+	errChan := make(chan error, 1)
 	logSet := make(map[string]bool)
 	var mu sync.Mutex
 
@@ -88,9 +88,16 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 		}
 	}()
 
-	c.Header("Content-Type", "text/event-stream; charset=utf-8")
+	// 设置 SSE 相关的响应头
+	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no") // 禁用 Nginx 缓冲
+
+	//// 创建一个定时器用于探活
+	//// 根据前端需求，1s探活一次
+	//ticker := time.NewTicker(1 * time.Second)
+	//defer ticker.Stop()
 
 	// 使用Stream方法处理响应
 	c.Stream(func(w io.Writer) bool {
@@ -101,7 +108,8 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 			}
 			mu.Lock()
 			if _, exists := logSet[log]; !exists {
-				_, err := w.Write([]byte(log))
+				// 按照 SSE 格式发送数据
+				_, err := fmt.Fprintf(w, "data: %s\n\n", log)
 				if err != nil {
 					mu.Unlock()
 					return false
@@ -110,13 +118,22 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 			}
 			mu.Unlock()
 			return true
+		//case <-ticker.C:
+		//	// 发送探活注释
+		//	_, err := fmt.Fprintf(w, ": %s\n\n", time.Now().Format(time.RFC3339))
+		//	if err != nil {
+		//		return false
+		//	}
+		//	return true
 		case <-doneChan:
 			// 如果有错误，返回错误响应
 			if streamErr != nil {
 				errorResponse := util.ResponseFailure("", streamErr.Error())
 				responseBytes, _ := json.Marshal(errorResponse)
-				w.Write([]byte("\nERROR: " + string(responseBytes) + "\n"))
+				fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(responseBytes))
 			}
+			// 发送结束事件
+			fmt.Fprintf(w, "event: end\ndata: end of stream\n\n")
 			return false
 		}
 	})

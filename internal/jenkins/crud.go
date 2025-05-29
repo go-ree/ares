@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -155,19 +156,73 @@ func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- string, errChan ch
 		errChan <- err
 		return false
 	}
-	//build.IsRunning(ctx)
 
-	var lastLog string
-	for {
-		log := build.GetConsoleOutput(ctx) // 这里持续获取增量日志的逻辑
-		if log != lastLog && len(log) > len(lastLog) {
-			logChan <- log[len(lastLog):]
-			lastLog = log
+	// 获取完整的日志内容
+	fullLog := build.GetConsoleOutput(ctx)
+	if err != nil {
+		slog.Error("获取日志失败", "job_name", req.JobName, "build_id", req.BuildId, "err", err)
+		errChan <- err
+		return false
+	}
+
+	// 如果构建已经完成，直接发送完整日志
+	if !build.IsRunning(ctx) {
+		// 按行分割日志并逐行发送
+		lines := strings.Split(fullLog, "\n")
+		for _, line := range lines {
+			if line != "" {
+				logChan <- line + "\n"
+			}
 		}
+		return true
+	}
+
+	// 如果构建还在运行，先发送当前已有的日志
+	lines := strings.Split(fullLog, "\n")
+	for _, line := range lines {
+		if line != "" {
+			logChan <- line + "\n"
+		}
+	}
+
+	// 继续监控增量日志
+	lastLogLength := len(fullLog)
+	for {
+		time.Sleep(1 * time.Second)
+
+		newLog := build.GetConsoleOutput(ctx)
+		if err != nil {
+			slog.Error("获取增量日志失败", "job_name", req.JobName, "build_id", req.BuildId, "err", err)
+			errChan <- err
+			return false
+		}
+
+		if len(newLog) > lastLogLength {
+			// 获取新增的日志内容
+			additionalLog := newLog[lastLogLength:]
+			lines := strings.Split(additionalLog, "\n")
+			for _, line := range lines {
+				if line != "" {
+					logChan <- line + "\n"
+				}
+			}
+			lastLogLength = len(newLog)
+		}
+
 		if !build.IsRunning(ctx) {
+			// 构建结束时，再次检查是否有最后的增量日志
+			finalLog := build.GetConsoleOutput(ctx)
+			if len(finalLog) > lastLogLength {
+				additionalLog := finalLog[lastLogLength:]
+				lines := strings.Split(additionalLog, "\n")
+				for _, line := range lines {
+					if line != "" {
+						logChan <- line + "\n"
+					}
+				}
+			}
 			return true
 		}
-		time.Sleep(1 * time.Second) // 控制获取频率
 	}
 }
 
