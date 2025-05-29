@@ -23,10 +23,29 @@
           {{ new Date(row.created_at).toLocaleString() }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="150" fixed="right">
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
-          <el-button type="primary" link @click="handleEdit(row)">编辑</el-button>
-          <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
+          <el-button
+            type="primary"
+            link
+            @click="$emit('detail', row)"
+          >
+            详情
+          </el-button>
+          <!-- <el-button
+            type="primary"
+            link
+            @click="$emit('edit', row)"
+          >
+            编辑
+          </el-button> -->
+          <el-button
+            type="danger"
+            link
+            @click="$emit('delete', row)"
+          >
+            删除
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -58,7 +77,13 @@ const props = defineProps<{
 }>()
 
 // 定义事件
-const emit = defineEmits(['edit', 'delete', 'page-change', 'size-change'])
+const emit = defineEmits<{
+  (e: 'edit', row: AppInfo): void
+  (e: 'delete', row: AppInfo): void
+  (e: 'detail', row: AppInfo): void
+  (e: 'page-change', page: number): void
+  (e: 'size-change', size: number): void
+}>()
 
 // 分页相关
 const currentPage = ref(1)

@@ -13,8 +13,15 @@
       :total="total"
       @edit="handleEdit"
       @delete="handleDelete"
+      @detail="handleDetail"
       @page-change="handlePageChange"
       @size-change="handleSizeChange"
+    />
+
+    <!-- 详情对话框 -->
+    <AppDetailDialog
+      v-model:visible="detailDialogVisible"
+      :app-id="currentAppId"
     />
   </div>
 </template>
@@ -24,6 +31,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppTable from '@/components/application/AppTable.vue'
 import AppAdvancedSearch from '@/components/application/AppAdvancedSearch.vue'
+import AppDetailDialog from '@/components/application/AppDetailDialog.vue'
 import { queryApps } from '@/services/application'
 import type { AppInfo, AppQueryParams, PageResponse } from '@/models/application'
 
@@ -40,6 +48,10 @@ const loading = ref(false)
 
 // 保存当前的搜索条件
 const currentSearchParams = ref<Partial<AppQueryParams>>({})
+
+// 详情对话框状态
+const detailDialogVisible = ref(false)
+const currentAppId = ref<number>()
 
 // 获取应用列表数据
 const fetchAppList = async (params: Partial<AppQueryParams> = {}) => {
@@ -123,6 +135,12 @@ const handleDelete = (row: any) => {
   }).catch(() => {
     ElMessage.info('已取消删除')
   })
+}
+
+// 处理详情按钮点击
+const handleDetail = (row: AppInfo) => {
+  currentAppId.value = row.app_id
+  detailDialogVisible.value = true
 }
 
 // 页面加载时获取数据
