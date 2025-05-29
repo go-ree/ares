@@ -138,7 +138,7 @@ func GetJenkinsBuildLog(jobName string, buildId int64) (string, error) {
 }
 
 // StreamJenkinsBuildLog	持续获取jenkins的构建日志
-func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- string, errChan chan<- error) bool {
+func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- []string, errChan chan<- error) bool {
 	ctx := context.Background()
 	if Jenkins == nil {
 		errChan <- errors.New("jenkins not initialized")
@@ -159,30 +159,31 @@ func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- string, errChan ch
 
 	// 获取完整的日志内容
 	fullLog := build.GetConsoleOutput(ctx)
-	if err != nil {
-		slog.Error("获取日志失败", "job_name", req.JobName, "build_id", req.BuildId, "err", err)
-		errChan <- err
-		return false
-	}
 
 	// 如果构建已经完成，直接发送完整日志
 	if !build.IsRunning(ctx) {
-		// 按行分割日志并逐行发送
+		// 按行分割日志并收集到列表中
 		lines := strings.Split(fullLog, "\n")
+		var logList []string
 		for _, line := range lines {
 			if line != "" {
-				logChan <- line + "\n"
+				logList = append(logList, line)
 			}
 		}
+		logChan <- logList
 		return true
 	}
 
 	// 如果构建还在运行，先发送当前已有的日志
 	lines := strings.Split(fullLog, "\n")
+	var logList []string
 	for _, line := range lines {
 		if line != "" {
-			logChan <- line + "\n"
+			logList = append(logList, line)
 		}
+	}
+	if len(logList) > 0 {
+		logChan <- logList
 	}
 
 	// 继续监控增量日志
@@ -191,20 +192,18 @@ func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- string, errChan ch
 		time.Sleep(1 * time.Second)
 
 		newLog := build.GetConsoleOutput(ctx)
-		if err != nil {
-			slog.Error("获取增量日志失败", "job_name", req.JobName, "build_id", req.BuildId, "err", err)
-			errChan <- err
-			return false
-		}
-
 		if len(newLog) > lastLogLength {
 			// 获取新增的日志内容
 			additionalLog := newLog[lastLogLength:]
 			lines := strings.Split(additionalLog, "\n")
+			var newLines []string
 			for _, line := range lines {
 				if line != "" {
-					logChan <- line + "\n"
+					newLines = append(newLines, line)
 				}
+			}
+			if len(newLines) > 0 {
+				logChan <- newLines
 			}
 			lastLogLength = len(newLog)
 		}
@@ -215,10 +214,14 @@ func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- string, errChan ch
 			if len(finalLog) > lastLogLength {
 				additionalLog := finalLog[lastLogLength:]
 				lines := strings.Split(additionalLog, "\n")
+				var finalLines []string
 				for _, line := range lines {
 					if line != "" {
-						logChan <- line + "\n"
+						finalLines = append(finalLines, line)
 					}
+				}
+				if len(finalLines) > 0 {
+					logChan <- finalLines
 				}
 			}
 			return true

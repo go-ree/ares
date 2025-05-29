@@ -56,7 +56,7 @@ func GetJenkinsNodeStatus(c *gin.Context) {
 // @Summary 获取流式的构建日志 (SSE格式)
 // @Param job_name query string true "执行job名称"
 // @Param build_id query int64 true "构建ID"
-// @Success 200 {object} util.ResponseTemplate{code=int,result=string} "成功"
+// @Success 200 {object} util.ResponseTemplate{code=int,result=[]string} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Failure 502 {object} util.ResponseTemplate{code=int} "调用链异常"
@@ -68,9 +68,8 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 		return
 	}
 
-	logChan := make(chan string)
+	logChan := make(chan []string)
 	errChan := make(chan error, 1)
-	logSet := make(map[string]bool)
 	var mu sync.Mutex
 
 	// 创建一个完成通道，用于通知主goroutine任务完成或出错
@@ -94,37 +93,28 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no") // 禁用 Nginx 缓冲
 
-	//// 创建一个定时器用于探活
-	//// 根据前端需求，1s探活一次
-	//ticker := time.NewTicker(1 * time.Second)
-	//defer ticker.Stop()
-
 	// 使用Stream方法处理响应
 	c.Stream(func(w io.Writer) bool {
 		select {
-		case log, ok := <-logChan:
+		case logLines, ok := <-logChan:
 			if !ok {
 				return false
 			}
 			mu.Lock()
-			if _, exists := logSet[log]; !exists {
-				// 按照 SSE 格式发送数据
-				_, err := fmt.Fprintf(w, "data: %s\n\n", log)
-				if err != nil {
-					mu.Unlock()
-					return false
-				}
-				logSet[log] = true
+			// 将日志列表包装在响应对象中
+			response := util.ResponseSuccessful("", logLines)
+			responseBytes, err := json.Marshal(response)
+			if err != nil {
+				mu.Unlock()
+				return false
+			}
+			_, err = fmt.Fprintf(w, "data: %s\n\n", string(responseBytes))
+			if err != nil {
+				mu.Unlock()
+				return false
 			}
 			mu.Unlock()
 			return true
-		//case <-ticker.C:
-		//	// 发送探活注释
-		//	_, err := fmt.Fprintf(w, ": %s\n\n", time.Now().Format(time.RFC3339))
-		//	if err != nil {
-		//		return false
-		//	}
-		//	return true
 		case <-doneChan:
 			// 如果有错误，返回错误响应
 			if streamErr != nil {
