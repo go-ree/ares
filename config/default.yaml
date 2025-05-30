@@ -1,5 +1,5 @@
 db:
-  conn_str: "root:Abc123..@(172.16.2.139:3306)/ares?charset=utf8mb4&loc=Asia%2FShanghai"
+  conn_str: "sre_tool_wr_all:VNBpFpUSjdxFj6jfSpwN@(hc-business-mw01-mysql.ttpai.top:3306)/ares?charset=utf8mb4&loc=Asia%2FShanghai"
 
 web:
   address: ":8080"
