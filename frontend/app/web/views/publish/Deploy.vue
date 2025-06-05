@@ -1,27 +1,17 @@
 <template>
   <div class="deploy">
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <span>服务发布</span>
-        </div>
-      </template>
-      <div class="placeholder">服务发布页面开发中...</div>
-    </el-card>
+    <ServiceDeploy />
   </div>
 </template>
 
 <script setup lang="ts">
+import ServiceDeploy from '@/components/publish/ServiceDeploy.vue'
 </script>
 
 <style scoped>
 .deploy {
   padding: 20px;
-}
-
-.placeholder {
-  text-align: center;
-  color: #909399;
-  padding: 40px 0;
+  background: #f5f7fa;
+  min-height: 100vh;
 }
 </style> 
