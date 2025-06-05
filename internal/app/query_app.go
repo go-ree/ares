@@ -197,3 +197,22 @@ func (am *AppManager) GetAppByName(ctx context.Context, appName string) (*entity
 
 	return &app, nil
 }
+
+// GetAppNameList 获取应用名称列表
+func (am *AppManager) GetAppNameList(ctx context.Context) ([]string, error) {
+	var appNames []string
+	err := db.Engine.Context(ctx).
+		Table(entity.TableApps).
+		Where("deleted_at IS NULL").
+		Cols("app_name").
+		OrderBy("app_name ASC").
+		Find(&appNames)
+
+	if err != nil {
+		slog.Error("获取应用名称列表失败", "error", err)
+		return nil, err
+	}
+
+	slog.Info("获取应用名称列表成功", "count", len(appNames))
+	return appNames, nil
+}

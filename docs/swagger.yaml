@@ -520,6 +520,53 @@ paths:
       summary: 查询应用列表
       tags:
       - App
+  /api/v1/apps/query/appname:
+    get:
+      description: 获取全量应用名称列表
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  items:
+                    type: string
+                  type: array
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "404":
+          description: 应用不存在
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 获取全量应用名称列表
+      tags:
+      - App
   /api/v1/deploy/publish:
     post:
       parameters:
@@ -604,41 +651,6 @@ paths:
       summary: 应用进行批量发布动作
       tags:
       - Publish
-  /api/v1/deploy/publish/publish/status:
-    get:
-      responses:
-        "200":
-          description: 成功
-          schema:
-            allOf:
-            - $ref: '#/definitions/util.ResponseTemplate'
-            - properties:
-                code:
-                  type: integer
-                result:
-                  $ref: '#/definitions/entity.TaskRecord'
-              type: object
-        "400":
-          description: 请求错误
-          schema:
-            allOf:
-            - $ref: '#/definitions/util.ResponseTemplate'
-            - properties:
-                code:
-                  type: integer
-              type: object
-        "500":
-          description: 内部错误
-          schema:
-            allOf:
-            - $ref: '#/definitions/util.ResponseTemplate'
-            - properties:
-                code:
-                  type: integer
-              type: object
-      summary: 获取发布中的任务列表
-      tags:
-      - Publish
   /api/v1/deploy/publish/query:
     post:
       description: 支持多条件组合查询，如：应用名称、环境、发布人、分支、发布起始时间等
@@ -682,6 +694,41 @@ paths:
       summary: 查询构建任务历史
       tags:
       - Publish
+  /api/v1/deploy/publish/status:
+    get:
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/entity.TaskRecord'
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 获取发布中的任务列表
+      tags:
+      - Publish
   /api/v1/job/stream/log:
     get:
       parameters:
@@ -705,7 +752,9 @@ paths:
                 code:
                   type: integer
                 result:
-                  type: string
+                  items:
+                    type: string
+                  type: array
               type: object
         "400":
           description: 请求错误
@@ -734,7 +783,7 @@ paths:
                 code:
                   type: integer
               type: object
-      summary: 获取流式的构建日志
+      summary: 获取流式的构建日志 (SSE格式)
       tags:
       - Publish
   /api/v1/status/nodes:

@@ -184,6 +184,27 @@ func (ac *AppsController) GetAppByName(c *gin.Context) {
 	c.JSON(200, util.ResponseSuccessful("获取成功", apps))
 }
 
+// GetAppNameList
+// @Tags App
+// @Summary 获取全量应用名称列表
+// @Description 获取全量应用名称列表
+// @Success 200 {object} util.ResponseTemplate{code=int,result=[]string} "成功"
+// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 404 {object} util.ResponseTemplate{code=int} "应用不存在"
+// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
+// @Router /api/v1/apps/query/appname [get]
+func (ac *AppsController) GetAppNameList(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	appNames, err := ac.appManager.GetAppNameList(ctx)
+	if err != nil {
+		c.JSON(500, util.ResponseFailure("查询应用失败", err.Error()))
+		slog.Error("查询应用失败", "error", err)
+		return
+	}
+	c.JSON(200, util.ResponseSuccessful("", appNames))
+}
+
 // handleAppError 统一处理应用相关错误
 func (ac *AppsController) handleAppError(c *gin.Context, err error, context map[string]interface{}) {
 	var validationError *app.ValidationError

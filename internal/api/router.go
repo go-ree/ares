@@ -61,6 +61,8 @@ func Router(r gin.IRouter) {
 			apps.POST("/query", appsController.QueryApps)
 			// 根据应用名称获取应用详情
 			apps.GET("/name/:app_name", appsController.GetAppByName)
+			// 获取所有应用名称列表
+			apps.GET("/query/appname", appsController.GetAppNameList)
 			// 根据APPID获取应用详情
 			apps.GET(":app_id", appsController.GetAppByID)
 

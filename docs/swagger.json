@@ -340,6 +340,95 @@
                 }
             }
         },
+        "/api/v1/apps/query/appname": {
+            "get": {
+                "description": "获取全量应用名称列表",
+                "tags": [
+                    "App"
+                ],
+                "summary": "获取全量应用名称列表",
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "应用不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/apps/{app_id}": {
             "get": {
                 "description": "根据应用ID获取单个应用的详细信息",
@@ -597,73 +686,6 @@
                 }
             }
         },
-        "/api/v1/deploy/publish/publish/status": {
-            "get": {
-                "tags": [
-                    "Publish"
-                ],
-                "summary": "获取发布中的任务列表",
-                "responses": {
-                    "200": {
-                        "description": "成功",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/util.ResponseTemplate"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "code": {
-                                            "type": "integer"
-                                        },
-                                        "result": {
-                                            "$ref": "#/definitions/entity.TaskRecord"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "400": {
-                        "description": "请求错误",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/util.ResponseTemplate"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "code": {
-                                            "type": "integer"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "500": {
-                        "description": "内部错误",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/util.ResponseTemplate"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "code": {
-                                            "type": "integer"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                }
-            }
-        },
         "/api/v1/deploy/publish/query": {
             "post": {
                 "description": "支持多条件组合查询，如：应用名称、环境、发布人、分支、发布起始时间等",
@@ -743,12 +765,79 @@
                 }
             }
         },
+        "/api/v1/deploy/publish/status": {
+            "get": {
+                "tags": [
+                    "Publish"
+                ],
+                "summary": "获取发布中的任务列表",
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/entity.TaskRecord"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/job/stream/log": {
             "get": {
                 "tags": [
                     "Publish"
                 ],
-                "summary": "获取流式的构建日志",
+                "summary": "获取流式的构建日志 (SSE格式)",
                 "parameters": [
                     {
                         "type": "string",
@@ -780,7 +869,10 @@
                                             "type": "integer"
                                         },
                                         "result": {
-                                            "type": "string"
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
                                         }
                                     }
                                 }
