@@ -325,6 +325,16 @@ func (pm *PublishManager) JobStatus() ([]*entity.TaskRecord, error) {
 		return nil, fmt.Errorf("查询任务状态失败：%s", err)
 	}
 
+	// 检查 taskRecords 是否为 nil
+	if taskRecords != nil {
+		// 使用有效的 JSON 字符串
+		hiddenMessage := json.RawMessage(`{"message": "隐藏详情，减少数据量"}`)
+		// 清空 PipelineParam 字段
+		for _, record := range taskRecords {
+			record.PipelineParam = hiddenMessage
+		}
+	}
+
 	// 添加日志记录
 	slog.Info("查询任务状态",
 		"count", len(taskRecords),
