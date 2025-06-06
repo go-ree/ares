@@ -11,53 +11,22 @@
                 <el-radio-button :value="'test'">测试环境</el-radio-button>
                 <el-radio-button :value="'sim'">模拟环境</el-radio-button>
               </el-radio-group>
-              <el-button
-                v-if="deployForm.environment === 'sim'"
-                type="primary"
-                plain
-                class="edit-branch-btn"
-                @click="handleEditAllBranches"
-              >
-                <el-icon><Edit /></el-icon>
-                统一编辑发布分支
-              </el-button>
-            </div>
-
-            <!-- 统一编辑分支对话框 -->
-            <el-dialog
-              v-model="branchDialogVisible"
-              title="统一编辑发布分支"
-              width="500px"
-              :close-on-click-modal="false"
-            >
-              <div class="branch-dialog-content">
-                <div class="branch-prefix-wrapper">
-                  <span class="branch-prefix">release_</span>
+              <div v-if="deployForm.environment === 'sim'" class="global-branch-input">
+                <span class="branch-label">统一发布分支：</span>
+                <div class="branch-input-wrapper">
                   <el-input
                     v-model="globalBranchSuffix"
                     placeholder="请输入分支后缀"
-                    style="width: 300px"
-                  />
-                </div>
-                <div class="branch-preview">
-                  <div class="preview-title">预览：</div>
-                  <div class="preview-list">
-                    <div v-for="service in selectedServices" :key="service.serviceName" class="preview-item">
-                      <span class="service-name">{{ service.serviceName }}</span>
-                      <span class="branch-name">release_{{ globalBranchSuffix }}</span>
-                    </div>
-                  </div>
+                    style="width: 240px"
+                    @input="handleGlobalBranchChange"
+                  >
+                    <template #prefix>
+                      <span class="branch-prefix">release_</span>
+                    </template>
+                  </el-input>
                 </div>
               </div>
-              <template #footer>
-                <span class="dialog-footer">
-                  <el-button @click="branchDialogVisible = false">取消</el-button>
-                  <el-button type="primary" @click="handleConfirmBranchEdit">
-                    确认
-                  </el-button>
-                </span>
-              </template>
-            </el-dialog>
+            </div>
 
             <!-- 服务选择表格 -->
             <div v-if="deployForm.environment" class="service-table">
@@ -87,13 +56,16 @@
                   <template #default="{ row }">
                     <template v-if="deployForm.environment === 'sim'">
                       <div class="branch-input-wrapper">
-                        <span class="branch-prefix">release_</span>
                         <el-input
                           v-model="row.branchSuffix"
                           placeholder="请输入分支后缀"
-                          style="width: 200px"
+                          style="width: 240px"
                           @input="(val: string) => handleBranchSuffixChange(val, row)"
-                        />
+                        >
+                          <template #prefix>
+                            <span class="branch-prefix">release_</span>
+                          </template>
+                        </el-input>
                       </div>
                     </template>
                     <template v-else>
@@ -468,7 +440,7 @@ const refreshDeployingList = async () => {
         id: '2',
         serviceName: 'service-b',
         branch: 'release_20240320',
-        environment: 'sim',
+        environment: 'test',
         status: '发布中',
         progress: 80,
         startTime: '2024-03-20 09:30:00',
@@ -485,10 +457,26 @@ const refreshDeployingList = async () => {
 // 定时刷新发布中服务列表
 let refreshTimer: number | null = null
 
+// 统一编辑分支相关
+const globalBranchSuffix = ref('')
+
+// 处理全局分支变更
+const handleGlobalBranchChange = (value: string) => {
+  if (!value) return
+  
+  // 更新所有服务的分支后缀
+  selectedServices.value.forEach(service => {
+    service.branchSuffix = value
+    service.branch = `release_${value}`
+  })
+}
+
 // 处理环境变更
 const handleEnvChange = async (env: string) => {
   // 清空已选服务
   selectedServices.value = []
+  // 清空全局分支后缀
+  globalBranchSuffix.value = ''
   // 获取可用服务列表
   await fetchAvailableServices()
   // 更新所有已选服务的分支
@@ -544,12 +532,19 @@ const handleServiceSelect = async (serviceName: string, index: number) => {
 
 // 添加服务
 const handleAddService = () => {
-  selectedServices.value.push({
+  const newService = {
     serviceName: '',
     branch: deployForm.environment === 'sim' ? 'release_' : deployForm.environment,
-    branchSuffix: '',
+    branchSuffix: deployForm.environment === 'sim' ? globalBranchSuffix.value : '',
     status: '未发布'
-  })
+  }
+  
+  // 如果是模拟环境且有全局分支后缀，则应用它
+  if (deployForm.environment === 'sim' && globalBranchSuffix.value) {
+    newService.branch = `release_${globalBranchSuffix.value}`
+  }
+  
+  selectedServices.value.push(newService)
 }
 
 // 删除服务
@@ -740,40 +735,6 @@ onUnmounted(() => {
     clearInterval(refreshTimer)
   }
 })
-
-// 统一编辑分支相关
-const branchDialogVisible = ref(false)
-const globalBranchSuffix = ref('')
-
-// 处理统一编辑分支
-const handleEditAllBranches = () => {
-  if (selectedServices.value.length === 0) {
-    ElMessage.warning('请先添加需要发布的服务')
-    return
-  }
-  // 如果所有服务的分支后缀都相同，则使用该后缀作为初始值
-  const suffixes = selectedServices.value.map(service => service.branchSuffix)
-  const allSame = suffixes.every(suffix => suffix === suffixes[0])
-  globalBranchSuffix.value = allSame ? suffixes[0] : ''
-  branchDialogVisible.value = true
-}
-
-// 确认统一编辑分支
-const handleConfirmBranchEdit = () => {
-  if (!globalBranchSuffix.value) {
-    ElMessage.warning('请输入分支后缀')
-    return
-  }
-  
-  // 更新所有服务的分支后缀
-  selectedServices.value.forEach(service => {
-    service.branchSuffix = globalBranchSuffix.value
-    service.branch = `release_${globalBranchSuffix.value}`
-  })
-  
-  branchDialogVisible.value = false
-  ElMessage.success('已统一更新发布分支')
-}
 </script>
 
 <style scoped>
@@ -794,64 +755,78 @@ const handleConfirmBranchEdit = () => {
   margin-bottom: 24px;
   text-align: center;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   align-items: center;
   gap: 16px;
 }
 
-.edit-branch-btn {
-  margin-left: 16px;
-}
-
-.branch-dialog-content {
-  padding: 0 20px;
-}
-
-.branch-prefix-wrapper {
+.global-branch-input {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 24px;
+  margin-top: 8px;
 }
 
-.branch-preview {
-  background: #f8f9fa;
-  border-radius: 4px;
-  padding: 16px;
-}
-
-.preview-title {
-  font-size: 14px;
+.branch-label {
   color: #606266;
-  margin-bottom: 12px;
-}
-
-.preview-list {
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.preview-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid #ebeef5;
-}
-
-.preview-item:last-child {
-  border-bottom: none;
-}
-
-.service-name {
-  color: #303133;
   font-size: 14px;
 }
 
-.branch-name {
+.branch-input-wrapper {
+  display: inline-block;
+}
+
+.branch-prefix {
+  color: #606266;
+  font-size: 14px;
+  font-family: monospace;
+  user-select: none;
+  padding-right: 4px;
+}
+
+:deep(.el-input__prefix) {
   color: #606266;
   font-family: monospace;
+  border-right: 1px solid #dcdfe6;
+  padding-right: 8px;
+  margin-right: 8px;
+}
+
+:deep(.el-input__prefix-inner) {
+  display: flex;
+  align-items: center;
+}
+
+.service-table {
+  margin-top: 20px;
+  background: #fff;
+  border-radius: 4px;
+  padding: 20px;
+}
+
+.table-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.batch-actions {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+.service-desc {
+  color: #909399;
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+.branch-text {
+  color: #606266;
   font-size: 14px;
+  font-family: monospace;
 }
 
 .deploying-list {
@@ -885,50 +860,6 @@ const handleConfirmBranchEdit = () => {
   color: #909399;
   font-size: 14px;
   padding: 32px 0;
-}
-
-.service-table {
-  margin-top: 20px;
-  background: #fff;
-  border-radius: 4px;
-  padding: 20px;
-}
-
-.table-actions {
-  margin-top: 16px;
-  display: flex;
-  justify-content: center;
-}
-
-.batch-actions {
-  margin-top: 24px;
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-}
-
-.service-desc {
-  color: #909399;
-  font-size: 12px;
-  margin-left: 8px;
-}
-
-.branch-input-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.branch-prefix {
-  color: #606266;
-  font-size: 14px;
-  font-family: monospace;
-}
-
-.branch-text {
-  color: #606266;
-  font-size: 14px;
-  font-family: monospace;
 }
 
 .log-content {
@@ -996,5 +927,10 @@ const handleConfirmBranchEdit = () => {
   to {
     transform: rotate(360deg);
   }
+}
+
+:deep(.el-table .el-input__prefix) {
+  height: 32px;
+  line-height: 32px;
 }
 </style> 
