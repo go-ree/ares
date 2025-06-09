@@ -78,26 +78,32 @@
                     </el-tag>
                   </template>
                 </el-table-column>
+                <el-table-column prop="lastUpdateTime" label="最后更新" width="160">
+                  <template #default="{ row }">
+                    <span v-if="row.lastUpdateTime">{{ row.lastUpdateTime }}</span>
+                    <span v-else class="text-muted">-</span>
+                  </template>
+                </el-table-column>
                 <el-table-column label="操作" width="280" fixed="right">
                   <template #default="{ row, $index }">
                     <el-button-group>
                       <el-button
                         type="primary"
-                        :disabled="!row.serviceName || !row.branch || row.status === '发布中'"
-                        @click="handleDeploySingle(row)"
+                        :disabled="!row.serviceName || !row.branch || isServiceProcessing(row.status)"
+                        @click="handleDeploySingle(row, $index)"
                       >
                         编译并发布
                       </el-button>
                       <el-button
                         type="warning"
-                        :disabled="!row.serviceName || !row.branch || row.status === '发布中'"
-                        @click="handleRedeploySingle(row)"
+                        :disabled="!row.serviceName || !row.branch || isServiceProcessing(row.status)"
+                        @click="handleRedeploySingle(row, $index)"
                       >
                         仅重发
                       </el-button>
                       <el-button
                         type="danger"
-                        :disabled="row.status === '发布中'"
+                        :disabled="isServiceProcessing(row.status)"
                         @click="handleRemoveService($index)"
                       >
                         删除
@@ -329,9 +335,9 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, RefreshRight, Refresh, Loading, Plus, Edit } from '@element-plus/icons-vue'
-import { batchDeploy, createDeploy } from '@/services/deploy'
+import { batchDeploy, createDeploy, getTaskDetail } from '@/services/deploy'
 import { useUserStore } from '@/stores/user'
-import type { DeployRequest, Environment } from '@/models/deploy'
+import type { DeployRequest, Environment, TaskRecord } from '@/models/deploy'
 
 // 当前激活的标签页
 const activeTab = ref('tool')
@@ -409,6 +415,8 @@ interface SelectedService {
   branch: string
   branchSuffix: string  // 新增字段，用于存储模拟环境的分支后缀
   status: string
+  taskId?: number       // 任务ID
+  lastUpdateTime?: string // 最后更新时间
 }
 
 // 可用服务列表
@@ -419,9 +427,20 @@ const selectedServices = ref<SelectedService[]>([])
 // 是否有可发布的服务
 const hasDeployableServices = computed(() => {
   return selectedServices.value.some(
-    service => service.serviceName && service.branch && service.status !== '发布中'
+    service => service.serviceName && 
+               service.branch && 
+               !isServiceProcessing(service.status)
   )
 })
+
+// 判断服务是否正在处理中
+const isServiceProcessing = (status: string): boolean => {
+  return status === '发布中' ||
+         status === '初始化' ||
+         status === '打包中' ||
+         status === '打包成功' ||
+         status === '部署中'
+}
 
 // 获取环境标签类型
 const getEnvType = (env: string) => {
@@ -449,9 +468,9 @@ const getStatusType = (status: string) => {
   const displayStatus = getDeployStatus(status)
   const statusMap: Record<string, string> = {
     '初始化': 'info',
-    '编译打包中': 'primary',
-    '编译打包成功': 'success',
-    '编译打包失败': 'danger',
+    '打包中': 'primary',
+    '打包成功': 'success',
+    '打包失败': 'danger',
     '部署中': 'primary',
     '部署成功': 'success',
     '部署失败': 'danger'
@@ -465,9 +484,9 @@ const getProgressStatus = (status: string) => {
   const displayStatus = getDeployStatus(status)
   const statusMap: Record<string, string> = {
     '初始化': '',
-    '编译打包中': '',
-    '编译打包成功': 'success',
-    '编译打包失败': 'exception',
+    '打包中': '',
+    '打包成功': 'success',
+    '打包失败': 'exception',
     '部署中': '',
     '部署成功': 'success',
     '部署失败': 'exception'
@@ -479,9 +498,9 @@ const getProgressStatus = (status: string) => {
 const getDeployStatus = (status: string): string => {
   const statusMap: Record<string, string> = {
     'init': '初始化',
-    'packaging': '编译打包中',
-    'packaged': '编译打包成功',
-    'package_failed': '编译打包失败',
+    'packaging': '打包中',
+    'packaged': '打包成功',
+    'package_failed': '打包失败',
     'deploying': '部署中',
     'deployed': '部署成功',
     'deploy_failed': '部署失败'
@@ -560,6 +579,43 @@ const refreshDeployingList = async () => {
 // 定时刷新发布中服务列表
 let refreshTimer: number | null = null
 
+// 定时刷新选中服务的任务状态
+let taskStatusTimer: number | null = null
+
+// 刷新所有选中服务的任务状态
+const refreshSelectedServicesStatus = async () => {
+  console.log('开始刷新选中服务状态，服务数量:', selectedServices.value.length)
+  for (let i = 0; i < selectedServices.value.length; i++) {
+    const service = selectedServices.value[i]
+    console.log(`检查服务 ${i}: ${service.serviceName}`, {
+      taskId: service.taskId,
+      status: service.status,
+      branch: service.branch
+    })
+    
+    // 检查是否有任务ID且状态不是最终状态
+    if (service.taskId && 
+        service.status !== '部署成功' && 
+        service.status !== '部署失败' && 
+        service.status !== '未发布' &&
+        (service.status === '发布中' || 
+         service.status === '初始化' || 
+         service.status === '打包中' || 
+         service.status === '打包成功' || 
+         service.status === '部署中')) {
+      console.log(`更新服务 ${service.serviceName} 状态，任务ID: ${service.taskId}，当前状态: ${service.status}`)
+      await updateSelectedServiceStatus(i, service.taskId)
+    } else {
+      console.log(`跳过服务 ${service.serviceName}:`, {
+        hasTaskId: !!service.taskId,
+        status: service.status,
+        isFinalStatus: service.status === '部署成功' || service.status === '部署失败' || service.status === '未发布',
+        isUpdatingStatus: service.status === '发布中' || service.status === '初始化' || service.status === '打包中' || service.status === '打包成功' || service.status === '部署中'
+      })
+    }
+  }
+}
+
 // 根据状态计算进度
 const calculateProgress = (status: string): number => {
   const progressMap: Record<string, number> = {
@@ -587,6 +643,66 @@ const formatDateTime = (dateStr: string): string => {
     second: '2-digit',
     hour12: false
   })
+}
+
+// 查询任务状态
+const queryTaskStatus = async (taskId: number): Promise<TaskRecord | null> => {
+  try {
+    const response = await getTaskDetail(taskId)
+    if (response.data.code === 1) {
+      return response.data.result
+    } else {
+      console.error('查询任务状态失败:', response.data.msg)
+      return null
+    }
+  } catch (error) {
+    console.error('查询任务状态失败:', error)
+    return null
+  }
+}
+
+// 更新选中服务的状态
+const updateSelectedServiceStatus = async (serviceIndex: number, taskId: number) => {
+  try {
+    const taskDetail = await queryTaskStatus(taskId)
+    if (taskDetail) {
+      const service = selectedServices.value[serviceIndex]
+      const oldStatus = service.status
+      service.taskId = taskId
+      service.lastUpdateTime = formatDateTime(taskDetail.updated_at)
+      
+      // 根据任务状态更新显示状态
+      switch (taskDetail.status) {
+        case 'init':
+          service.status = '初始化'
+          break
+        case 'packaging':
+          service.status = '打包中'
+          break
+        case 'packaged':
+          service.status = '打包成功'
+          break
+        case 'package_failed':
+          service.status = '打包失败'
+          break
+        case 'deploying':
+          service.status = '部署中'
+          break
+        case 'deployed':
+          service.status = '部署成功'
+          break
+        case 'deploy_failed':
+          service.status = '部署失败'
+          break
+        default:
+          service.status = getDeployStatus(taskDetail.status)
+      }
+      
+      console.log(`服务 ${service.serviceName} 状态更新: ${oldStatus} -> ${service.status} (任务状态: ${taskDetail.status})`)
+    }
+  } catch (error) {
+    console.error('更新服务状态失败:', error)
+  }
 }
 
 // 统一编辑分支相关
@@ -707,7 +823,7 @@ const validateServiceDeploy = (row: SelectedService) => {
 }
 
 // 单个服务发布
-const handleDeploySingle = async (row: SelectedService) => {
+const handleDeploySingle = async (row: SelectedService, index: number) => {
   if (!validateServiceDeploy(row)) return
   
   try {
@@ -734,7 +850,15 @@ const handleDeploySingle = async (row: SelectedService) => {
     if (response.data.code === 1) {
       const result = response.data.result
       if (result && result.success) {
-        ElMessage.success(`${row.serviceName} 发布任务已提交，任务ID: ${result.task_record.task_id}`)
+        const taskId = result.task_record.task_id
+        ElMessage.success(`${row.serviceName} 发布任务已提交，任务ID: ${taskId}`)
+        
+        // 先设置taskId，确保定时器能找到这个服务
+        row.taskId = taskId
+        
+        // 立即更新选中服务的状态
+        await updateSelectedServiceStatus(index, taskId)
+        
         // 刷新发布中服务列表
         await refreshDeployingList()
       } else {
@@ -744,14 +868,14 @@ const handleDeploySingle = async (row: SelectedService) => {
       throw new Error(response.data.msg || '发布失败')
     }
   } catch (error) {
-    row.status = '发布失败'
+    row.status = '部署失败'
     console.error('发布失败:', error)
     ElMessage.error(error instanceof Error ? error.message : '发布失败')
   }
 }
 
 // 单个服务重发
-const handleRedeploySingle = async (row: SelectedService) => {
+const handleRedeploySingle = async (row: SelectedService, index: number) => {
   if (!validateServiceDeploy(row)) return
   
   try {
@@ -778,7 +902,15 @@ const handleRedeploySingle = async (row: SelectedService) => {
     if (response.data.code === 1) {
       const result = response.data.result
       if (result && result.success) {
-        ElMessage.success(`${row.serviceName} 重发任务已提交，任务ID: ${result.task_record.task_id}`)
+        const taskId = result.task_record.task_id
+        ElMessage.success(`${row.serviceName} 重发任务已提交，任务ID: ${taskId}`)
+        
+        // 先设置taskId，确保定时器能找到这个服务
+        row.taskId = taskId
+        
+        // 立即更新选中服务的状态
+        await updateSelectedServiceStatus(index, taskId)
+        
         // 刷新发布中服务列表
         await refreshDeployingList()
       } else {
@@ -788,7 +920,7 @@ const handleRedeploySingle = async (row: SelectedService) => {
       throw new Error(response.data.msg || '重发失败')
     }
   } catch (error) {
-    row.status = '发布失败'
+    row.status = '部署失败'
     console.error('重发失败:', error)
     ElMessage.error(error instanceof Error ? error.message : '重发失败')
   }
@@ -814,7 +946,7 @@ const handleBatchDeploy = async () => {
   if (!validateBatchDeploy()) return
   
   const deployableServices = selectedServices.value.filter(
-    service => service.serviceName && service.status !== '发布中'
+    service => service.serviceName && !isServiceProcessing(service.status)
   )
   
   if (deployableServices.length === 0) {
@@ -854,6 +986,39 @@ const handleBatchDeploy = async () => {
       
       if (successCount > 0) {
         ElMessage.success(`批量发布任务已提交，成功: ${successCount}，失败: ${failureCount}，总计: ${totalCount}`)
+        
+        // 更新所有成功任务对应的选中服务状态
+        for (const taskRecord of result.task_records) {
+          if (taskRecord.success && taskRecord.task_record) {
+            const taskDetail = taskRecord.task_record
+            // 找到对应的选中服务索引
+            const serviceIndex = selectedServices.value.findIndex(service => 
+              service.serviceName === taskDetail.app_name && service.branch === taskDetail.branch
+            )
+            console.log(`批量发布 - 查找服务索引:`, {
+              taskDetail: {
+                app_name: taskDetail.app_name,
+                branch: taskDetail.branch,
+                task_id: taskDetail.task_id
+              },
+              foundIndex: serviceIndex,
+              selectedServices: selectedServices.value.map(s => ({
+                serviceName: s.serviceName,
+                branch: s.branch,
+                status: s.status,
+                taskId: s.taskId
+              }))
+            })
+            if (serviceIndex >= 0) {
+              // 先设置taskId，确保定时器能找到这个服务
+              selectedServices.value[serviceIndex].taskId = taskDetail.task_id
+              await updateSelectedServiceStatus(serviceIndex, taskDetail.task_id)
+            } else {
+              console.error(`未找到匹配的服务: ${taskDetail.app_name} - ${taskDetail.branch}`)
+            }
+          }
+        }
+        
         // 刷新发布中服务列表
         await refreshDeployingList()
       } else {
@@ -865,7 +1030,7 @@ const handleBatchDeploy = async () => {
   } catch (error) {
     // 发布失败，恢复状态
     deployableServices.forEach(service => {
-      service.status = '发布失败'
+      service.status = '部署失败'
     })
     console.error('批量发布失败:', error)
     ElMessage.error(error instanceof Error ? error.message : '批量发布失败')
@@ -877,7 +1042,7 @@ const handleBatchRedeploy = async () => {
   if (!validateBatchDeploy()) return
   
   const deployableServices = selectedServices.value.filter(
-    service => service.serviceName && service.status !== '发布中'
+    service => service.serviceName && !isServiceProcessing(service.status)
   )
   
   if (deployableServices.length === 0) {
@@ -917,6 +1082,39 @@ const handleBatchRedeploy = async () => {
       
       if (successCount > 0) {
         ElMessage.success(`批量重发任务已提交，成功: ${successCount}，失败: ${failureCount}，总计: ${totalCount}`)
+        
+        // 更新所有成功任务对应的选中服务状态
+        for (const taskRecord of result.task_records) {
+          if (taskRecord.success && taskRecord.task_record) {
+            const taskDetail = taskRecord.task_record
+            // 找到对应的选中服务索引
+            const serviceIndex = selectedServices.value.findIndex(service => 
+              service.serviceName === taskDetail.app_name && service.branch === taskDetail.branch
+            )
+            console.log(`批量重发 - 查找服务索引:`, {
+              taskDetail: {
+                app_name: taskDetail.app_name,
+                branch: taskDetail.branch,
+                task_id: taskDetail.task_id
+              },
+              foundIndex: serviceIndex,
+              selectedServices: selectedServices.value.map(s => ({
+                serviceName: s.serviceName,
+                branch: s.branch,
+                status: s.status,
+                taskId: s.taskId
+              }))
+            })
+            if (serviceIndex >= 0) {
+              // 先设置taskId，确保定时器能找到这个服务
+              selectedServices.value[serviceIndex].taskId = taskDetail.task_id
+              await updateSelectedServiceStatus(serviceIndex, taskDetail.task_id)
+            } else {
+              console.error(`未找到匹配的服务: ${taskDetail.app_name} - ${taskDetail.branch}`)
+            }
+          }
+        }
+        
         // 刷新发布中服务列表
         await refreshDeployingList()
       } else {
@@ -928,7 +1126,7 @@ const handleBatchRedeploy = async () => {
   } catch (error) {
     // 重发失败，恢复状态
     deployableServices.forEach(service => {
-      service.status = '发布失败'
+      service.status = '部署失败'
     })
     console.error('批量重发失败:', error)
     ElMessage.error(error instanceof Error ? error.message : '批量重发失败')
@@ -1066,11 +1264,16 @@ onMounted(() => {
   }
   // 每10秒刷新一次发布中服务列表
   refreshTimer = window.setInterval(refreshDeployingList, 10000)
+  // 每5秒刷新一次选中服务的任务状态
+  taskStatusTimer = window.setInterval(refreshSelectedServicesStatus, 5000)
 })
 
 onUnmounted(() => {
   if (refreshTimer) {
     clearInterval(refreshTimer)
+  }
+  if (taskStatusTimer) {
+    clearInterval(taskStatusTimer)
   }
 })
 </script>
@@ -1298,6 +1501,21 @@ onUnmounted(() => {
   --el-tag-bg-color: var(--el-color-danger-light-9);
   --el-tag-border-color: var(--el-color-danger-light-8);
   --el-tag-hover-color: var(--el-color-danger);
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(245, 108, 108, 0.2);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 2px 4px rgba(245, 108, 108, 0.2);
+  }
+  50% {
+    box-shadow: 0 2px 8px rgba(245, 108, 108, 0.4);
+  }
+  100% {
+    box-shadow: 0 2px 4px rgba(245, 108, 108, 0.2);
+  }
 }
 
 .log-dialog {

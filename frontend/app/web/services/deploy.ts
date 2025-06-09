@@ -6,7 +6,8 @@ import type {
   BatchDeployResponse,
   DeployQueryParams, 
   PageResponse, 
-  ApiResponse 
+  ApiResponse,
+  TaskRecord
 } from '../models/deploy'
 
 const BASE_URL = '/api/v1/deploy'
@@ -59,6 +60,11 @@ export const getDeployList = (params: DeployQueryParams) => {
 // 获取发布详情
 export const getDeployDetail = (deployId: number) => {
   return api.get<ApiResponse<DeployInfo>>(`${BASE_URL}/${deployId}`)
+}
+
+// 获取任务详情
+export const getTaskDetail = (taskId: number) => {
+  return api.get<ApiResponse<TaskRecord>>(`${BASE_URL}/publish/query/${taskId}`)
 }
 
 // 取消发布
