@@ -342,3 +342,18 @@ func (pm *PublishManager) JobStatus() ([]*entity.TaskRecord, error) {
 
 	return taskRecords, nil
 }
+
+// GetTaskRecordDetails 获取任务详情
+func (pm *PublishManager) GetTaskRecordDetails(taskID int) (*entity.TaskRecord, error) {
+	var taskRecord entity.TaskRecord
+
+	has, err := db.Engine.Where("task_id = ?", taskID).And("deleted_at IS NULL").Get(&taskRecord)
+	if err != nil {
+		return nil, fmt.Errorf("查询任务详情失败：%s", err)
+	}
+	if !has {
+		return nil, fmt.Errorf("未找到任务详情，task_id: %d", taskID)
+	}
+	slog.Info("查询任务详情成功", "task_id", taskID)
+	return &taskRecord, nil
+}

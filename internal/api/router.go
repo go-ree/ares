@@ -39,6 +39,8 @@ func Router(r gin.IRouter) {
 
 			// 多条件分页查询，查询所有任务列表
 			deploy.POST("/publish/query", publishController.QueryBuildTaskList)
+			// 获取job任务构建详情
+			deploy.GET("/publish/query/:task_id", publishController.QueryTaskRecordDetails)
 
 			// 获取当前还在发布中的任务
 			deploy.GET("/publish/status", publishController.GetBuildTaskList)

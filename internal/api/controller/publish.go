@@ -5,6 +5,7 @@ import (
 	"ares/internal/publish"
 	"github.com/gin-gonic/gin"
 	"log/slog"
+	"strconv"
 )
 
 type PublishController struct {
@@ -98,6 +99,35 @@ func (pc *PublishController) QueryBuildTaskList(c *gin.Context) {
 
 	// 调用管理器查询
 	result, err := pc.publishManager.QueryBuildPublish(ctx, params)
+	if err != nil {
+		c.JSON(500, util.ResponseFailure("查询失败", err.Error()))
+		slog.Error("查询失败", "error", err)
+		return
+	}
+
+	c.JSON(200, util.ResponseSuccessful("查询成功", result))
+}
+
+// QueryTaskRecordDetails
+// @Tags Publish
+// @Summary 查询构建任务详情
+// @Description 根据任务的执行id，查询构建任务详情信息
+// @Param task_id path int true "构建任务ID"
+// @Success 200 {object} util.ResponseTemplate{code=int,result=publish.PublishQueryResult} "成功"
+// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
+// @Router /api/v1/deploy/publish/query/{task_id} [get]
+func (pc *PublishController) QueryTaskRecordDetails(c *gin.Context) {
+	// 获取路径参数中的应用ID
+	taskIDStr := c.Param("task_id")
+	taskID, err := strconv.Atoi(taskIDStr)
+	if err != nil {
+		c.JSON(400, util.ResponseFailure("无效的任务ID", err.Error()))
+		return
+	}
+
+	// 调用管理器查询
+	result, err := pc.publishManager.GetTaskRecordDetails(taskID)
 	if err != nil {
 		c.JSON(500, util.ResponseFailure("查询失败", err.Error()))
 		slog.Error("查询失败", "error", err)
