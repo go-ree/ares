@@ -74,9 +74,8 @@ const goDeploy = () => router.push('/publish/deploy')
 
 <style scoped>
 .home-wrapper {
-  padding: 24px;
   background: #f5f7fa;
-  min-height: 100vh;
+  min-height: 100%;
 }
 .el-card {
   border-radius: 8px;

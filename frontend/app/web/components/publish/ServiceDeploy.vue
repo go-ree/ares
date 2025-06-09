@@ -1280,7 +1280,8 @@ onUnmounted(() => {
 
 <style scoped>
 .service-deploy {
-  padding: 20px;
+  min-height: 100%;
+  background-color: #f5f7fa;
 }
 
 .deploy-card {
@@ -1289,7 +1290,7 @@ onUnmounted(() => {
 }
 
 .deploy-tool {
-  padding: 20px 0;
+  padding: 0 20px 20px 20px;
 }
 
 .env-selector {

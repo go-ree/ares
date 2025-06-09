@@ -10,8 +10,7 @@ import ServiceDeploy from '@/components/publish/ServiceDeploy.vue'
 
 <style scoped>
 .deploy {
-  padding: 20px;
+  min-height: 100%;
   background: #f5f7fa;
-  min-height: 100vh;
 }
 </style> 
