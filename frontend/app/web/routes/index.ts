@@ -14,18 +14,6 @@ const router = createRouter({
           component: () => import('../views/Home.vue')
         },
         {
-          path: '/application/list',
-          component: () => import('../views/application/AppList.vue')
-        },
-        {
-          path: '/application/apply',
-          component: () => import('../views/application/AppApply.vue')
-        },
-        {
-          path: '/application/config',
-          component: () => import('../views/application/AppConfig.vue')
-        },
-        {
           path: '/publish/deploy',
           component: () => import('../views/publish/Deploy.vue')
         },

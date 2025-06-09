@@ -2,7 +2,7 @@
   <div class="home-wrapper">
     <el-row :gutter="20">
       <!-- 欢迎卡片 -->
-      <el-col :span="8">
+      <el-col :span="12">
         <el-card class="home-card">
           <template #header>
             <span>欢迎使用</span>
@@ -14,41 +14,13 @@
           </div>
         </el-card>
       </el-col>
-      <!-- 应用统计卡片 -->
-      <el-col :span="8">
-        <el-card class="home-card">
-          <template #header>
-            <span>应用统计</span>
-          </template>
-          <div class="stats-list card-content">
-            <div class="stats-item">
-              <el-icon class="stats-icon"><Files /></el-icon>
-              <span>应用总数</span>
-              <span class="stats-value">0</span>
-            </div>
-            <div class="stats-item">
-              <el-icon class="stats-icon"><Clock /></el-icon>
-              <span>待发布</span>
-              <span class="stats-value">0</span>
-            </div>
-            <div class="stats-item">
-              <el-icon class="stats-icon"><Finished /></el-icon>
-              <span>已发布</span>
-              <span class="stats-value">0</span>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
       <!-- 快捷操作卡片 -->
-      <el-col :span="8">
+      <el-col :span="12">
         <el-card class="home-card">
           <template #header>
             <span>快捷操作</span>
           </template>
           <div class="quick-actions card-content">
-            <el-button type="primary" size="large" class="quick-btn" @click="goApply" plain>
-              <el-icon><Plus /></el-icon><span>申请应用</span>
-            </el-button>
             <el-button type="success" size="large" class="quick-btn" @click="goMerge" plain>
               <el-icon><Link /></el-icon><span>代码合并</span>
             </el-button>
@@ -64,10 +36,9 @@
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { Promotion, Files, Clock, Finished, Plus, Link, UploadFilled } from '@element-plus/icons-vue'
+import { Promotion, Link, UploadFilled } from '@element-plus/icons-vue'
 
 const router = useRouter()
-const goApply = () => router.push('/application/apply')
 const goMerge = () => router.push('/publish/merge')
 const goDeploy = () => router.push('/publish/deploy')
 </script>
@@ -107,29 +78,6 @@ const goDeploy = () => router.push('/publish/deploy')
   font-size: 40px;
   color: #409EFF;
   margin-bottom: 12px;
-}
-.stats-list {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 16px 0;
-}
-.stats-item {
-  display: flex;
-  align-items: center;
-  font-size: 16px;
-  color: #606266;
-}
-.stats-icon {
-  font-size: 22px;
-  margin-right: 8px;
-  color: #409EFF;
-}
-.stats-value {
-  margin-left: auto;
-  font-weight: bold;
-  color: #409EFF;
-  font-size: 18px;
 }
 .quick-actions {
   display: flex;
