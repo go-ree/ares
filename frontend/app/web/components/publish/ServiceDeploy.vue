@@ -329,9 +329,15 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, RefreshRight, Refresh, Loading, Plus, Edit } from '@element-plus/icons-vue'
+import { batchDeploy, createDeploy } from '@/services/deploy'
+import { useUserStore } from '@/stores/user'
+import type { DeployRequest, Environment } from '@/models/deploy'
 
 // 当前激活的标签页
 const activeTab = ref('tool')
+
+// 用户store
+const userStore = useUserStore()
 
 // 定义日志数据接口
 interface LogItem {
@@ -620,7 +626,7 @@ const handleEnvChange = async (env: string) => {
 // 获取可用服务列表
 const fetchAvailableServices = async () => {
   try {
-    // 使用 vite.config.ts 中配置的代理
+    // 使用正确的API获取应用名称列表
     const response = await fetch('/api/v1/apps/query/appname', {
       method: 'GET',
       headers: {
@@ -705,16 +711,42 @@ const handleDeploySingle = async (row: SelectedService) => {
   if (!validateServiceDeploy(row)) return
   
   try {
-    // TODO: 调用单个服务发布 API
     row.status = '发布中'
-    ElMessage.success(`${row.serviceName} 发布任务已提交`)
-    // 模拟发布完成
-    setTimeout(() => {
-      row.status = '发布成功'
-    }, 2000)
+    
+    // 检查用户是否登录
+    if (!userStore.userInfo) {
+      throw new Error('用户未登录')
+    }
+    
+    // 构建发布请求
+    const deployRequest = {
+      app_name: row.serviceName,
+      env: deployForm.environment,
+      branch: row.branch
+    }
+    
+    // 调用发布接口
+    const response = await createDeploy(deployRequest, {
+      username: userStore.userInfo.username,
+      nameCn: userStore.userInfo.nameCn
+    })
+    
+    if (response.data.code === 1) {
+      const result = response.data.result
+      if (result && result.success) {
+        ElMessage.success(`${row.serviceName} 发布任务已提交，任务ID: ${result.task_record.task_id}`)
+        // 刷新发布中服务列表
+        await refreshDeployingList()
+      } else {
+        throw new Error(result?.error || '发布失败')
+      }
+    } else {
+      throw new Error(response.data.msg || '发布失败')
+    }
   } catch (error) {
     row.status = '发布失败'
-    ElMessage.error('发布失败')
+    console.error('发布失败:', error)
+    ElMessage.error(error instanceof Error ? error.message : '发布失败')
   }
 }
 
@@ -723,16 +755,42 @@ const handleRedeploySingle = async (row: SelectedService) => {
   if (!validateServiceDeploy(row)) return
   
   try {
-    // TODO: 调用单个服务重发 API
     row.status = '发布中'
-    ElMessage.success(`${row.serviceName} 重发任务已提交`)
-    // 模拟重发完成
-    setTimeout(() => {
-      row.status = '发布成功'
-    }, 2000)
+    
+    // 检查用户是否登录
+    if (!userStore.userInfo) {
+      throw new Error('用户未登录')
+    }
+    
+    // 构建重发请求
+    const deployRequest = {
+      app_name: row.serviceName,
+      env: deployForm.environment,
+      branch: row.branch
+    }
+    
+    // 调用发布接口（重发使用相同的接口）
+    const response = await createDeploy(deployRequest, {
+      username: userStore.userInfo.username,
+      nameCn: userStore.userInfo.nameCn
+    })
+    
+    if (response.data.code === 1) {
+      const result = response.data.result
+      if (result && result.success) {
+        ElMessage.success(`${row.serviceName} 重发任务已提交，任务ID: ${result.task_record.task_id}`)
+        // 刷新发布中服务列表
+        await refreshDeployingList()
+      } else {
+        throw new Error(result?.error || '重发失败')
+      }
+    } else {
+      throw new Error(response.data.msg || '重发失败')
+    }
   } catch (error) {
     row.status = '发布失败'
-    ElMessage.error('重发失败')
+    console.error('重发失败:', error)
+    ElMessage.error(error instanceof Error ? error.message : '重发失败')
   }
 }
 
@@ -765,22 +823,52 @@ const handleBatchDeploy = async () => {
   }
 
   try {
-    // TODO: 调用批量发布 API
+    // 检查用户是否登录
+    if (!userStore.userInfo) {
+      throw new Error('用户未登录')
+    }
+    
+    // 设置所有服务状态为发布中
     deployableServices.forEach(service => {
       service.status = '发布中'
     })
-    ElMessage.success('批量发布任务已提交')
-    // 模拟发布完成
-    setTimeout(() => {
-      deployableServices.forEach(service => {
-        service.status = '发布成功'
-      })
-    }, 2000)
+    
+    // 构建批量发布请求
+    const deployRequests = deployableServices.map(service => ({
+      app_name: service.serviceName,
+      env: deployForm.environment,
+      branch: service.branch
+    }))
+    
+    // 调用批量发布接口
+    const response = await batchDeploy(deployRequests, {
+      username: userStore.userInfo.username,
+      nameCn: userStore.userInfo.nameCn
+    })
+    
+    if (response.data.code === 1) {
+      const result = response.data.result
+      const successCount = result.success_count
+      const failureCount = result.failure_count
+      const totalCount = result.total_count
+      
+      if (successCount > 0) {
+        ElMessage.success(`批量发布任务已提交，成功: ${successCount}，失败: ${failureCount}，总计: ${totalCount}`)
+        // 刷新发布中服务列表
+        await refreshDeployingList()
+      } else {
+        throw new Error('所有服务发布都失败了')
+      }
+    } else {
+      throw new Error(response.data.msg || '批量发布失败')
+    }
   } catch (error) {
+    // 发布失败，恢复状态
     deployableServices.forEach(service => {
       service.status = '发布失败'
     })
-    ElMessage.error('批量发布失败')
+    console.error('批量发布失败:', error)
+    ElMessage.error(error instanceof Error ? error.message : '批量发布失败')
   }
 }
 
@@ -798,22 +886,52 @@ const handleBatchRedeploy = async () => {
   }
 
   try {
-    // TODO: 调用批量重发 API
+    // 检查用户是否登录
+    if (!userStore.userInfo) {
+      throw new Error('用户未登录')
+    }
+    
+    // 设置所有服务状态为发布中
     deployableServices.forEach(service => {
       service.status = '发布中'
     })
-    ElMessage.success('批量重发任务已提交')
-    // 模拟重发完成
-    setTimeout(() => {
-      deployableServices.forEach(service => {
-        service.status = '发布成功'
-      })
-    }, 2000)
+    
+    // 构建批量重发请求
+    const deployRequests = deployableServices.map(service => ({
+      app_name: service.serviceName,
+      env: deployForm.environment,
+      branch: service.branch
+    }))
+    
+    // 调用批量发布接口（重发使用相同的接口）
+    const response = await batchDeploy(deployRequests, {
+      username: userStore.userInfo.username,
+      nameCn: userStore.userInfo.nameCn
+    })
+    
+    if (response.data.code === 1) {
+      const result = response.data.result
+      const successCount = result.success_count
+      const failureCount = result.failure_count
+      const totalCount = result.total_count
+      
+      if (successCount > 0) {
+        ElMessage.success(`批量重发任务已提交，成功: ${successCount}，失败: ${failureCount}，总计: ${totalCount}`)
+        // 刷新发布中服务列表
+        await refreshDeployingList()
+      } else {
+        throw new Error('所有服务重发都失败了')
+      }
+    } else {
+      throw new Error(response.data.msg || '批量重发失败')
+    }
   } catch (error) {
+    // 重发失败，恢复状态
     deployableServices.forEach(service => {
       service.status = '发布失败'
     })
-    ElMessage.error('批量重发失败')
+    console.error('批量重发失败:', error)
+    ElMessage.error(error instanceof Error ? error.message : '批量重发失败')
   }
 }
 
