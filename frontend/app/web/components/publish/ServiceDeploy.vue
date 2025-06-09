@@ -9,9 +9,9 @@
               <el-radio-group v-model="deployForm.environment" size="large" @change="handleEnvChange">
                 <el-radio-button :value="'dev'">开发环境</el-radio-button>
                 <el-radio-button :value="'test'">测试环境</el-radio-button>
-                <el-radio-button :value="'sim'">模拟环境</el-radio-button>
+                <el-radio-button :value="'moni'">模拟环境</el-radio-button>
               </el-radio-group>
-              <div v-if="deployForm.environment === 'sim'" class="global-branch-input">
+              <div v-if="deployForm.environment === 'moni'" class="global-branch-input">
                 <span class="branch-label">统一发布分支：</span>
                 <div class="branch-input-wrapper">
                   <el-input
@@ -45,16 +45,13 @@
                         :key="service.name"
                         :label="service.name"
                         :value="service.name"
-                      >
-                        <span>{{ service.name }}</span>
-                        <span class="service-desc">{{ service.description }}</span>
-                      </el-option>
+                      />
                     </el-select>
                   </template>
                 </el-table-column>
                 <el-table-column prop="branch" label="发布分支" min-width="200">
                   <template #default="{ row }">
-                    <template v-if="deployForm.environment === 'sim'">
+                    <template v-if="deployForm.environment === 'moni'">
                       <div class="branch-input-wrapper">
                         <el-input
                           v-model="row.branchSuffix"
@@ -190,16 +187,25 @@
                 </el-table-column>
                 <el-table-column prop="startTime" label="开始时间" width="160" />
                 <el-table-column prop="operator" label="操作人" width="100" />
-                <el-table-column label="操作" width="120" fixed="right">
+                <el-table-column label="操作" width="200" fixed="right">
                   <template #default="{ row }">
-                    <el-button
-                      type="primary"
-                      link
-                      :disabled="row.status !== '发布中'"
-                      @click="handleCancelDeploy(row)"
-                    >
-                      取消发布
-                    </el-button>
+                    <el-button-group>
+                      <el-button
+                        type="primary"
+                        link
+                        :disabled="row.status !== '发布中'"
+                        @click="handleCancelDeploy(row)"
+                      >
+                        取消发布
+                      </el-button>
+                      <el-button
+                        type="primary"
+                        link
+                        @click="handleViewLog(row)"
+                      >
+                        查询日志
+                      </el-button>
+                    </el-button-group>
                   </template>
                 </el-table-column>
               </el-table>
@@ -222,7 +228,7 @@
                     <el-option label="全部" value="" />
                     <el-option label="开发环境" value="dev" />
                     <el-option label="测试环境" value="test" />
-                    <el-option label="生产环境" value="prod" />
+                    <el-option label="模拟环境" value="moni" />
                   </el-select>
                 </el-form-item>
                 <el-form-item label="时间范围">
@@ -273,11 +279,54 @@
         </el-tab-pane>
       </el-tabs>
     </el-card>
+
+    <!-- 日志详情对话框 -->
+    <el-dialog
+      v-model="logDialogVisible"
+      :title="`${currentLog.serviceName} - 发布日志`"
+      width="80%"
+      destroy-on-close
+      class="log-dialog"
+    >
+      <div class="log-dialog-content">
+        <div class="log-header">
+          <div class="log-info">
+            <el-descriptions :column="3" border>
+              <el-descriptions-item label="服务名称">{{ currentLog.serviceName }}</el-descriptions-item>
+              <el-descriptions-item label="发布分支">{{ currentLog.branch }}</el-descriptions-item>
+              <el-descriptions-item label="环境">{{ getEnvLabel(currentLog.environment) }}</el-descriptions-item>
+              <el-descriptions-item label="发布状态">
+                <el-tag :type="getStatusType(currentLog.status)">{{ currentLog.status }}</el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="开始时间">{{ currentLog.startTime }}</el-descriptions-item>
+              <el-descriptions-item label="操作人">{{ currentLog.operator }}</el-descriptions-item>
+            </el-descriptions>
+          </div>
+        </div>
+        
+        <div class="log-tabs">
+          <el-tabs v-model="activeLogTab">
+            <el-tab-pane label="CI 日志" name="ci">
+              <div class="log-content" v-loading="ciLogLoading">
+                <pre v-if="ciLog" class="log-text">{{ ciLog }}</pre>
+                <div v-else-if="!ciLogLoading" class="empty-log">暂无 CI 日志</div>
+              </div>
+            </el-tab-pane>
+            <el-tab-pane label="CD 日志" name="cd">
+              <div class="log-content" v-loading="cdLogLoading">
+                <pre v-if="cdLog" class="log-text">{{ cdLog }}</pre>
+                <div v-else-if="!cdLogLoading" class="empty-log">暂无 CD 日志</div>
+              </div>
+            </el-tab-pane>
+          </el-tabs>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, RefreshRight, Refresh, Loading, Plus, Edit } from '@element-plus/icons-vue'
 
@@ -316,7 +365,7 @@ const total = ref(0)
 
 // 发布中服务列表数据
 interface DeployingService {
-  id: string
+  id: number
   serviceName: string
   branch: string
   environment: string
@@ -324,6 +373,19 @@ interface DeployingService {
   progress: number
   startTime: string
   operator: string
+  message?: string
+  taskId: number
+  ciJobName?: string
+  cdJobName?: string
+  products?: string
+  pipelineParam?: {
+    env: string
+    image: string
+    branch: string
+    git_url: string
+    app_name: string
+    [key: string]: any
+  }
 }
 
 const deployingList = ref<DeployingService[]>([])
@@ -332,7 +394,6 @@ const deployingLoading = ref(false)
 // 服务信息接口
 interface ServiceInfo {
   name: string
-  description: string
   branches: string[]
 }
 
@@ -359,9 +420,9 @@ const hasDeployableServices = computed(() => {
 // 获取环境标签类型
 const getEnvType = (env: string) => {
   const envMap: Record<string, string> = {
-    'dev': 'info',
-    'test': 'warning',
-    'prod': 'danger'
+    'dev': 'primary',    // 改为 primary，更柔和的蓝色
+    'test': 'warning',   // 保持 warning，醒目的黄色
+    'moni': 'info'       // 改为 info，更柔和的灰色
   }
   return envMap[env] || 'info'
 }
@@ -371,29 +432,55 @@ const getEnvLabel = (env: string) => {
   const envMap: Record<string, string> = {
     'dev': '开发环境',
     'test': '测试环境',
-    'prod': '生产环境'
+    'moni': '模拟环境'
   }
   return envMap[env] || env
 }
 
-// 获取进度条状态
-const getProgressStatus = (status: string) => {
-  const statusMap: Record<string, string> = {
-    '成功': 'success',
-    '失败': 'exception',
-    '进行中': ''
-  }
-  return statusMap[status] || ''
-}
-
 // 获取状态标签类型
 const getStatusType = (status: string) => {
+  // 先获取显示文本，再根据显示文本获取标签类型
+  const displayStatus = getDeployStatus(status)
   const statusMap: Record<string, string> = {
-    '成功': 'success',
-    '失败': 'danger',
-    '进行中': 'warning'
+    '初始化': 'info',
+    '编译打包中': 'primary',
+    '编译打包成功': 'success',
+    '编译打包失败': 'danger',
+    '部署中': 'primary',
+    '部署成功': 'success',
+    '部署失败': 'danger'
   }
-  return statusMap[status] || 'info'
+  return statusMap[displayStatus] || 'info'
+}
+
+// 获取进度条状态
+const getProgressStatus = (status: string) => {
+  // 先获取显示文本，再根据显示文本获取进度条状态
+  const displayStatus = getDeployStatus(status)
+  const statusMap: Record<string, string> = {
+    '初始化': '',
+    '编译打包中': '',
+    '编译打包成功': 'success',
+    '编译打包失败': 'exception',
+    '部署中': '',
+    '部署成功': 'success',
+    '部署失败': 'exception'
+  }
+  return statusMap[displayStatus] || ''
+}
+
+// 获取部署状态显示文本
+const getDeployStatus = (status: string): string => {
+  const statusMap: Record<string, string> = {
+    'init': '初始化',
+    'packaging': '编译打包中',
+    'packaged': '编译打包成功',
+    'package_failed': '编译打包失败',
+    'deploying': '部署中',
+    'deployed': '部署成功',
+    'deploy_failed': '部署失败'
+  }
+  return statusMap[status] || status
 }
 
 // 取消发布
@@ -423,32 +510,42 @@ const handleCancelDeploy = async (row: DeployingService) => {
 const refreshDeployingList = async () => {
   deployingLoading.value = true
   try {
-    // TODO: 调用获取发布中服务列表 API
-    // 模拟数据
-    deployingList.value = [
-      {
-        id: '1',
-        serviceName: 'service-a',
-        branch: 'dev',
-        environment: 'dev',
-        status: '发布中',
-        progress: 45,
-        startTime: '2024-03-20 10:00:00',
-        operator: '张三'
-      },
-      {
-        id: '2',
-        serviceName: 'service-b',
-        branch: 'release_20240320',
-        environment: 'test',
-        status: '发布中',
-        progress: 80,
-        startTime: '2024-03-20 09:30:00',
-        operator: '李四'
+    const response = await fetch('/api/v1/deploy/publish/status', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
       }
-    ]
+    })
+    
+    if (!response.ok) {
+      throw new Error('获取发布中服务列表失败')
+    }
+    
+    const data = await response.json()
+    if (data.code !== 1) {
+      throw new Error(data.msg || '获取发布中服务列表失败')
+    }
+    
+    // 将 API 返回的数据转换为组件需要的格式
+    deployingList.value = (data.result || []).map((item: any) => ({
+      id: item.task_id,
+      serviceName: item.app_name,
+      branch: item.branch,
+      environment: item.env,
+      status: getDeployStatus(item.status),
+      progress: calculateProgress(item.status),
+      startTime: formatDateTime(item.created_at),
+      operator: item.publisher,
+      message: item.message === 'NULL' ? '' : item.message,
+      taskId: item.task_id,
+      ciJobName: item.ci_job_name === 'NULL' ? '' : item.ci_job_name,
+      cdJobName: item.cd_job_name === 'NULL' ? '' : item.cd_job_name,
+      products: item.products === 'NULL' ? '' : item.products,
+      pipelineParam: item.pipeline_param
+    }))
   } catch (error) {
-    ElMessage.error('获取发布中服务列表失败')
+    console.error('获取发布中服务列表失败:', error)
+    ElMessage.error(error instanceof Error ? error.message : '获取发布中服务列表失败')
   } finally {
     deployingLoading.value = false
   }
@@ -456,6 +553,35 @@ const refreshDeployingList = async () => {
 
 // 定时刷新发布中服务列表
 let refreshTimer: number | null = null
+
+// 根据状态计算进度
+const calculateProgress = (status: string): number => {
+  const progressMap: Record<string, number> = {
+    'init': 0,
+    'packaging': 25,
+    'packaged': 50,
+    'package_failed': 50,
+    'deploying': 75,
+    'deployed': 100,
+    'deploy_failed': 100
+  }
+  return progressMap[status] || 0
+}
+
+// 格式化日期时间
+const formatDateTime = (dateStr: string): string => {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+}
 
 // 统一编辑分支相关
 const globalBranchSuffix = ref('')
@@ -481,7 +607,7 @@ const handleEnvChange = async (env: string) => {
   await fetchAvailableServices()
   // 更新所有已选服务的分支
   selectedServices.value.forEach(service => {
-    if (env === 'sim') {
+    if (env === 'moni') {
       service.branch = 'release_'
       service.branchSuffix = ''
     } else {
@@ -494,22 +620,31 @@ const handleEnvChange = async (env: string) => {
 // 获取可用服务列表
 const fetchAvailableServices = async () => {
   try {
-    // TODO: 调用获取服务列表 API
-    // 模拟数据
-    availableServices.value = [
-      {
-        name: 'service-a',
-        description: '服务A描述',
-        branches: [] // 不再需要分支列表，因为分支是固定的
-      },
-      {
-        name: 'service-b',
-        description: '服务B描述',
-        branches: []
+    // 使用 vite.config.ts 中配置的代理
+    const response = await fetch('/api/v1/apps/query/appname', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
       }
-    ]
+    })
+    
+    if (!response.ok) {
+      throw new Error('获取服务列表失败')
+    }
+    
+    const data = await response.json()
+    if (data.code !== 1) {
+      throw new Error(data.msg || '获取服务列表失败')
+    }
+    
+    // 将 API 返回的数据转换为组件需要的格式
+    availableServices.value = (data.result || []).map((appname: string) => ({
+      name: appname,
+      branches: [] // 分支列表不再需要
+    }))
   } catch (error) {
-    ElMessage.error('获取服务列表失败')
+    console.error('获取服务列表失败:', error)
+    ElMessage.error(error instanceof Error ? error.message : '获取服务列表失败')
   }
 }
 
@@ -521,7 +656,7 @@ const handleBranchSuffixChange = (suffix: string, row: SelectedService) => {
 // 处理服务选择
 const handleServiceSelect = async (serviceName: string, index: number) => {
   // 根据环境设置分支
-  if (deployForm.environment === 'sim') {
+  if (deployForm.environment === 'moni') {
     selectedServices.value[index].branch = 'release_'
     selectedServices.value[index].branchSuffix = ''
   } else {
@@ -534,13 +669,13 @@ const handleServiceSelect = async (serviceName: string, index: number) => {
 const handleAddService = () => {
   const newService = {
     serviceName: '',
-    branch: deployForm.environment === 'sim' ? 'release_' : deployForm.environment,
-    branchSuffix: deployForm.environment === 'sim' ? globalBranchSuffix.value : '',
+    branch: deployForm.environment === 'moni' ? 'release_' : deployForm.environment,
+    branchSuffix: deployForm.environment === 'moni' ? globalBranchSuffix.value : '',
     status: '未发布'
   }
   
   // 如果是模拟环境且有全局分支后缀，则应用它
-  if (deployForm.environment === 'sim' && globalBranchSuffix.value) {
+  if (deployForm.environment === 'moni' && globalBranchSuffix.value) {
     newService.branch = `release_${globalBranchSuffix.value}`
   }
   
@@ -558,7 +693,7 @@ const validateServiceDeploy = (row: SelectedService) => {
     ElMessage.warning('请选择服务')
     return false
   }
-  if (deployForm.environment === 'sim' && !row.branchSuffix) {
+  if (deployForm.environment === 'moni' && !row.branchSuffix) {
     ElMessage.warning('请输入分支后缀')
     return false
   }
@@ -605,7 +740,7 @@ const handleRedeploySingle = async (row: SelectedService) => {
 const validateBatchDeploy = () => {
   const invalidServices = selectedServices.value.filter(service => {
     if (!service.serviceName) return true
-    if (deployForm.environment === 'sim' && !service.branchSuffix) return true
+    if (deployForm.environment === 'moni' && !service.branchSuffix) return true
     return false
   })
 
@@ -720,6 +855,91 @@ const handleCurrentChange = (val: number) => {
   handleSearch()
 }
 
+// 日志对话框相关
+const logDialogVisible = ref(false)
+const currentLog = ref<DeployingService>({} as DeployingService)
+const activeLogTab = ref('ci')
+const ciLog = ref('')
+const cdLog = ref('')
+const ciLogLoading = ref(false)
+const cdLogLoading = ref(false)
+
+// 查看日志
+const handleViewLog = async (row: DeployingService) => {
+  currentLog.value = row
+  logDialogVisible.value = true
+  activeLogTab.value = 'ci'
+  await fetchLogs(row)
+}
+
+// 获取日志
+const fetchLogs = async (row: DeployingService) => {
+  if (activeLogTab.value === 'ci' && row.ciJobName) {
+    ciLogLoading.value = true
+    try {
+      // TODO: 调用获取 CI 日志的 API
+      const response = await fetch(`/api/v1/deploy/log/ci?task_id=${row.taskId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('获取 CI 日志失败')
+      }
+      
+      const data = await response.json()
+      if (data.code !== 1) {
+        throw new Error(data.msg || '获取 CI 日志失败')
+      }
+      
+      ciLog.value = data.result || ''
+    } catch (error) {
+      console.error('获取 CI 日志失败:', error)
+      ElMessage.error(error instanceof Error ? error.message : '获取 CI 日志失败')
+      ciLog.value = ''
+    } finally {
+      ciLogLoading.value = false
+    }
+  } else if (activeLogTab.value === 'cd' && row.cdJobName) {
+    cdLogLoading.value = true
+    try {
+      // TODO: 调用获取 CD 日志的 API
+      const response = await fetch(`/api/v1/deploy/log/cd?task_id=${row.taskId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('获取 CD 日志失败')
+      }
+      
+      const data = await response.json()
+      if (data.code !== 1) {
+        throw new Error(data.msg || '获取 CD 日志失败')
+      }
+      
+      cdLog.value = data.result || ''
+    } catch (error) {
+      console.error('获取 CD 日志失败:', error)
+      ElMessage.error(error instanceof Error ? error.message : '获取 CD 日志失败')
+      cdLog.value = ''
+    } finally {
+      cdLogLoading.value = false
+    }
+  }
+}
+
+// 监听日志标签页切换
+watch(activeLogTab, async (newTab) => {
+  if (logDialogVisible.value && currentLog.value) {
+    await fetchLogs(currentLog.value)
+  }
+})
+
 // 组件挂载时获取发布中服务列表和可用服务列表
 onMounted(() => {
   refreshDeployingList()
@@ -818,9 +1038,7 @@ onUnmounted(() => {
 }
 
 .service-desc {
-  color: #909399;
-  font-size: 12px;
-  margin-left: 8px;
+  display: none;
 }
 
 .branch-text {
@@ -932,5 +1150,102 @@ onUnmounted(() => {
 :deep(.el-table .el-input__prefix) {
   height: 32px;
   line-height: 32px;
+}
+
+:deep(.el-tag--primary) {
+  --el-tag-bg-color: var(--el-color-primary-light-9);
+  --el-tag-border-color: var(--el-color-primary-light-8);
+  --el-tag-hover-color: var(--el-color-primary);
+}
+
+:deep(.el-tag--info) {
+  --el-tag-bg-color: var(--el-color-info-light-9);
+  --el-tag-border-color: var(--el-color-info-light-8);
+  --el-tag-hover-color: var(--el-color-info);
+}
+
+:deep(.el-tag--warning) {
+  --el-tag-bg-color: var(--el-color-warning-light-9);
+  --el-tag-border-color: var(--el-color-warning-light-8);
+  --el-tag-hover-color: var(--el-color-warning);
+}
+
+:deep(.el-tag--success) {
+  --el-tag-bg-color: var(--el-color-success-light-9);
+  --el-tag-border-color: var(--el-color-success-light-8);
+  --el-tag-hover-color: var(--el-color-success);
+}
+
+:deep(.el-tag--danger) {
+  --el-tag-bg-color: var(--el-color-danger-light-9);
+  --el-tag-border-color: var(--el-color-danger-light-8);
+  --el-tag-hover-color: var(--el-color-danger);
+}
+
+.log-dialog {
+  :deep(.el-dialog__body) {
+    padding: 0;
+  }
+}
+
+.log-dialog-content {
+  display: flex;
+  flex-direction: column;
+  height: 70vh;
+}
+
+.log-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--el-border-color-light);
+}
+
+.log-info {
+  :deep(.el-descriptions__label) {
+    width: 100px;
+    justify-content: flex-end;
+  }
+}
+
+.log-tabs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  
+  :deep(.el-tabs__content) {
+    flex: 1;
+    overflow: hidden;
+    padding: 0;
+  }
+  
+  :deep(.el-tab-pane) {
+    height: 100%;
+  }
+}
+
+.log-content {
+  height: 100%;
+  padding: 20px;
+  overflow: auto;
+  background-color: #1e1e1e;
+}
+
+.log-text {
+  margin: 0;
+  color: #d4d4d4;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.empty-log {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
 }
 </style> 
