@@ -329,7 +329,6 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, RefreshRight, Refresh, Loading, Plus, Edit } from '@element-plus/icons-vue'
-import { aresService } from '@/services/ares'
 
 // 当前激活的标签页
 const activeTab = ref('tool')
@@ -511,14 +510,24 @@ const handleCancelDeploy = async (row: DeployingService) => {
 const refreshDeployingList = async () => {
   deployingLoading.value = true
   try {
-    const response = await aresService.getPublishStatus()
+    const response = await fetch('/api/v1/deploy/publish/status', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
     
-    if (response.data.code !== 1) {
-      throw new Error(response.data.msg || '获取发布中服务列表失败')
+    if (!response.ok) {
+      throw new Error('获取发布中服务列表失败')
+    }
+    
+    const data = await response.json()
+    if (data.code !== 1) {
+      throw new Error(data.msg || '获取发布中服务列表失败')
     }
     
     // 将 API 返回的数据转换为组件需要的格式
-    deployingList.value = (response.data.result || []).map((item: any) => ({
+    deployingList.value = (data.result || []).map((item: any) => ({
       id: item.task_id,
       serviceName: item.app_name,
       branch: item.branch,
@@ -611,14 +620,25 @@ const handleEnvChange = async (env: string) => {
 // 获取可用服务列表
 const fetchAvailableServices = async () => {
   try {
-    const response = await aresService.queryApps({})
+    // 使用 vite.config.ts 中配置的代理
+    const response = await fetch('/api/v1/apps/query/appname', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
     
-    if (response.data.code !== 1) {
-      throw new Error(response.data.msg || '获取服务列表失败')
+    if (!response.ok) {
+      throw new Error('获取服务列表失败')
+    }
+    
+    const data = await response.json()
+    if (data.code !== 1) {
+      throw new Error(data.msg || '获取服务列表失败')
     }
     
     // 将 API 返回的数据转换为组件需要的格式
-    availableServices.value = (response.data.result || []).map((appname: string) => ({
+    availableServices.value = (data.result || []).map((appname: string) => ({
       name: appname,
       branches: [] // 分支列表不再需要
     }))
@@ -857,13 +877,24 @@ const fetchLogs = async (row: DeployingService) => {
   if (activeLogTab.value === 'ci' && row.ciJobName) {
     ciLogLoading.value = true
     try {
-      const response = await aresService.getCiLog(row.taskId)
+      // TODO: 调用获取 CI 日志的 API
+      const response = await fetch(`/api/v1/deploy/log/ci?task_id=${row.taskId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
       
-      if (response.data.code !== 1) {
-        throw new Error(response.data.msg || '获取 CI 日志失败')
+      if (!response.ok) {
+        throw new Error('获取 CI 日志失败')
       }
       
-      ciLog.value = response.data.result || ''
+      const data = await response.json()
+      if (data.code !== 1) {
+        throw new Error(data.msg || '获取 CI 日志失败')
+      }
+      
+      ciLog.value = data.result || ''
     } catch (error) {
       console.error('获取 CI 日志失败:', error)
       ElMessage.error(error instanceof Error ? error.message : '获取 CI 日志失败')
@@ -874,13 +905,24 @@ const fetchLogs = async (row: DeployingService) => {
   } else if (activeLogTab.value === 'cd' && row.cdJobName) {
     cdLogLoading.value = true
     try {
-      const response = await aresService.getCdLog(row.taskId)
+      // TODO: 调用获取 CD 日志的 API
+      const response = await fetch(`/api/v1/deploy/log/cd?task_id=${row.taskId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
       
-      if (response.data.code !== 1) {
-        throw new Error(response.data.msg || '获取 CD 日志失败')
+      if (!response.ok) {
+        throw new Error('获取 CD 日志失败')
       }
       
-      cdLog.value = response.data.result || ''
+      const data = await response.json()
+      if (data.code !== 1) {
+        throw new Error(data.msg || '获取 CD 日志失败')
+      }
+      
+      cdLog.value = data.result || ''
     } catch (error) {
       console.error('获取 CD 日志失败:', error)
       ElMessage.error(error instanceof Error ? error.message : '获取 CD 日志失败')

@@ -40,6 +40,24 @@
               <el-icon><House /></el-icon>
               <span class="menu-text">首页</span>
             </el-menu-item>
+            <el-sub-menu index="/application">
+              <template #title>
+                <el-icon><Collection /></el-icon>
+                <span class="menu-text">应用管理</span>
+              </template>
+              <el-menu-item index="/application/list">
+                <el-icon><List /></el-icon>
+                <span class="menu-text">应用信息查询</span>
+              </el-menu-item>
+              <el-menu-item index="/application/config">
+                <el-icon><Setting /></el-icon>
+                <span class="menu-text">应用配置</span>
+              </el-menu-item>
+              <el-menu-item index="/application/apply">
+                <el-icon><Edit /></el-icon>
+                <span class="menu-text">应用申请</span>
+              </el-menu-item>
+            </el-sub-menu>
             <el-sub-menu index="/publish">
               <template #title>
                 <el-icon><UploadFilled /></el-icon>
