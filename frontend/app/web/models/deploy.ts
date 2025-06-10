@@ -134,4 +134,71 @@ export interface PageResponse<T> {
   page_size: number
   total_pages: number
   deploys: T[]
+}
+
+// 发布日志查询参数
+export interface PublishLogQueryParams {
+  app_name?: string
+  branch?: string
+  end_time?: string
+  env?: string
+  page_num?: number
+  page_size?: number
+  publisher?: string
+  sort?: {
+    direction: string
+    field: string
+  }
+  start_time?: string
+}
+
+// 发布日志任务记录
+export interface PublishLogTaskRecord {
+  app_name: string
+  auto_deploy: number
+  branch: string
+  cd_build_id: number
+  cd_job_name: string
+  ci_build_id: number
+  ci_job_name: string
+  created_at: string
+  deleted_at: string | null
+  env: string
+  message: string
+  pipeline_param: {
+    env: string
+    image: string
+    branch: string
+    domain: string
+    git_url: string
+    app_name: string
+    gpu_count: string
+    pod_count: string
+    base_image: string
+    probe_type: string
+    domain_path: string
+    dev_language: string
+    limits_memory: string
+    pre_stop_type: string
+    pre_stop_command: string
+    probe_check_path: string
+    code_package_name: string
+    code_package_path: string
+    code_package_type: string
+    pre_stop_check_path: string
+  }
+  products: string
+  publisher: string
+  status: string
+  task_id: number
+  updated_at: string
+}
+
+// 发布日志查询响应
+export interface PublishLogQueryResponse {
+  total: number
+  page_num: number
+  page_size: number
+  total_pages: number
+  task_record: PublishLogTaskRecord[]
 } 

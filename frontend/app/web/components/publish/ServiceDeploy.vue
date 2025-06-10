@@ -227,10 +227,23 @@
             <div class="log-filter">
               <el-form :inline="true" :model="logFilter">
                 <el-form-item label="服务名称">
-                  <el-input v-model="logFilter.serviceName" placeholder="请输入服务名称" />
+                  <el-select 
+                    v-model="logFilter.serviceName" 
+                    filterable 
+                    placeholder="请选择服务名称"
+                    clearable
+                    style="width: 200px"
+                  >
+                    <el-option
+                      v-for="service in availableServices"
+                      :key="service.name"
+                      :label="service.name"
+                      :value="service.name"
+                    />
+                  </el-select>
                 </el-form-item>
                 <el-form-item label="环境">
-                  <el-select v-model="logFilter.environment" placeholder="请选择环境">
+                  <el-select v-model="logFilter.environment" placeholder="请选择环境" clearable>
                     <el-option label="全部" value="" />
                     <el-option label="开发环境" value="dev" />
                     <el-option label="测试环境" value="test" />
@@ -244,31 +257,56 @@
                     range-separator="至"
                     start-placeholder="开始日期"
                     end-placeholder="结束日期"
+                    clearable
                   />
                 </el-form-item>
                 <el-form-item>
                   <el-button type="primary" @click="handleSearch">查询</el-button>
+                  <el-button @click="handleResetLogFilter">重置</el-button>
                 </el-form-item>
               </el-form>
             </div>
             <div class="log-table">
-              <el-table :data="logList" style="width: 100%">
-                <el-table-column prop="serviceName" label="服务名称" />
-                <el-table-column prop="environment" label="环境" />
-                <el-table-column prop="version" label="版本号" />
-                <el-table-column prop="status" label="状态">
+              <el-table :data="logList" style="width: 100%" v-loading="logLoading">
+                <el-table-column prop="serviceName" label="服务名称" min-width="150" />
+                <el-table-column prop="branch" label="发布分支" min-width="120" />
+                <el-table-column prop="environment" label="环境" width="100">
                   <template #default="{ row }">
-                    <el-tag :type="getStatusType(row.status)">{{ row.status }}</el-tag>
+                    <el-tag :type="getEnvType(row.environment)">
+                      {{ getEnvLabel(row.environment) }}
+                    </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column prop="deployTime" label="发布时间" />
-                <el-table-column prop="operator" label="操作人" />
-                <el-table-column label="操作">
+                <el-table-column prop="status" label="状态" width="120">
                   <template #default="{ row }">
-                    <el-button type="text" @click="viewLogDetail(row)">查看详情</el-button>
+                    <el-tag :type="getStatusType(row.status)">
+                      {{ row.status }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="deployTime" label="发布时间" width="160" />
+                <el-table-column prop="operator" label="操作人" width="100" />
+                <el-table-column prop="auto_deploy" label="自动部署" width="100">
+                  <template #default="{ row }">
+                    <el-tag :type="row.auto_deploy ? 'success' : 'info'" size="small">
+                      {{ row.auto_deploy ? '是' : '否' }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="120" fixed="right">
+                  <template #default="{ row }">
+                    <el-button type="primary" link @click="viewLogDetail(row)">
+                      查看日志
+                    </el-button>
                   </template>
                 </el-table-column>
               </el-table>
+              
+              <!-- 空数据提示 -->
+              <div v-if="logList.length === 0 && !logLoading" class="empty-data">
+                <el-empty description="暂无日志数据" />
+              </div>
+              
               <div class="pagination">
                 <el-pagination
                   v-model:current-page="currentPage"
@@ -289,10 +327,11 @@
     <!-- 日志详情对话框 -->
     <el-dialog
       v-model="logDialogVisible"
-      :title="`${currentLog.serviceName} - 发布日志`"
+      :title="`${currentLog.serviceName || '未知服务'} - 发布日志详情`"
       width="80%"
       destroy-on-close
       class="log-dialog"
+      @close="handleLogDialogClose"
     >
       <div class="log-dialog-content">
         <div class="log-header">
@@ -306,6 +345,23 @@
               </el-descriptions-item>
               <el-descriptions-item label="开始时间">{{ currentLog.startTime }}</el-descriptions-item>
               <el-descriptions-item label="操作人">{{ currentLog.operator }}</el-descriptions-item>
+              <el-descriptions-item label="自动部署">
+                <el-tag :type="currentLog.auto_deploy ? 'success' : 'info'" size="small">
+                  {{ currentLog.auto_deploy ? '是' : '否' }}
+                </el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="CI Job">{{ currentLog.ciJobName || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="CD Job">{{ currentLog.cdJobName || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="镜像地址" v-if="currentLog.products">
+                <el-tooltip :content="currentLog.products" placement="top">
+                  <span class="truncate-text">{{ currentLog.products }}</span>
+                </el-tooltip>
+              </el-descriptions-item>
+              <el-descriptions-item label="错误信息" v-if="currentLog.message">
+                <el-tooltip :content="currentLog.message" placement="top">
+                  <span class="error-message">{{ currentLog.message }}</span>
+                </el-tooltip>
+              </el-descriptions-item>
             </el-descriptions>
           </div>
         </div>
@@ -313,15 +369,19 @@
         <div class="log-tabs">
           <el-tabs v-model="activeLogTab">
             <el-tab-pane label="CI 日志" name="ci">
-              <div class="log-content" v-loading="ciLogLoading">
+              <div class="log-detail-content" v-loading="ciLogLoading">
                 <pre v-if="ciLog" class="log-text">{{ ciLog }}</pre>
-                <div v-else-if="!ciLogLoading" class="empty-log">暂无 CI 日志</div>
+                <div v-else-if="!ciLogLoading" class="empty-log">
+                  <el-empty description="暂无 CI 日志" :image-size="60" />
+                </div>
               </div>
             </el-tab-pane>
             <el-tab-pane label="CD 日志" name="cd">
-              <div class="log-content" v-loading="cdLogLoading">
+              <div class="log-detail-content" v-loading="cdLogLoading">
                 <pre v-if="cdLog" class="log-text">{{ cdLog }}</pre>
-                <div v-else-if="!cdLogLoading" class="empty-log">暂无 CD 日志</div>
+                <div v-else-if="!cdLogLoading" class="empty-log">
+                  <el-empty description="暂无 CD 日志" :image-size="60" />
+                </div>
               </div>
             </el-tab-pane>
           </el-tabs>
@@ -335,9 +395,9 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, RefreshRight, Refresh, Loading, Plus, Edit } from '@element-plus/icons-vue'
-import { batchDeploy, createDeploy, getTaskDetail } from '@/services/deploy'
+import { batchDeploy, createDeploy, getTaskDetail, queryPublishLogs, queryTaskLogs } from '@/services/deploy'
 import { useUserStore } from '@/stores/user'
-import type { DeployRequest, Environment, TaskRecord } from '@/models/deploy'
+import type { DeployRequest, Environment, TaskRecord, PublishLogQueryParams, PublishLogTaskRecord } from '@/models/deploy'
 
 // 当前激活的标签页
 const activeTab = ref('tool')
@@ -347,12 +407,18 @@ const userStore = useUserStore()
 
 // 定义日志数据接口
 interface LogItem {
+  task_id: number
   serviceName: string
+  branch: string
   environment: string
-  version: string
   status: string
   deployTime: string
   operator: string
+  message: string
+  auto_deploy: number
+  ci_job_name: string
+  cd_job_name: string
+  products: string
 }
 
 // 发布表单数据
@@ -374,6 +440,7 @@ const logList = ref<LogItem[]>([])
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
+const logLoading = ref(false)
 
 // 发布中服务列表数据
 interface DeployingService {
@@ -390,6 +457,7 @@ interface DeployingService {
   ciJobName?: string
   cdJobName?: string
   products?: string
+  auto_deploy?: number
   pipelineParam?: {
     env: string
     image: string
@@ -473,7 +541,10 @@ const getStatusType = (status: string) => {
     '打包失败': 'danger',
     '部署中': 'primary',
     '部署成功': 'success',
-    '部署失败': 'danger'
+    '部署失败': 'danger',
+    '已取消': 'warning',
+    '超时': 'warning',
+    '未知状态': 'info'
   }
   return statusMap[displayStatus] || 'info'
 }
@@ -489,7 +560,10 @@ const getProgressStatus = (status: string) => {
     '打包失败': 'exception',
     '部署中': '',
     '部署成功': 'success',
-    '部署失败': 'exception'
+    '部署失败': 'exception',
+    '已取消': 'warning',
+    '超时': 'warning',
+    '未知状态': ''
   }
   return statusMap[displayStatus] || ''
 }
@@ -503,7 +577,10 @@ const getDeployStatus = (status: string): string => {
     'package_failed': '打包失败',
     'deploying': '部署中',
     'deployed': '部署成功',
-    'deploy_failed': '部署失败'
+    'deploy_failed': '部署失败',
+    'cancelled': '已取消',
+    'timeout': '超时',
+    'unknown': '未知状态'
   }
   return statusMap[status] || status
 }
@@ -988,33 +1065,35 @@ const handleBatchDeploy = async () => {
         ElMessage.success(`批量发布任务已提交，成功: ${successCount}，失败: ${failureCount}，总计: ${totalCount}`)
         
         // 更新所有成功任务对应的选中服务状态
-        for (const taskRecord of result.task_records) {
-          if (taskRecord.success && taskRecord.task_record) {
-            const taskDetail = taskRecord.task_record
-            // 找到对应的选中服务索引
-            const serviceIndex = selectedServices.value.findIndex(service => 
-              service.serviceName === taskDetail.app_name && service.branch === taskDetail.branch
-            )
-            console.log(`批量发布 - 查找服务索引:`, {
-              taskDetail: {
-                app_name: taskDetail.app_name,
-                branch: taskDetail.branch,
-                task_id: taskDetail.task_id
-              },
-              foundIndex: serviceIndex,
-              selectedServices: selectedServices.value.map(s => ({
-                serviceName: s.serviceName,
-                branch: s.branch,
-                status: s.status,
-                taskId: s.taskId
-              }))
-            })
-            if (serviceIndex >= 0) {
-              // 先设置taskId，确保定时器能找到这个服务
-              selectedServices.value[serviceIndex].taskId = taskDetail.task_id
-              await updateSelectedServiceStatus(serviceIndex, taskDetail.task_id)
-            } else {
-              console.error(`未找到匹配的服务: ${taskDetail.app_name} - ${taskDetail.branch}`)
+        if (result.task_records && Array.isArray(result.task_records)) {
+          for (const taskRecord of result.task_records) {
+            if (taskRecord.success && taskRecord.task_record) {
+              const taskDetail = taskRecord.task_record
+              // 找到对应的选中服务索引
+              const serviceIndex = selectedServices.value.findIndex(service => 
+                service.serviceName === taskDetail.app_name && service.branch === taskDetail.branch
+              )
+              console.log(`批量发布 - 查找服务索引:`, {
+                taskDetail: {
+                  app_name: taskDetail.app_name,
+                  branch: taskDetail.branch,
+                  task_id: taskDetail.task_id
+                },
+                foundIndex: serviceIndex,
+                selectedServices: selectedServices.value.map(s => ({
+                  serviceName: s.serviceName,
+                  branch: s.branch,
+                  status: s.status,
+                  taskId: s.taskId
+                }))
+              })
+              if (serviceIndex >= 0) {
+                // 先设置taskId，确保定时器能找到这个服务
+                selectedServices.value[serviceIndex].taskId = taskDetail.task_id
+                await updateSelectedServiceStatus(serviceIndex, taskDetail.task_id)
+              } else {
+                console.error(`未找到匹配的服务: ${taskDetail.app_name} - ${taskDetail.branch}`)
+              }
             }
           }
         }
@@ -1084,33 +1163,35 @@ const handleBatchRedeploy = async () => {
         ElMessage.success(`批量重发任务已提交，成功: ${successCount}，失败: ${failureCount}，总计: ${totalCount}`)
         
         // 更新所有成功任务对应的选中服务状态
-        for (const taskRecord of result.task_records) {
-          if (taskRecord.success && taskRecord.task_record) {
-            const taskDetail = taskRecord.task_record
-            // 找到对应的选中服务索引
-            const serviceIndex = selectedServices.value.findIndex(service => 
-              service.serviceName === taskDetail.app_name && service.branch === taskDetail.branch
-            )
-            console.log(`批量重发 - 查找服务索引:`, {
-              taskDetail: {
-                app_name: taskDetail.app_name,
-                branch: taskDetail.branch,
-                task_id: taskDetail.task_id
-              },
-              foundIndex: serviceIndex,
-              selectedServices: selectedServices.value.map(s => ({
-                serviceName: s.serviceName,
-                branch: s.branch,
-                status: s.status,
-                taskId: s.taskId
-              }))
-            })
-            if (serviceIndex >= 0) {
-              // 先设置taskId，确保定时器能找到这个服务
-              selectedServices.value[serviceIndex].taskId = taskDetail.task_id
-              await updateSelectedServiceStatus(serviceIndex, taskDetail.task_id)
-            } else {
-              console.error(`未找到匹配的服务: ${taskDetail.app_name} - ${taskDetail.branch}`)
+        if (result.task_records && Array.isArray(result.task_records)) {
+          for (const taskRecord of result.task_records) {
+            if (taskRecord.success && taskRecord.task_record) {
+              const taskDetail = taskRecord.task_record
+              // 找到对应的选中服务索引
+              const serviceIndex = selectedServices.value.findIndex(service => 
+                service.serviceName === taskDetail.app_name && service.branch === taskDetail.branch
+              )
+              console.log(`批量重发 - 查找服务索引:`, {
+                taskDetail: {
+                  app_name: taskDetail.app_name,
+                  branch: taskDetail.branch,
+                  task_id: taskDetail.task_id
+                },
+                foundIndex: serviceIndex,
+                selectedServices: selectedServices.value.map(s => ({
+                  serviceName: s.serviceName,
+                  branch: s.branch,
+                  status: s.status,
+                  taskId: s.taskId
+                }))
+              })
+              if (serviceIndex >= 0) {
+                // 先设置taskId，确保定时器能找到这个服务
+                selectedServices.value[serviceIndex].taskId = taskDetail.task_id
+                await updateSelectedServiceStatus(serviceIndex, taskDetail.task_id)
+              } else {
+                console.error(`未找到匹配的服务: ${taskDetail.app_name} - ${taskDetail.branch}`)
+              }
             }
           }
         }
@@ -1135,29 +1216,116 @@ const handleBatchRedeploy = async () => {
 
 // 处理日志查询
 const handleSearch = async () => {
-  try {
-    // TODO: 调用日志查询 API
-    // 模拟数据
-    logList.value = [
-      {
-        serviceName: '示例服务',
-        environment: 'dev',
-        version: '1.0.0',
-        status: '成功',
-        deployTime: '2024-03-20 10:00:00',
-        operator: '张三'
-      }
-    ]
-    total.value = 1
-  } catch (error) {
-    ElMessage.error('查询失败')
+  // 基本参数验证
+  if (currentPage.value < 1) {
+    currentPage.value = 1
   }
+  if (pageSize.value < 1 || pageSize.value > 100) {
+    pageSize.value = 10
+  }
+  
+  logLoading.value = true
+  try {
+    // 构建查询参数
+    const params: PublishLogQueryParams = {
+      page_num: currentPage.value,
+      page_size: pageSize.value,
+      app_name: logFilter.serviceName || undefined,
+      env: logFilter.environment || undefined,
+      publisher: undefined
+    }
+
+    // 处理时间范围
+    if (logFilter.dateRange && logFilter.dateRange.length === 2) {
+      params.start_time = logFilter.dateRange[0]
+      params.end_time = logFilter.dateRange[1]
+    }
+
+    // 调用日志查询API
+    const response = await queryPublishLogs(params)
+    
+    if (response.data.code === 1) {
+      const result = response.data.result
+      // 转换数据格式，添加空值检查
+      if (result && result.task_record && Array.isArray(result.task_record)) {
+        logList.value = result.task_record.map((item: PublishLogTaskRecord) => ({
+          task_id: item.task_id,
+          serviceName: item.app_name,
+          branch: item.branch,
+          environment: item.env,
+          status: getDeployStatus(item.status),
+          deployTime: formatDateTime(item.created_at),
+          operator: item.publisher,
+          message: item.message === 'NULL' ? '' : item.message,
+          auto_deploy: item.auto_deploy,
+          ci_job_name: item.ci_job_name === 'NULL' ? '' : item.ci_job_name,
+          cd_job_name: item.cd_job_name === 'NULL' ? '' : item.cd_job_name,
+          products: item.products === 'NULL' ? '' : item.products
+        }))
+        total.value = result.total || 0
+      } else {
+        // 处理空结果的情况
+        logList.value = []
+        total.value = 0
+      }
+      
+      // 显示查询结果提示
+      if (logList.value.length > 0) {
+        ElMessage.success(`查询成功，共找到 ${total.value} 条记录`)
+      } else {
+        ElMessage.info('查询完成，未找到相关记录')
+      }
+    } else {
+      throw new Error(response.data.msg || '查询失败')
+    }
+  } catch (error) {
+    console.error('查询日志失败:', error)
+    const errorMessage = error instanceof Error ? error.message : '查询失败'
+    ElMessage.error(errorMessage)
+    
+    // 清空数据
+    logList.value = []
+    total.value = 0
+  } finally {
+    logLoading.value = false
+  }
+}
+
+// 重置日志筛选条件
+const handleResetLogFilter = () => {
+  logFilter.serviceName = ''
+  logFilter.environment = ''
+  logFilter.dateRange = []
+  currentPage.value = 1
+  pageSize.value = 10
+  // 重置后立即查询
+  handleSearch()
 }
 
 // 查看日志详情
 const viewLogDetail = (row: LogItem) => {
-  // TODO: 实现查看日志详情的逻辑
-  console.log('查看日志详情', row)
+  // 将LogItem转换为DeployingService格式
+  const deployingService: DeployingService = {
+    id: row.task_id,
+    serviceName: row.serviceName,
+    branch: row.branch,
+    environment: row.environment,
+    status: row.status,
+    progress: 100, // 已完成的任务进度为100
+    startTime: row.deployTime,
+    operator: row.operator,
+    message: row.message,
+    taskId: row.task_id,
+    ciJobName: row.ci_job_name,
+    cdJobName: row.cd_job_name,
+    products: row.products,
+    auto_deploy: row.auto_deploy
+  }
+  
+  currentLog.value = deployingService
+  logDialogVisible.value = true
+  activeLogTab.value = 'ci'
+  fetchLogs(deployingService)
 }
 
 // 分页处理
@@ -1180,37 +1348,18 @@ const cdLog = ref('')
 const ciLogLoading = ref(false)
 const cdLogLoading = ref(false)
 
-// 查看日志
-const handleViewLog = async (row: DeployingService) => {
-  currentLog.value = row
-  logDialogVisible.value = true
-  activeLogTab.value = 'ci'
-  await fetchLogs(row)
-}
-
 // 获取日志
 const fetchLogs = async (row: DeployingService) => {
-  if (activeLogTab.value === 'ci' && row.ciJobName) {
+  if (activeLogTab.value === 'ci') {
     ciLogLoading.value = true
     try {
-      // TODO: 调用获取 CI 日志的 API
-      const response = await fetch(`/api/v1/deploy/log/ci?task_id=${row.taskId}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      })
+      const response = await queryTaskLogs(row.taskId, 'ci')
       
-      if (!response.ok) {
-        throw new Error('获取 CI 日志失败')
+      if (response.data.code === 1) {
+        ciLog.value = response.data.result || ''
+      } else {
+        throw new Error(response.data.msg || '获取 CI 日志失败')
       }
-      
-      const data = await response.json()
-      if (data.code !== 1) {
-        throw new Error(data.msg || '获取 CI 日志失败')
-      }
-      
-      ciLog.value = data.result || ''
     } catch (error) {
       console.error('获取 CI 日志失败:', error)
       ElMessage.error(error instanceof Error ? error.message : '获取 CI 日志失败')
@@ -1218,27 +1367,16 @@ const fetchLogs = async (row: DeployingService) => {
     } finally {
       ciLogLoading.value = false
     }
-  } else if (activeLogTab.value === 'cd' && row.cdJobName) {
+  } else if (activeLogTab.value === 'cd') {
     cdLogLoading.value = true
     try {
-      // TODO: 调用获取 CD 日志的 API
-      const response = await fetch(`/api/v1/deploy/log/cd?task_id=${row.taskId}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      })
+      const response = await queryTaskLogs(row.taskId, 'cd')
       
-      if (!response.ok) {
-        throw new Error('获取 CD 日志失败')
+      if (response.data.code === 1) {
+        cdLog.value = response.data.result || ''
+      } else {
+        throw new Error(response.data.msg || '获取 CD 日志失败')
       }
-      
-      const data = await response.json()
-      if (data.code !== 1) {
-        throw new Error(data.msg || '获取 CD 日志失败')
-      }
-      
-      cdLog.value = data.result || ''
     } catch (error) {
       console.error('获取 CD 日志失败:', error)
       ElMessage.error(error instanceof Error ? error.message : '获取 CD 日志失败')
@@ -1259,9 +1397,10 @@ watch(activeLogTab, async (newTab) => {
 // 组件挂载时获取发布中服务列表和可用服务列表
 onMounted(() => {
   refreshDeployingList()
-  if (deployForm.environment) {
-    fetchAvailableServices()
-  }
+  // 无论是否选择了环境，都获取可用服务列表，供日志查询使用
+  fetchAvailableServices()
+  // 自动加载日志数据（默认查询最近的数据）
+  handleSearch()
   // 每10秒刷新一次发布中服务列表
   refreshTimer = window.setInterval(refreshDeployingList, 10000)
   // 每5秒刷新一次选中服务的任务状态
@@ -1276,12 +1415,51 @@ onUnmounted(() => {
     clearInterval(taskStatusTimer)
   }
 })
+
+// 查看日志
+const handleViewLog = async (row: DeployingService) => {
+  currentLog.value = row
+  logDialogVisible.value = true
+  activeLogTab.value = 'ci'
+  await fetchLogs(row)
+}
+
+// 处理日志对话框关闭
+const handleLogDialogClose = () => {
+  // 清理日志相关数据
+  currentLog.value = {} as DeployingService
+  logDialogVisible.value = false
+  activeLogTab.value = 'ci'
+  ciLog.value = ''
+  cdLog.value = ''
+  ciLogLoading.value = false
+  cdLogLoading.value = false
+}
 </script>
 
 <style scoped>
 .service-deploy {
   min-height: 100%;
   background-color: #f5f7fa;
+  color: #213547;
+}
+
+/* 强制使用浅色主题 */
+.service-deploy :deep(*) {
+  color-scheme: light !important;
+}
+
+.service-deploy :deep(.el-table) {
+  color-scheme: light !important;
+  background-color: #fff !important;
+}
+
+.service-deploy :deep(.el-table__header-wrapper) {
+  background-color: #fafafa !important;
+}
+
+.service-deploy :deep(.el-table__body-wrapper) {
+  background-color: #fff !important;
 }
 
 .deploy-card {
@@ -1408,10 +1586,79 @@ onUnmounted(() => {
 
 .log-filter {
   margin-bottom: 20px;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  border: 1px solid #e9ecef;
+}
+
+.log-filter .el-form {
+  margin-bottom: 0;
+}
+
+.log-filter .el-form-item {
+  margin-bottom: 0;
+  margin-right: 20px;
+}
+
+.log-filter .el-form-item:last-child {
+  margin-right: 0;
 }
 
 .log-table {
   margin-top: 20px;
+}
+
+.log-table :deep(.el-table) {
+  box-shadow: none !important;
+  border: 1px solid #ebeef5 !important;
+  border-radius: 4px !important;
+  background-color: #fff !important;
+  color: #213547 !important;
+}
+
+.log-table :deep(.el-table__header-wrapper) {
+  background-color: #fafafa !important;
+}
+
+.log-table :deep(.el-table__body-wrapper) {
+  background-color: #fff !important;
+}
+
+.log-table :deep(.el-table__header) {
+  background-color: #fafafa !important;
+}
+
+.log-table :deep(.el-table__body) {
+  background-color: #fff !important;
+}
+
+.log-table :deep(.el-table__row) {
+  background-color: #fff !important;
+}
+
+.log-table :deep(.el-table__row:hover) {
+  background-color: #f5f7fa !important;
+}
+
+.log-table :deep(.el-table__cell) {
+  background-color: transparent !important;
+  border-bottom: 1px solid #ebeef5 !important;
+  color: #213547 !important;
+}
+
+.log-table :deep(.el-table__header .el-table__cell) {
+  background-color: #fafafa !important;
+  border-bottom: 1px solid #ebeef5 !important;
+  color: #213547 !important;
+}
+
+.log-table :deep(.el-table__empty-block) {
+  background-color: #fff !important;
+}
+
+.log-table :deep(.el-table__empty-text) {
+  color: #909399 !important;
 }
 
 .pagination {
@@ -1560,7 +1807,7 @@ onUnmounted(() => {
   }
 }
 
-.log-content {
+.log-detail-content {
   height: 100%;
   padding: 20px;
   overflow: auto;
@@ -1584,5 +1831,29 @@ onUnmounted(() => {
   height: 100%;
   color: var(--el-text-color-secondary);
   font-size: 14px;
+}
+
+.truncate-text {
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.error-message {
+  color: var(--el-color-danger);
+  font-weight: 500;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.empty-data {
+  padding: 40px 0;
+  text-align: center;
 }
 </style> 

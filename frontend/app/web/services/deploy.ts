@@ -7,7 +7,9 @@ import type {
   DeployQueryParams, 
   PageResponse, 
   ApiResponse,
-  TaskRecord
+  TaskRecord,
+  PublishLogQueryParams,
+  PublishLogQueryResponse
 } from '../models/deploy'
 
 const BASE_URL = '/api/v1/deploy'
@@ -96,4 +98,14 @@ export const redeploy = async (deployId: number, userInfo: UserInfo, comment?: s
     publisher_cn: userInfo.nameCn,
     comment
   })
+}
+
+// 查询发布日志
+export const queryPublishLogs = async (params: PublishLogQueryParams) => {
+  return api.post<ApiResponse<PublishLogQueryResponse>>(`${BASE_URL}/publish/query`, params)
+}
+
+// 查询单个任务的日志
+export const queryTaskLogs = async (taskId: number, logType: 'ci' | 'cd' = 'ci') => {
+  return api.get<ApiResponse<string>>(`${BASE_URL}/task/${taskId}/logs/${logType}`)
 } 
