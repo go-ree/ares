@@ -369,39 +369,59 @@
         <div class="log-tabs">
           <el-tabs v-model="activeLogTab">
             <el-tab-pane label="CI 日志" name="ci">
-              <div class="log-detail-content" v-loading="ciLogLoading" ref="ciLogContainer">
-                <div v-if="isStreamingCi" class="streaming-indicator">
-                  <el-icon class="is-loading"><Loading /></el-icon>
-                  <span>正在实时获取日志...</span>
+              <div class="log-container">
+                <div class="log-detail-content" v-loading="ciLogLoading" ref="ciLogContainer">
+                  <div v-if="isStreamingCi" class="streaming-indicator">
+                    <el-icon class="is-loading"><Loading /></el-icon>
+                    <span>正在实时获取日志...</span>
+                  </div>
+                  <pre v-if="ciLog" class="log-text">{{ ciLog }}</pre>
+                  <div v-else-if="!ciLogLoading" class="empty-log">
+                    <el-empty description="暂无 CI 日志" :image-size="60" />
+                  </div>
                 </div>
-                <pre v-if="ciLog" class="log-text">{{ ciLog }}</pre>
-                <div v-else-if="!ciLogLoading" class="empty-log">
-                  <el-empty description="暂无 CI 日志" :image-size="60" />
+                <div v-if="ciLog" class="log-controls">
+                  <el-button @click="manualScrollToBottom" size="small" type="primary">
+                    滚动到底部
+                  </el-button>
+                  <el-button @click="testScroll" size="small">
+                    测试滚动
+                  </el-button>
+                  <el-button @click="checkLogIntegrity" size="small" type="info">
+                    检查日志
+                  </el-button>
+                  <el-button @click="emergencyFixScroll" size="small" type="danger">
+                    紧急修复滚动
+                  </el-button>
                 </div>
-                <el-button v-if="ciLog" @click="manualScrollToBottom" size="small" style="position: absolute; bottom: 10px; right: 10px; z-index: 10;">
-                  滚动到底部
-                </el-button>
-                <el-button v-if="ciLog" @click="testScroll" size="small" style="position: absolute; bottom: 10px; right: 120px; z-index: 10;">
-                  测试滚动
-                </el-button>
               </div>
             </el-tab-pane>
             <el-tab-pane label="CD 日志" name="cd">
-              <div class="log-detail-content" v-loading="cdLogLoading" ref="cdLogContainer">
-                <div v-if="isStreamingCd" class="streaming-indicator">
-                  <el-icon class="is-loading"><Loading /></el-icon>
-                  <span>正在实时获取日志...</span>
+              <div class="log-container">
+                <div class="log-detail-content" v-loading="cdLogLoading" ref="cdLogContainer">
+                  <div v-if="isStreamingCd" class="streaming-indicator">
+                    <el-icon class="is-loading"><Loading /></el-icon>
+                    <span>正在实时获取日志...</span>
+                  </div>
+                  <pre v-if="cdLog" class="log-text">{{ cdLog }}</pre>
+                  <div v-else-if="!cdLogLoading" class="empty-log">
+                    <el-empty description="暂无 CD 日志" :image-size="60" />
+                  </div>
                 </div>
-                <pre v-if="cdLog" class="log-text">{{ cdLog }}</pre>
-                <div v-else-if="!cdLogLoading" class="empty-log">
-                  <el-empty description="暂无 CD 日志" :image-size="60" />
+                <div v-if="cdLog" class="log-controls">
+                  <el-button @click="manualScrollToBottom" size="small" type="primary">
+                    滚动到底部
+                  </el-button>
+                  <el-button @click="testScroll" size="small">
+                    测试滚动
+                  </el-button>
+                  <el-button @click="checkLogIntegrity" size="small" type="info">
+                    检查日志
+                  </el-button>
+                  <el-button @click="emergencyFixScroll" size="small" type="danger">
+                    紧急修复滚动
+                  </el-button>
                 </div>
-                <el-button v-if="cdLog" @click="manualScrollToBottom" size="small" style="position: absolute; bottom: 10px; right: 10px; z-index: 10;">
-                  滚动到底部
-                </el-button>
-                <el-button v-if="cdLog" @click="testScroll" size="small" style="position: absolute; bottom: 10px; right: 120px; z-index: 10;">
-                  测试滚动
-                </el-button>
               </div>
             </el-tab-pane>
           </el-tabs>
@@ -1441,11 +1461,35 @@ const testScroll = () => {
       }
     })
     
+    // 检查日志内容
+    const logText = container.querySelector('.log-text') as HTMLElement
+    if (logText) {
+      console.log('日志内容信息:', {
+        textLength: logText.textContent?.length,
+        lastChars: logText.textContent?.slice(-100),
+        scrollHeight: logText.scrollHeight,
+        clientHeight: logText.clientHeight
+      })
+    }
+    
     // 测试滚动
     container.scrollTop = container.scrollHeight / 2
     setTimeout(() => {
       container.scrollTop = container.scrollHeight
     }, 1000)
+  }
+}
+
+// 检查日志完整性
+const checkLogIntegrity = () => {
+  const logContent = activeLogTab.value === 'ci' ? ciLog.value : cdLog.value
+  if (logContent) {
+    console.log('日志完整性检查:', {
+      totalLength: logContent.length,
+      lastLines: logContent.split('\n').slice(-5),
+      hasEnding: logContent.endsWith('\n'),
+      lineCount: logContent.split('\n').length
+    })
   }
 }
 
@@ -1743,6 +1787,34 @@ const handleLogDialogClose = () => {
   cdLog.value = ''
   ciLogLoading.value = false
   cdLogLoading.value = false
+}
+
+// 紧急修复滚动功能
+const emergencyFixScroll = () => {
+  const container = activeLogTab.value === 'ci' ? ciLogContainer.value : cdLogContainer.value
+  if (container) {
+    // 强制设置样式
+    container.style.overflow = 'auto'
+    container.style.overflowY = 'scroll'
+    container.style.overflowX = 'auto'
+    container.style.height = '100%'
+    container.style.maxHeight = '100%'
+    container.style.minHeight = '0'
+    
+    console.log('紧急修复滚动 - 容器样式:', {
+      overflow: container.style.overflow,
+      overflowY: container.style.overflowY,
+      height: container.style.height,
+      scrollHeight: container.scrollHeight,
+      clientHeight: container.clientHeight
+    })
+    
+    // 测试滚动
+    setTimeout(() => {
+      container.scrollTop = container.scrollHeight
+      console.log('滚动测试完成，位置:', container.scrollTop)
+    }, 100)
+  }
 }
 </script>
 
@@ -2081,15 +2153,17 @@ const handleLogDialogClose = () => {
   }
   
   :deep(.el-dialog) {
-    max-height: 90vh;
+    max-height: 70vh;
+    height: 70vh;
+    min-height: 500px;
   }
 }
 
 .log-dialog-content {
   display: flex;
   flex-direction: column;
-  height: 70vh;
-  max-height: 70vh;
+  height: 100%;
+  max-height: 100%;
 }
 
 .log-header {
@@ -2109,7 +2183,7 @@ const handleLogDialogClose = () => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible !important;
   min-height: 0;
   
   :deep(.el-tabs__header) {
@@ -2124,7 +2198,7 @@ const handleLogDialogClose = () => {
   
   :deep(.el-tabs__content) {
     flex: 1;
-    overflow: hidden;
+    overflow: visible !important;
     padding: 0;
     height: 100%;
     display: flex;
@@ -2133,44 +2207,33 @@ const handleLogDialogClose = () => {
   
   :deep(.el-tab-pane) {
     height: 100%;
-    overflow: hidden;
+    overflow: visible !important;
     display: flex;
     flex-direction: column;
   }
 }
 
-.log-detail-content {
-  height: 100% !important;
-  max-height: 100% !important;
-  padding: 20px;
-  overflow-y: scroll !important;
-  overflow-x: auto !important;
-  background-color: #1e1e1e !important;
+.log-container {
   display: flex;
   flex-direction: column;
-  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
+.log-detail-content {
   flex: 1;
+  padding: 20px;
+  background-color: #1e1e1e !important;
+  position: relative;
+  overflow: auto !important;
+  overflow-y: scroll !important;
+  overflow-x: auto !important;
   min-height: 0;
-  box-sizing: border-box;
+  max-height: 50vh;
   
   /* 强制滚动样式 */
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
-  
-  /* 确保内容可以滚动 */
-  max-height: calc(100vh - 200px) !important;
-  
-  /* 强制覆盖可能的全局overflow限制 */
-  overflow: auto !important;
-  overflow-y: scroll !important;
-  overflow-x: auto !important;
-  
-  /* 确保有足够的高度来滚动 */
-  min-height: 200px;
-  
-  /* 防止内容溢出 */
-  word-wrap: break-word;
-  word-break: break-all;
   
   /* 自定义滚动条样式 */
   &::-webkit-scrollbar {
@@ -2205,9 +2268,6 @@ const handleLogDialogClose = () => {
   line-height: 1.5;
   white-space: pre-wrap;
   word-wrap: break-word;
-  flex: 1;
-  min-height: 0;
-  overflow: visible;
   background-color: transparent !important;
   display: block;
   width: 100%;
@@ -2266,18 +2326,13 @@ const handleLogDialogClose = () => {
   font-size: 16px;
 }
 
-/* 确保日志容器可以正常滚动 */
-.log-detail-content {
-  /* 强制启用滚动 */
-  overflow: auto !important;
-  overflow-y: scroll !important;
-  overflow-x: auto !important;
-  
-  /* 确保有足够的高度来滚动 */
-  min-height: 200px;
-  
-  /* 防止内容溢出 */
-  word-wrap: break-word;
-  word-break: break-all;
+.log-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 10px 20px;
+  background-color: #f5f5f5;
+  border-top: 1px solid #e0e0e0;
+  flex-shrink: 0;
 }
 </style> 
