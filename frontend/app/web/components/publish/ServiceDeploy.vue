@@ -381,6 +381,9 @@
                 <el-button v-if="ciLog" @click="manualScrollToBottom" size="small" style="position: absolute; bottom: 10px; right: 10px; z-index: 10;">
                   滚动到底部
                 </el-button>
+                <el-button v-if="ciLog" @click="testScroll" size="small" style="position: absolute; bottom: 10px; right: 120px; z-index: 10;">
+                  测试滚动
+                </el-button>
               </div>
             </el-tab-pane>
             <el-tab-pane label="CD 日志" name="cd">
@@ -395,6 +398,9 @@
                 </div>
                 <el-button v-if="cdLog" @click="manualScrollToBottom" size="small" style="position: absolute; bottom: 10px; right: 10px; z-index: 10;">
                   滚动到底部
+                </el-button>
+                <el-button v-if="cdLog" @click="testScroll" size="small" style="position: absolute; bottom: 10px; right: 120px; z-index: 10;">
+                  测试滚动
                 </el-button>
               </div>
             </el-tab-pane>
@@ -1387,26 +1393,24 @@ const scrollToBottom = (container: HTMLElement | undefined) => {
   if (container) {
     console.log('滚动到底部，容器高度:', container.scrollHeight, '当前滚动位置:', container.scrollTop)
     
-    // 方法1: 直接设置scrollTop
-    container.scrollTop = container.scrollHeight
-    
-    // 方法2: 使用scrollTo
-    setTimeout(() => {
-      container.scrollTo({
-        top: container.scrollHeight,
-        behavior: 'smooth'
-      })
-    }, 50)
-    
-    // 方法3: 使用scrollIntoView
-    setTimeout(() => {
-      const lastChild = container.lastElementChild
-      if (lastChild) {
-        lastChild.scrollIntoView({ behavior: 'smooth', block: 'end' })
-      }
-    }, 100)
-    
-    console.log('滚动完成，新位置:', container.scrollTop)
+    // 只滚动日志内容容器，不影响标签页
+    const logContent = container.querySelector('.log-text') as HTMLElement
+    if (logContent) {
+      // 方法1: 直接设置scrollTop
+      container.scrollTop = container.scrollHeight
+      
+      // 方法2: 使用scrollTo
+      setTimeout(() => {
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: 'smooth'
+        })
+      }, 50)
+      
+      console.log('滚动完成，新位置:', container.scrollTop)
+    } else {
+      console.log('未找到日志内容元素')
+    }
   } else {
     console.log('容器未找到，无法滚动')
   }
@@ -1418,6 +1422,30 @@ const manualScrollToBottom = () => {
     scrollToBottom(ciLogContainer.value)
   } else if (activeLogTab.value === 'cd') {
     scrollToBottom(cdLogContainer.value)
+  }
+}
+
+// 测试滚动功能
+const testScroll = () => {
+  const container = activeLogTab.value === 'ci' ? ciLogContainer.value : cdLogContainer.value
+  if (container) {
+    console.log('容器信息:', {
+      scrollHeight: container.scrollHeight,
+      clientHeight: container.clientHeight,
+      scrollTop: container.scrollTop,
+      offsetHeight: container.offsetHeight,
+      style: {
+        overflow: container.style.overflow,
+        height: container.style.height,
+        maxHeight: container.style.maxHeight
+      }
+    })
+    
+    // 测试滚动
+    container.scrollTop = container.scrollHeight / 2
+    setTimeout(() => {
+      container.scrollTop = container.scrollHeight
+    }, 1000)
   }
 }
 
@@ -2084,6 +2112,16 @@ const handleLogDialogClose = () => {
   overflow: hidden;
   min-height: 0;
   
+  :deep(.el-tabs__header) {
+    flex-shrink: 0;
+    margin-bottom: 0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #fff;
+    border-bottom: 1px solid var(--el-border-color-light);
+  }
+  
   :deep(.el-tabs__content) {
     flex: 1;
     overflow: hidden;
@@ -2105,7 +2143,7 @@ const handleLogDialogClose = () => {
   height: 100% !important;
   max-height: 100% !important;
   padding: 20px;
-  overflow-y: auto !important;
+  overflow-y: scroll !important;
   overflow-x: auto !important;
   background-color: #1e1e1e !important;
   display: flex;
@@ -2119,20 +2157,35 @@ const handleLogDialogClose = () => {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   
+  /* 确保内容可以滚动 */
+  max-height: calc(100vh - 200px) !important;
+  
+  /* 强制覆盖可能的全局overflow限制 */
+  overflow: auto !important;
+  overflow-y: scroll !important;
+  overflow-x: auto !important;
+  
+  /* 确保有足够的高度来滚动 */
+  min-height: 200px;
+  
+  /* 防止内容溢出 */
+  word-wrap: break-word;
+  word-break: break-all;
+  
   /* 自定义滚动条样式 */
   &::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 12px;
+    height: 12px;
   }
   
   &::-webkit-scrollbar-track {
     background: #2d2d2d;
-    border-radius: 4px;
+    border-radius: 6px;
   }
   
   &::-webkit-scrollbar-thumb {
     background: #666;
-    border-radius: 4px;
+    border-radius: 6px;
     
     &:hover {
       background: #888;
@@ -2157,6 +2210,9 @@ const handleLogDialogClose = () => {
   overflow: visible;
   background-color: transparent !important;
   display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
 }
 
 .empty-log {
@@ -2208,5 +2264,20 @@ const handleLogDialogClose = () => {
 .streaming-indicator .el-icon {
   margin-right: 8px;
   font-size: 16px;
+}
+
+/* 确保日志容器可以正常滚动 */
+.log-detail-content {
+  /* 强制启用滚动 */
+  overflow: auto !important;
+  overflow-y: scroll !important;
+  overflow-x: auto !important;
+  
+  /* 确保有足够的高度来滚动 */
+  min-height: 200px;
+  
+  /* 防止内容溢出 */
+  word-wrap: break-word;
+  word-break: break-all;
 }
 </style> 
