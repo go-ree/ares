@@ -5,7 +5,7 @@
 </template>
 
 <script setup lang="ts">
-import ServiceDeploy from '@/components/publish/ServiceDeployRefactored.vue'
+import ServiceDeploy from '@/components/publish/ServiceDeploy.vue'
 </script>
 
 <style scoped>
