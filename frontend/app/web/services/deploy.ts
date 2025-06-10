@@ -108,4 +108,62 @@ export const queryPublishLogs = async (params: PublishLogQueryParams) => {
 // 查询单个任务的日志
 export const queryTaskLogs = async (taskId: number, logType: 'ci' | 'cd' = 'ci') => {
   return api.get<ApiResponse<string>>(`${BASE_URL}/task/${taskId}/logs/${logType}`)
+}
+
+// SSE流式日志查询接口
+export const streamJobLogs = (jobName: string, buildId: number) => {
+  const url = `/api/v1/job/stream/log?job_name=${encodeURIComponent(jobName)}&build_id=${buildId}`
+  
+  return new Promise<string>((resolve, reject) => {
+    const eventSource = new EventSource(url)
+    let logContent = ''
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.code === 0 && data.result && Array.isArray(data.result)) {
+          // 将每一行日志添加到内容中
+          logContent += data.result.join('\n') + '\n'
+        } else if (data.code !== 0) {
+          // 处理错误
+          reject(new Error(data.msg || data.error || '获取日志失败'))
+          eventSource.close()
+        }
+      } catch (error) {
+        console.error('解析SSE数据失败:', error)
+        reject(error)
+        eventSource.close()
+      }
+    }
+    
+    eventSource.onerror = (error) => {
+      console.error('SSE连接错误:', error)
+      eventSource.close()
+      reject(new Error('SSE连接失败'))
+    }
+    
+    // 监听连接打开
+    eventSource.onopen = () => {
+      console.log('SSE连接已建立')
+    }
+    
+    // 设置超时处理
+    const timeout = setTimeout(() => {
+      eventSource.close()
+      resolve(logContent) // 超时后返回已获取的日志内容
+    }, 30000) // 30秒超时
+    
+    // 监听连接关闭
+    eventSource.addEventListener('close', () => {
+      clearTimeout(timeout)
+      resolve(logContent)
+    })
+    
+    // 监听完成事件
+    eventSource.addEventListener('complete', () => {
+      clearTimeout(timeout)
+      eventSource.close()
+      resolve(logContent)
+    })
+  })
 } 

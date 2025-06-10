@@ -370,6 +370,10 @@
           <el-tabs v-model="activeLogTab">
             <el-tab-pane label="CI 日志" name="ci">
               <div class="log-detail-content" v-loading="ciLogLoading">
+                <div v-if="isStreamingCi" class="streaming-indicator">
+                  <el-icon class="is-loading"><Loading /></el-icon>
+                  <span>正在实时获取日志...</span>
+                </div>
                 <pre v-if="ciLog" class="log-text">{{ ciLog }}</pre>
                 <div v-else-if="!ciLogLoading" class="empty-log">
                   <el-empty description="暂无 CI 日志" :image-size="60" />
@@ -378,6 +382,10 @@
             </el-tab-pane>
             <el-tab-pane label="CD 日志" name="cd">
               <div class="log-detail-content" v-loading="cdLogLoading">
+                <div v-if="isStreamingCd" class="streaming-indicator">
+                  <el-icon class="is-loading"><Loading /></el-icon>
+                  <span>正在实时获取日志...</span>
+                </div>
                 <pre v-if="cdLog" class="log-text">{{ cdLog }}</pre>
                 <div v-else-if="!cdLogLoading" class="empty-log">
                   <el-empty description="暂无 CD 日志" :image-size="60" />
@@ -394,10 +402,10 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, RefreshRight, Refresh, Loading, Plus, Edit } from '@element-plus/icons-vue'
+import { Upload, RefreshRight, Refresh, Loading, Plus } from '@element-plus/icons-vue'
 import { batchDeploy, createDeploy, getTaskDetail, queryPublishLogs, queryTaskLogs } from '@/services/deploy'
 import { useUserStore } from '@/stores/user'
-import type { DeployRequest, Environment, TaskRecord, PublishLogQueryParams, PublishLogTaskRecord } from '@/models/deploy'
+import type { TaskRecord, PublishLogQueryParams, PublishLogTaskRecord } from '@/models/deploy'
 
 // 当前激活的标签页
 const activeTab = ref('tool')
@@ -456,6 +464,8 @@ interface DeployingService {
   taskId: number
   ciJobName?: string
   cdJobName?: string
+  ciBuildId?: number
+  cdBuildId?: number
   products?: string
   auto_deploy?: number
   pipelineParam?: {
@@ -853,7 +863,7 @@ const handleBranchSuffixChange = (suffix: string, row: SelectedService) => {
 }
 
 // 处理服务选择
-const handleServiceSelect = async (serviceName: string, index: number) => {
+const handleServiceSelect = async (_serviceName: string, index: number) => {
   // 根据环境设置分支
   if (deployForm.environment === 'moni') {
     selectedServices.value[index].branch = 'release_'
@@ -1348,17 +1358,34 @@ const cdLog = ref('')
 const ciLogLoading = ref(false)
 const cdLogLoading = ref(false)
 
+// SSE连接状态
+const ciEventSource = ref<EventSource | null>(null)
+const cdEventSource = ref<EventSource | null>(null)
+const isStreamingCi = ref(false)
+const isStreamingCd = ref(false)
+
 // 获取日志
 const fetchLogs = async (row: DeployingService) => {
+  // 先清理之前的SSE连接
+  cleanupEventSources()
+  
   if (activeLogTab.value === 'ci') {
     ciLogLoading.value = true
+    ciLog.value = ''
+    
     try {
-      const response = await queryTaskLogs(row.taskId, 'ci')
-      
-      if (response.data.code === 1) {
-        ciLog.value = response.data.result || ''
+      // 检查是否有CI job信息
+      if (row.ciJobName && row.taskId) {
+        // 使用SSE流式获取CI日志
+        await fetchCiLogsStream(row.ciJobName, row.taskId)
       } else {
-        throw new Error(response.data.msg || '获取 CI 日志失败')
+        // 回退到原来的API
+        const response = await queryTaskLogs(row.taskId, 'ci')
+        if (response.data.code === 1) {
+          ciLog.value = response.data.result || ''
+        } else {
+          throw new Error(response.data.msg || '获取 CI 日志失败')
+        }
       }
     } catch (error) {
       console.error('获取 CI 日志失败:', error)
@@ -1369,13 +1396,21 @@ const fetchLogs = async (row: DeployingService) => {
     }
   } else if (activeLogTab.value === 'cd') {
     cdLogLoading.value = true
+    cdLog.value = ''
+    
     try {
-      const response = await queryTaskLogs(row.taskId, 'cd')
-      
-      if (response.data.code === 1) {
-        cdLog.value = response.data.result || ''
+      // 检查是否有CD job信息
+      if (row.cdJobName && row.taskId) {
+        // 使用SSE流式获取CD日志
+        await fetchCdLogsStream(row.cdJobName, row.taskId)
       } else {
-        throw new Error(response.data.msg || '获取 CD 日志失败')
+        // 回退到原来的API
+        const response = await queryTaskLogs(row.taskId, 'cd')
+        if (response.data.code === 1) {
+          cdLog.value = response.data.result || ''
+        } else {
+          throw new Error(response.data.msg || '获取 CD 日志失败')
+        }
       }
     } catch (error) {
       console.error('获取 CD 日志失败:', error)
@@ -1387,10 +1422,148 @@ const fetchLogs = async (row: DeployingService) => {
   }
 }
 
+// 使用SSE获取CI日志
+const fetchCiLogsStream = async (jobName: string, buildId: number) => {
+  return new Promise<void>((resolve, reject) => {
+    const url = `/api/v1/job/stream/log?job_name=${encodeURIComponent(jobName)}&build_id=${buildId}`
+    
+    ciEventSource.value = new EventSource(url)
+    isStreamingCi.value = true
+    
+    ciEventSource.value.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.code === 0 && data.result && Array.isArray(data.result)) {
+          // 将每一行日志添加到内容中
+          ciLog.value += data.result.join('\n') + '\n'
+        } else if (data.code !== 0) {
+          // 处理错误
+          reject(new Error(data.msg || data.error || '获取 CI 日志失败'))
+          cleanupEventSources()
+        }
+      } catch (error) {
+        console.error('解析CI日志SSE数据失败:', error)
+        reject(error)
+        cleanupEventSources()
+      }
+    }
+    
+    ciEventSource.value.onerror = (error) => {
+      console.error('CI日志SSE连接错误:', error)
+      cleanupEventSources()
+      reject(new Error('CI日志SSE连接失败'))
+    }
+    
+    ciEventSource.value.onopen = () => {
+      console.log('CI日志SSE连接已建立')
+    }
+    
+    // 设置超时处理
+    const timeout = setTimeout(() => {
+      cleanupEventSources()
+      resolve() // 超时后正常结束
+    }, 30000) // 30秒超时
+    
+    // 监听连接关闭
+    ciEventSource.value.addEventListener('close', () => {
+      clearTimeout(timeout)
+      isStreamingCi.value = false
+      resolve()
+    })
+    
+    // 监听完成事件
+    ciEventSource.value.addEventListener('complete', () => {
+      clearTimeout(timeout)
+      cleanupEventSources()
+      resolve()
+    })
+  })
+}
+
+// 使用SSE获取CD日志
+const fetchCdLogsStream = async (jobName: string, buildId: number) => {
+  return new Promise<void>((resolve, reject) => {
+    const url = `/api/v1/job/stream/log?job_name=${encodeURIComponent(jobName)}&build_id=${buildId}`
+    
+    cdEventSource.value = new EventSource(url)
+    isStreamingCd.value = true
+    
+    cdEventSource.value.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.code === 0 && data.result && Array.isArray(data.result)) {
+          // 将每一行日志添加到内容中
+          cdLog.value += data.result.join('\n') + '\n'
+        } else if (data.code !== 0) {
+          // 处理错误
+          reject(new Error(data.msg || data.error || '获取 CD 日志失败'))
+          cleanupEventSources()
+        }
+      } catch (error) {
+        console.error('解析CD日志SSE数据失败:', error)
+        reject(error)
+        cleanupEventSources()
+      }
+    }
+    
+    cdEventSource.value.onerror = (error) => {
+      console.error('CD日志SSE连接错误:', error)
+      cleanupEventSources()
+      reject(new Error('CD日志SSE连接失败'))
+    }
+    
+    cdEventSource.value.onopen = () => {
+      console.log('CD日志SSE连接已建立')
+    }
+    
+    // 设置超时处理
+    const timeout = setTimeout(() => {
+      cleanupEventSources()
+      resolve() // 超时后正常结束
+    }, 30000) // 30秒超时
+    
+    // 监听连接关闭
+    cdEventSource.value.addEventListener('close', () => {
+      clearTimeout(timeout)
+      isStreamingCd.value = false
+      resolve()
+    })
+    
+    // 监听完成事件
+    cdEventSource.value.addEventListener('complete', () => {
+      clearTimeout(timeout)
+      cleanupEventSources()
+      resolve()
+    })
+  })
+}
+
+// 清理SSE连接
+const cleanupEventSources = () => {
+  if (ciEventSource.value) {
+    ciEventSource.value.close()
+    ciEventSource.value = null
+    isStreamingCi.value = false
+  }
+  if (cdEventSource.value) {
+    cdEventSource.value.close()
+    cdEventSource.value = null
+    isStreamingCd.value = false
+  }
+}
+
 // 监听日志标签页切换
-watch(activeLogTab, async (newTab) => {
+watch(activeLogTab, async (_newTab) => {
   if (logDialogVisible.value && currentLog.value) {
     await fetchLogs(currentLog.value)
+  }
+})
+
+// 监听主标签页切换
+watch(activeTab, async (newTab) => {
+  if (newTab === 'log') {
+    // 只有在切换到日志页时才触发查询
+    handleSearch()
   }
 })
 
@@ -1399,8 +1572,8 @@ onMounted(() => {
   refreshDeployingList()
   // 无论是否选择了环境，都获取可用服务列表，供日志查询使用
   fetchAvailableServices()
-  // 自动加载日志数据（默认查询最近的数据）
-  handleSearch()
+  // 移除自动加载日志数据，改为在切换到日志页时加载
+  // handleSearch()
   // 每10秒刷新一次发布中服务列表
   refreshTimer = window.setInterval(refreshDeployingList, 10000)
   // 每5秒刷新一次选中服务的任务状态
@@ -1414,6 +1587,8 @@ onUnmounted(() => {
   if (taskStatusTimer) {
     clearInterval(taskStatusTimer)
   }
+  // 清理SSE连接
+  cleanupEventSources()
 })
 
 // 查看日志
@@ -1426,6 +1601,9 @@ const handleViewLog = async (row: DeployingService) => {
 
 // 处理日志对话框关闭
 const handleLogDialogClose = () => {
+  // 清理SSE连接
+  cleanupEventSources()
+  
   // 清理日志相关数据
   currentLog.value = {} as DeployingService
   logDialogVisible.value = false
@@ -1855,5 +2033,23 @@ const handleLogDialogClose = () => {
 .empty-data {
   padding: 40px 0;
   text-align: center;
+}
+
+.streaming-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  padding: 8px 16px;
+  background-color: rgba(64, 158, 255, 0.1);
+  border: 1px solid rgba(64, 158, 255, 0.3);
+  border-radius: 4px;
+  color: #409eff;
+  font-size: 14px;
+}
+
+.streaming-indicator .el-icon {
+  margin-right: 8px;
+  font-size: 16px;
 }
 </style> 
