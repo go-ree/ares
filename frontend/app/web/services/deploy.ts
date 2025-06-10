@@ -118,13 +118,14 @@ export const streamJobLogs = (jobName: string, buildId: number) => {
     const eventSource = new EventSource(url)
     let logContent = ''
     
-    eventSource.onmessage = (event) => {
+    eventSource.onmessage = (event: MessageEvent) => {
       try {
+        // 解析JSON数据
         const data = JSON.parse(event.data)
-        if (data.code === 0 && data.result && Array.isArray(data.result)) {
+        if (data.code === 1 && data.result && Array.isArray(data.result)) {
           // 将每一行日志添加到内容中
           logContent += data.result.join('\n') + '\n'
-        } else if (data.code !== 0) {
+        } else if (data.code === 0) {
           // 处理错误
           reject(new Error(data.msg || data.error || '获取日志失败'))
           eventSource.close()
@@ -135,6 +136,24 @@ export const streamJobLogs = (jobName: string, buildId: number) => {
         eventSource.close()
       }
     }
+    
+    // 监听错误事件
+    eventSource.addEventListener('error', (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data)
+        reject(new Error(data.msg || data.error || '获取日志失败'))
+      } catch (error) {
+        reject(new Error('获取日志失败'))
+      }
+      eventSource.close()
+    })
+    
+    // 监听结束事件
+    eventSource.addEventListener('end', () => {
+      console.log('SSE流结束')
+      eventSource.close()
+      resolve(logContent)
+    })
     
     eventSource.onerror = (error) => {
       console.error('SSE连接错误:', error)
@@ -156,13 +175,6 @@ export const streamJobLogs = (jobName: string, buildId: number) => {
     // 监听连接关闭
     eventSource.addEventListener('close', () => {
       clearTimeout(timeout)
-      resolve(logContent)
-    })
-    
-    // 监听完成事件
-    eventSource.addEventListener('complete', () => {
-      clearTimeout(timeout)
-      eventSource.close()
       resolve(logContent)
     })
   })

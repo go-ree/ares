@@ -369,7 +369,7 @@
         <div class="log-tabs">
           <el-tabs v-model="activeLogTab">
             <el-tab-pane label="CI 日志" name="ci">
-              <div class="log-detail-content" v-loading="ciLogLoading">
+              <div class="log-detail-content" v-loading="ciLogLoading" ref="ciLogContainer">
                 <div v-if="isStreamingCi" class="streaming-indicator">
                   <el-icon class="is-loading"><Loading /></el-icon>
                   <span>正在实时获取日志...</span>
@@ -378,10 +378,13 @@
                 <div v-else-if="!ciLogLoading" class="empty-log">
                   <el-empty description="暂无 CI 日志" :image-size="60" />
                 </div>
+                <el-button v-if="ciLog" @click="manualScrollToBottom" size="small" style="position: absolute; bottom: 10px; right: 10px; z-index: 10;">
+                  滚动到底部
+                </el-button>
               </div>
             </el-tab-pane>
             <el-tab-pane label="CD 日志" name="cd">
-              <div class="log-detail-content" v-loading="cdLogLoading">
+              <div class="log-detail-content" v-loading="cdLogLoading" ref="cdLogContainer">
                 <div v-if="isStreamingCd" class="streaming-indicator">
                   <el-icon class="is-loading"><Loading /></el-icon>
                   <span>正在实时获取日志...</span>
@@ -390,6 +393,9 @@
                 <div v-else-if="!cdLogLoading" class="empty-log">
                   <el-empty description="暂无 CD 日志" :image-size="60" />
                 </div>
+                <el-button v-if="cdLog" @click="manualScrollToBottom" size="small" style="position: absolute; bottom: 10px; right: 10px; z-index: 10;">
+                  滚动到底部
+                </el-button>
               </div>
             </el-tab-pane>
           </el-tabs>
@@ -400,7 +406,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, RefreshRight, Refresh, Loading, Plus } from '@element-plus/icons-vue'
 import { batchDeploy, createDeploy, getTaskDetail, queryPublishLogs, queryTaskLogs } from '@/services/deploy'
@@ -426,6 +432,8 @@ interface LogItem {
   auto_deploy: number
   ci_job_name: string
   cd_job_name: string
+  ci_build_id: number
+  cd_build_id: number
   products: string
 }
 
@@ -652,6 +660,8 @@ const refreshDeployingList = async () => {
       taskId: item.task_id,
       ciJobName: item.ci_job_name === 'NULL' ? '' : item.ci_job_name,
       cdJobName: item.cd_job_name === 'NULL' ? '' : item.cd_job_name,
+      ciBuildId: item.ci_build_id || null,
+      cdBuildId: item.cd_build_id || null,
       products: item.products === 'NULL' ? '' : item.products,
       pipelineParam: item.pipeline_param
     }))
@@ -1270,6 +1280,8 @@ const handleSearch = async () => {
           auto_deploy: item.auto_deploy,
           ci_job_name: item.ci_job_name === 'NULL' ? '' : item.ci_job_name,
           cd_job_name: item.cd_job_name === 'NULL' ? '' : item.cd_job_name,
+          ci_build_id: item.ci_build_id || 0,
+          cd_build_id: item.cd_build_id || 0,
           products: item.products === 'NULL' ? '' : item.products
         }))
         total.value = result.total || 0
@@ -1328,6 +1340,8 @@ const viewLogDetail = (row: LogItem) => {
     taskId: row.task_id,
     ciJobName: row.ci_job_name,
     cdJobName: row.cd_job_name,
+    ciBuildId: row.ci_build_id,
+    cdBuildId: row.cd_build_id,
     products: row.products,
     auto_deploy: row.auto_deploy
   }
@@ -1358,11 +1372,54 @@ const cdLog = ref('')
 const ciLogLoading = ref(false)
 const cdLogLoading = ref(false)
 
+// 日志容器引用
+const ciLogContainer = ref<HTMLElement>()
+const cdLogContainer = ref<HTMLElement>()
+
 // SSE连接状态
 const ciEventSource = ref<EventSource | null>(null)
 const cdEventSource = ref<EventSource | null>(null)
 const isStreamingCi = ref(false)
 const isStreamingCd = ref(false)
+
+// 自动滚动到底部
+const scrollToBottom = (container: HTMLElement | undefined) => {
+  if (container) {
+    console.log('滚动到底部，容器高度:', container.scrollHeight, '当前滚动位置:', container.scrollTop)
+    
+    // 方法1: 直接设置scrollTop
+    container.scrollTop = container.scrollHeight
+    
+    // 方法2: 使用scrollTo
+    setTimeout(() => {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth'
+      })
+    }, 50)
+    
+    // 方法3: 使用scrollIntoView
+    setTimeout(() => {
+      const lastChild = container.lastElementChild
+      if (lastChild) {
+        lastChild.scrollIntoView({ behavior: 'smooth', block: 'end' })
+      }
+    }, 100)
+    
+    console.log('滚动完成，新位置:', container.scrollTop)
+  } else {
+    console.log('容器未找到，无法滚动')
+  }
+}
+
+// 手动滚动到底部（用于测试）
+const manualScrollToBottom = () => {
+  if (activeLogTab.value === 'ci') {
+    scrollToBottom(ciLogContainer.value)
+  } else if (activeLogTab.value === 'cd') {
+    scrollToBottom(cdLogContainer.value)
+  }
+}
 
 // 获取日志
 const fetchLogs = async (row: DeployingService) => {
@@ -1374,10 +1431,10 @@ const fetchLogs = async (row: DeployingService) => {
     ciLog.value = ''
     
     try {
-      // 检查是否有CI job信息
-      if (row.ciJobName && row.taskId) {
+      // 检查是否有CI job信息和build_id
+      if (row.ciJobName && row.ciBuildId) {
         // 使用SSE流式获取CI日志
-        await fetchCiLogsStream(row.ciJobName, row.taskId)
+        await fetchCiLogsStream(row.ciJobName, row.ciBuildId)
       } else {
         // 回退到原来的API
         const response = await queryTaskLogs(row.taskId, 'ci')
@@ -1399,10 +1456,10 @@ const fetchLogs = async (row: DeployingService) => {
     cdLog.value = ''
     
     try {
-      // 检查是否有CD job信息
-      if (row.cdJobName && row.taskId) {
+      // 检查是否有CD job信息和build_id
+      if (row.cdJobName && row.cdBuildId) {
         // 使用SSE流式获取CD日志
-        await fetchCdLogsStream(row.cdJobName, row.taskId)
+        await fetchCdLogsStream(row.cdJobName, row.cdBuildId)
       } else {
         // 回退到原来的API
         const response = await queryTaskLogs(row.taskId, 'cd')
@@ -1430,13 +1487,16 @@ const fetchCiLogsStream = async (jobName: string, buildId: number) => {
     ciEventSource.value = new EventSource(url)
     isStreamingCi.value = true
     
-    ciEventSource.value.onmessage = (event) => {
+    ciEventSource.value.onmessage = (event: MessageEvent) => {
       try {
+        // 解析JSON数据
         const data = JSON.parse(event.data)
-        if (data.code === 0 && data.result && Array.isArray(data.result)) {
+        if (data.code === 1 && data.result && Array.isArray(data.result)) {
           // 将每一行日志添加到内容中
           ciLog.value += data.result.join('\n') + '\n'
-        } else if (data.code !== 0) {
+          // 自动滚动到底部
+          scrollToBottom(ciLogContainer.value)
+        } else if (data.code === 0) {
           // 处理错误
           reject(new Error(data.msg || data.error || '获取 CI 日志失败'))
           cleanupEventSources()
@@ -1447,6 +1507,24 @@ const fetchCiLogsStream = async (jobName: string, buildId: number) => {
         cleanupEventSources()
       }
     }
+    
+    // 监听错误事件
+    ciEventSource.value.addEventListener('error', (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data)
+        reject(new Error(data.msg || data.error || '获取 CI 日志失败'))
+      } catch (error) {
+        reject(new Error('获取 CI 日志失败'))
+      }
+      cleanupEventSources()
+    })
+    
+    // 监听结束事件
+    ciEventSource.value.addEventListener('end', () => {
+      console.log('CI日志SSE流结束')
+      cleanupEventSources()
+      resolve()
+    })
     
     ciEventSource.value.onerror = (error) => {
       console.error('CI日志SSE连接错误:', error)
@@ -1470,13 +1548,6 @@ const fetchCiLogsStream = async (jobName: string, buildId: number) => {
       isStreamingCi.value = false
       resolve()
     })
-    
-    // 监听完成事件
-    ciEventSource.value.addEventListener('complete', () => {
-      clearTimeout(timeout)
-      cleanupEventSources()
-      resolve()
-    })
   })
 }
 
@@ -1488,13 +1559,16 @@ const fetchCdLogsStream = async (jobName: string, buildId: number) => {
     cdEventSource.value = new EventSource(url)
     isStreamingCd.value = true
     
-    cdEventSource.value.onmessage = (event) => {
+    cdEventSource.value.onmessage = (event: MessageEvent) => {
       try {
+        // 解析JSON数据
         const data = JSON.parse(event.data)
-        if (data.code === 0 && data.result && Array.isArray(data.result)) {
+        if (data.code === 1 && data.result && Array.isArray(data.result)) {
           // 将每一行日志添加到内容中
           cdLog.value += data.result.join('\n') + '\n'
-        } else if (data.code !== 0) {
+          // 自动滚动到底部
+          scrollToBottom(cdLogContainer.value)
+        } else if (data.code === 0) {
           // 处理错误
           reject(new Error(data.msg || data.error || '获取 CD 日志失败'))
           cleanupEventSources()
@@ -1505,6 +1579,24 @@ const fetchCdLogsStream = async (jobName: string, buildId: number) => {
         cleanupEventSources()
       }
     }
+    
+    // 监听错误事件
+    cdEventSource.value.addEventListener('error', (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data)
+        reject(new Error(data.msg || data.error || '获取 CD 日志失败'))
+      } catch (error) {
+        reject(new Error('获取 CD 日志失败'))
+      }
+      cleanupEventSources()
+    })
+    
+    // 监听结束事件
+    cdEventSource.value.addEventListener('end', () => {
+      console.log('CD日志SSE流结束')
+      cleanupEventSources()
+      resolve()
+    })
     
     cdEventSource.value.onerror = (error) => {
       console.error('CD日志SSE连接错误:', error)
@@ -1526,13 +1618,6 @@ const fetchCdLogsStream = async (jobName: string, buildId: number) => {
     cdEventSource.value.addEventListener('close', () => {
       clearTimeout(timeout)
       isStreamingCd.value = false
-      resolve()
-    })
-    
-    // 监听完成事件
-    cdEventSource.value.addEventListener('complete', () => {
-      clearTimeout(timeout)
-      cleanupEventSources()
       resolve()
     })
   })
@@ -1564,6 +1649,24 @@ watch(activeTab, async (newTab) => {
   if (newTab === 'log') {
     // 只有在切换到日志页时才触发查询
     handleSearch()
+  }
+})
+
+// 监听CI日志内容变化，自动滚动到底部
+watch(ciLog, () => {
+  if (ciLog.value && activeLogTab.value === 'ci') {
+    nextTick(() => {
+      scrollToBottom(ciLogContainer.value)
+    })
+  }
+})
+
+// 监听CD日志内容变化，自动滚动到底部
+watch(cdLog, () => {
+  if (cdLog.value && activeLogTab.value === 'cd') {
+    nextTick(() => {
+      scrollToBottom(cdLogContainer.value)
+    })
   }
 })
 
@@ -1948,17 +2051,23 @@ const handleLogDialogClose = () => {
   :deep(.el-dialog__body) {
     padding: 0;
   }
+  
+  :deep(.el-dialog) {
+    max-height: 90vh;
+  }
 }
 
 .log-dialog-content {
   display: flex;
   flex-direction: column;
   height: 70vh;
+  max-height: 70vh;
 }
 
 .log-header {
   padding: 20px;
   border-bottom: 1px solid var(--el-border-color-light);
+  flex-shrink: 0;
 }
 
 .log-info {
@@ -1973,33 +2082,81 @@ const handleLogDialogClose = () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
   
   :deep(.el-tabs__content) {
     flex: 1;
     overflow: hidden;
     padding: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
   }
   
   :deep(.el-tab-pane) {
     height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 }
 
 .log-detail-content {
-  height: 100%;
+  height: 100% !important;
+  max-height: 100% !important;
   padding: 20px;
-  overflow: auto;
-  background-color: #1e1e1e;
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+  background-color: #1e1e1e !important;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+  
+  /* 强制滚动样式 */
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  
+  /* 自定义滚动条样式 */
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: #2d2d2d;
+    border-radius: 4px;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background: #666;
+    border-radius: 4px;
+    
+    &:hover {
+      background: #888;
+    }
+  }
+  
+  &::-webkit-scrollbar-corner {
+    background: #2d2d2d;
+  }
 }
 
 .log-text {
   margin: 0;
-  color: #d4d4d4;
+  color: #d4d4d4 !important;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
   font-size: 13px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-wrap: break-word;
+  flex: 1;
+  min-height: 0;
+  overflow: visible;
+  background-color: transparent !important;
+  display: block;
 }
 
 .empty-log {
