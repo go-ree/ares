@@ -384,15 +384,6 @@
                   <el-button @click="manualScrollToBottom" size="small" type="primary">
                     滚动到底部
                   </el-button>
-                  <el-button @click="testScroll" size="small">
-                    测试滚动
-                  </el-button>
-                  <el-button @click="checkLogIntegrity" size="small" type="info">
-                    检查日志
-                  </el-button>
-                  <el-button @click="emergencyFixScroll" size="small" type="danger">
-                    紧急修复滚动
-                  </el-button>
                 </div>
               </div>
             </el-tab-pane>
@@ -411,15 +402,6 @@
                 <div v-if="cdLog" class="log-controls">
                   <el-button @click="manualScrollToBottom" size="small" type="primary">
                     滚动到底部
-                  </el-button>
-                  <el-button @click="testScroll" size="small">
-                    测试滚动
-                  </el-button>
-                  <el-button @click="checkLogIntegrity" size="small" type="info">
-                    检查日志
-                  </el-button>
-                  <el-button @click="emergencyFixScroll" size="small" type="danger">
-                    紧急修复滚动
                   </el-button>
                 </div>
               </div>
