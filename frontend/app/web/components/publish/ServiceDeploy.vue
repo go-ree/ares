@@ -371,12 +371,11 @@
             <el-tab-pane label="CI 日志" name="ci">
               <div class="log-container">
                 <div class="log-detail-content" v-loading="ciLogLoading" ref="ciLogContainer">
-                  <div v-if="isStreamingCi" class="streaming-indicator">
-                    <el-icon class="is-loading"><Loading /></el-icon>
+                  <div v-if="isStreamingCi && !ciLog" class="streaming-indicator">
                     <span>正在实时获取日志...</span>
                   </div>
                   <pre v-if="ciLog" class="log-text">{{ ciLog }}</pre>
-                  <div v-else-if="!ciLogLoading" class="empty-log">
+                  <div v-else-if="!ciLogLoading && !isStreamingCi" class="empty-log">
                     <el-empty description="暂无 CI 日志" :image-size="60" />
                   </div>
                 </div>
@@ -390,12 +389,11 @@
             <el-tab-pane label="CD 日志" name="cd">
               <div class="log-container">
                 <div class="log-detail-content" v-loading="cdLogLoading" ref="cdLogContainer">
-                  <div v-if="isStreamingCd" class="streaming-indicator">
-                    <el-icon class="is-loading"><Loading /></el-icon>
+                  <div v-if="isStreamingCd && !cdLog" class="streaming-indicator">
                     <span>正在实时获取日志...</span>
                   </div>
                   <pre v-if="cdLog" class="log-text">{{ cdLog }}</pre>
-                  <div v-else-if="!cdLogLoading" class="empty-log">
+                  <div v-else-if="!cdLogLoading && !isStreamingCd" class="empty-log">
                     <el-empty description="暂无 CD 日志" :image-size="60" />
                   </div>
                 </div>
@@ -1479,28 +1477,20 @@ const checkLogIntegrity = () => {
 const fetchLogs = async (row: DeployingService) => {
   // 先清理之前的SSE连接
   cleanupEventSources()
-  
+
   if (activeLogTab.value === 'ci') {
     ciLogLoading.value = true
     ciLog.value = ''
-    
     try {
-      // 检查是否有CI job信息和build_id
       if (row.ciJobName && row.ciBuildId) {
-        // 使用SSE流式获取CI日志
         await fetchCiLogsStream(row.ciJobName, row.ciBuildId)
       } else {
-        // 回退到原来的API
-        const response = await queryTaskLogs(row.taskId, 'ci')
-        if (response.data.code === 1) {
-          ciLog.value = response.data.result || ''
-        } else {
-          throw new Error(response.data.msg || '获取 CI 日志失败')
-        }
+        ciLog.value = ''
+        isStreamingCi.value = false
+        ciLogLoading.value = false
+        return
       }
     } catch (error) {
-      console.error('获取 CI 日志失败:', error)
-      ElMessage.error(error instanceof Error ? error.message : '获取 CI 日志失败')
       ciLog.value = ''
     } finally {
       ciLogLoading.value = false
@@ -1508,24 +1498,17 @@ const fetchLogs = async (row: DeployingService) => {
   } else if (activeLogTab.value === 'cd') {
     cdLogLoading.value = true
     cdLog.value = ''
-    
     try {
-      // 检查是否有CD job信息和build_id
       if (row.cdJobName && row.cdBuildId) {
-        // 使用SSE流式获取CD日志
         await fetchCdLogsStream(row.cdJobName, row.cdBuildId)
       } else {
-        // 回退到原来的API
-        const response = await queryTaskLogs(row.taskId, 'cd')
-        if (response.data.code === 1) {
-          cdLog.value = response.data.result || ''
-        } else {
-          throw new Error(response.data.msg || '获取 CD 日志失败')
-        }
+        // 没有CD job信息，直接显示暂无日志
+        cdLog.value = ''
+        isStreamingCd.value = false
+        cdLogLoading.value = false
+        return
       }
     } catch (error) {
-      console.error('获取 CD 日志失败:', error)
-      ElMessage.error(error instanceof Error ? error.message : '获取 CD 日志失败')
       cdLog.value = ''
     } finally {
       cdLogLoading.value = false
@@ -1538,11 +1521,18 @@ const fetchCiLogsStream = async (jobName: string, buildId: number) => {
   return new Promise<void>((resolve, reject) => {
     const url = `/api/v1/job/stream/log?job_name=${encodeURIComponent(jobName)}&build_id=${buildId}`
     
+    console.log('开始获取CI日志:', { jobName, buildId, url })
+    
     ciEventSource.value = new EventSource(url)
     isStreamingCi.value = true
     
+    let hasReceivedData = false
+    
     ciEventSource.value.onmessage = (event: MessageEvent) => {
       try {
+        console.log('CI日志SSE收到数据:', event.data)
+        hasReceivedData = true
+        
         // 解析JSON数据
         const data = JSON.parse(event.data)
         if (data.code === 1 && data.result && Array.isArray(data.result)) {
@@ -1552,8 +1542,14 @@ const fetchCiLogsStream = async (jobName: string, buildId: number) => {
           scrollToBottom(ciLogContainer.value)
         } else if (data.code === 0) {
           // 处理错误
+          console.error('CI日志SSE错误:', data.msg || data.error)
           reject(new Error(data.msg || data.error || '获取 CI 日志失败'))
           cleanupEventSources()
+        } else if (data.code === 1 && data.msg === 'end') {
+          // 日志流结束
+          console.log('CI日志SSE流正常结束')
+          cleanupEventSources()
+          resolve()
         }
       } catch (error) {
         console.error('解析CI日志SSE数据失败:', error)
@@ -1564,6 +1560,7 @@ const fetchCiLogsStream = async (jobName: string, buildId: number) => {
     
     // 监听错误事件
     ciEventSource.value.addEventListener('error', (event: MessageEvent) => {
+      console.error('CI日志SSE错误事件:', event)
       try {
         const data = JSON.parse(event.data)
         reject(new Error(data.msg || data.error || '获取 CI 日志失败'))
@@ -1590,14 +1587,22 @@ const fetchCiLogsStream = async (jobName: string, buildId: number) => {
       console.log('CI日志SSE连接已建立')
     }
     
-    // 设置超时处理
+    // 设置超时处理 - 增加超时时间
     const timeout = setTimeout(() => {
+      console.log('CI日志SSE超时，hasReceivedData:', hasReceivedData)
+      if (!hasReceivedData) {
+        // 如果没有收到任何数据，可能是连接问题
+        reject(new Error('CI日志获取超时，请重试'))
+      } else {
+        // 如果收到过数据，正常结束
+        resolve()
+      }
       cleanupEventSources()
-      resolve() // 超时后正常结束
-    }, 30000) // 30秒超时
+    }, 60000) // 增加到60秒超时
     
     // 监听连接关闭
     ciEventSource.value.addEventListener('close', () => {
+      console.log('CI日志SSE连接关闭')
       clearTimeout(timeout)
       isStreamingCi.value = false
       resolve()
@@ -1610,11 +1615,18 @@ const fetchCdLogsStream = async (jobName: string, buildId: number) => {
   return new Promise<void>((resolve, reject) => {
     const url = `/api/v1/job/stream/log?job_name=${encodeURIComponent(jobName)}&build_id=${buildId}`
     
+    console.log('开始获取CD日志:', { jobName, buildId, url })
+    
     cdEventSource.value = new EventSource(url)
     isStreamingCd.value = true
     
+    let hasReceivedData = false
+    
     cdEventSource.value.onmessage = (event: MessageEvent) => {
       try {
+        console.log('CD日志SSE收到数据:', event.data)
+        hasReceivedData = true
+        
         // 解析JSON数据
         const data = JSON.parse(event.data)
         if (data.code === 1 && data.result && Array.isArray(data.result)) {
@@ -1624,8 +1636,14 @@ const fetchCdLogsStream = async (jobName: string, buildId: number) => {
           scrollToBottom(cdLogContainer.value)
         } else if (data.code === 0) {
           // 处理错误
+          console.error('CD日志SSE错误:', data.msg || data.error)
           reject(new Error(data.msg || data.error || '获取 CD 日志失败'))
           cleanupEventSources()
+        } else if (data.code === 1 && data.msg === 'end') {
+          // 日志流结束
+          console.log('CD日志SSE流正常结束')
+          cleanupEventSources()
+          resolve()
         }
       } catch (error) {
         console.error('解析CD日志SSE数据失败:', error)
@@ -1636,6 +1654,7 @@ const fetchCdLogsStream = async (jobName: string, buildId: number) => {
     
     // 监听错误事件
     cdEventSource.value.addEventListener('error', (event: MessageEvent) => {
+      console.error('CD日志SSE错误事件:', event)
       try {
         const data = JSON.parse(event.data)
         reject(new Error(data.msg || data.error || '获取 CD 日志失败'))
@@ -1662,14 +1681,22 @@ const fetchCdLogsStream = async (jobName: string, buildId: number) => {
       console.log('CD日志SSE连接已建立')
     }
     
-    // 设置超时处理
+    // 设置超时处理 - 增加超时时间
     const timeout = setTimeout(() => {
+      console.log('CD日志SSE超时，hasReceivedData:', hasReceivedData)
+      if (!hasReceivedData) {
+        // 如果没有收到任何数据，可能是连接问题
+        reject(new Error('CD日志获取超时，请重试'))
+      } else {
+        // 如果收到过数据，正常结束
+        resolve()
+      }
       cleanupEventSources()
-      resolve() // 超时后正常结束
-    }, 30000) // 30秒超时
+    }, 60000) // 增加到60秒超时
     
     // 监听连接关闭
     cdEventSource.value.addEventListener('close', () => {
+      console.log('CD日志SSE连接关闭')
       clearTimeout(timeout)
       isStreamingCd.value = false
       resolve()
@@ -2217,20 +2244,29 @@ const emergencyFixScroll = () => {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   
+  /* 确保背景色始终正确 */
+  color: #d4d4d4 !important;
+  
+  /* 防止内容闪烁 */
+  will-change: auto;
+  
   /* 自定义滚动条样式 */
   &::-webkit-scrollbar {
     width: 12px;
     height: 12px;
+    background-color: transparent;
   }
   
   &::-webkit-scrollbar-track {
-    background: #2d2d2d;
+    background: #1e1e1e;
     border-radius: 6px;
+    border: 1px solid #1e1e1e;
   }
   
   &::-webkit-scrollbar-thumb {
     background: #666;
     border-radius: 6px;
+    border: 1px solid #1e1e1e;
     
     &:hover {
       background: #888;
@@ -2238,7 +2274,28 @@ const emergencyFixScroll = () => {
   }
   
   &::-webkit-scrollbar-corner {
-    background: #2d2d2d;
+    background: #1e1e1e;
+  }
+  
+  /* 处理滚动条可能遮挡的问题 */
+  &::-webkit-scrollbar-track-piece {
+    background: #1e1e1e;
+  }
+  
+  /* 确保滚动条不会影响背景色 */
+  &::-webkit-scrollbar-button {
+    background: #1e1e1e;
+  }
+  
+  /* 确保所有子元素都继承正确的背景色 */
+  & * {
+    background-color: transparent !important;
+  }
+  
+  /* 特别处理pre元素 */
+  & pre {
+    background-color: transparent !important;
+    color: #d4d4d4 !important;
   }
 }
 
@@ -2255,6 +2312,16 @@ const emergencyFixScroll = () => {
   width: 100%;
   height: auto;
   max-width: 100%;
+  
+  /* 防止内容闪烁 */
+  will-change: auto;
+  
+  /* 确保文本颜色始终正确 */
+  color: #d4d4d4 !important;
+  
+  /* 防止继承错误的背景色 */
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
 .empty-log {
@@ -2296,11 +2363,17 @@ const emergencyFixScroll = () => {
   justify-content: center;
   margin-bottom: 16px;
   padding: 8px 16px;
-  background-color: rgba(64, 158, 255, 0.1);
+  background-color: rgba(30, 30, 30, 0.9) !important;
   border: 1px solid rgba(64, 158, 255, 0.3);
   border-radius: 4px;
   color: #409eff;
   font-size: 14px;
+  position: relative;
+  z-index: 1;
+  
+  /* 确保不会影响背景色 */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .streaming-indicator .el-icon {
@@ -2316,5 +2389,60 @@ const emergencyFixScroll = () => {
   background-color: #f5f5f5;
   border-top: 1px solid #e0e0e0;
   flex-shrink: 0;
+}
+
+/* 处理流式传输时的状态 */
+.log-detail-content:empty,
+.log-detail-content:not(:has(.log-text)) {
+  background-color: #1e1e1e !important;
+  color: #d4d4d4 !important;
+}
+
+/* 确保在加载状态下也保持正确的背景色 */
+.log-detail-content:has(.el-loading-mask) {
+  background-color: #1e1e1e !important;
+}
+
+/* 防止Element Plus的loading遮罩影响背景色 */
+.log-detail-content :deep(.el-loading-mask) {
+  background-color: rgba(30, 30, 30, 0.8) !important;
+}
+
+/* 处理流式传输过程中的状态 */
+.log-detail-content:has(.streaming-indicator) {
+  background-color: #1e1e1e !important;
+}
+
+/* 确保streaming-indicator不会影响背景色 */
+.log-detail-content .streaming-indicator {
+  background-color: rgba(30, 30, 30, 0.9) !important;
+  color: #409eff !important;
+}
+
+/* 确保在内容更新时背景色不变 */
+.log-detail-content:has(pre) {
+  background-color: #1e1e1e !important;
+}
+
+/* 防止任何可能的泛白 */
+.log-detail-content,
+.log-detail-content * {
+  background-color: transparent !important;
+}
+
+.log-detail-content {
+  background-color: #1e1e1e !important;
+}
+
+/* 特别处理streaming-indicator，确保不会导致泛白 */
+.log-detail-content .streaming-indicator,
+.log-detail-content .streaming-indicator * {
+  background-color: rgba(30, 30, 30, 0.9) !important;
+  color: #409eff !important;
+}
+
+/* 确保streaming-indicator的父容器背景色正确 */
+.log-detail-content:has(.streaming-indicator) {
+  background-color: #1e1e1e !important;
 }
 </style> 
