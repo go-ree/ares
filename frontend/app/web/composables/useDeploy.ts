@@ -475,11 +475,24 @@ export function useDeploy() {
   // 加载可用服务列表
   const loadAvailableServices = async () => {
     try {
-      const response = await api.get('/api/v1/apps/list')
+      console.log('开始加载可用服务列表...')
+      const response = await api.get('/api/v1/apps/query/appname')
+      console.log('API响应:', response)
       
       if (response.data.code === 1) {
-        availableServices.value = response.data.result.apps || []
+        // API返回的是应用名称字符串数组
+        const appNames = response.data.result || []
+        
+        // 转换为ServiceInfo格式
+        availableServices.value = appNames.map((appName: string) => ({
+          name: appName,
+          nameCn: appName, // 如果没有中文名称，使用英文名称
+          description: ''
+        }))
+        
+        console.log('加载到的服务列表:', availableServices.value)
       } else {
+        console.error('API返回错误:', response.data)
         throw new Error(response.data.msg || '获取服务列表失败')
       }
     } catch (error) {

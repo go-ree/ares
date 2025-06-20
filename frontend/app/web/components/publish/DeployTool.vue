@@ -27,6 +27,12 @@
             当前服务数量: {{ selectedServices.length }}，全局分支: release_{{ globalBranchSuffix }}
           </small>
         </div>
+        <!-- 服务列表调试信息 -->
+        <div class="debug-info">
+          <small style="color: #909399; margin-left: 10px;">
+            可用服务数量: {{ availableServices.length }}
+          </small>
+        </div>
       </div>
     </div>
 
