@@ -55,6 +55,8 @@ const handleViewLog = (service: DeployingService) => {
 
 // 查看日志详情（从日志查询列表）
 const handleViewLogDetail = (logItem: any) => {
+  console.log('ServiceDeploy: 收到查看日志详情事件', logItem)
+  
   // 将LogItem转换为DeployingService格式
   const deployingService: DeployingService = {
     id: logItem.task_id,
@@ -75,8 +77,12 @@ const handleViewLogDetail = (logItem: any) => {
     auto_deploy: logItem.auto_deploy
   }
   
+  console.log('ServiceDeploy: 转换后的服务数据', deployingService)
+  
   currentLogData.value = deployingService
   logDetailVisible.value = true
+  
+  console.log('ServiceDeploy: 对话框状态', { logDetailVisible: logDetailVisible.value, currentLogData: currentLogData.value })
 }
 
 // 处理日志对话框关闭

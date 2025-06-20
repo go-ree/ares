@@ -79,7 +79,7 @@
           </el-table-column>
           <el-table-column label="操作" width="120" fixed="right">
             <template #default="{ row }">
-              <el-button type="primary" link @click="viewLogDetail(row)">
+              <el-button type="primary" link @click="handleViewLogDetail(row)">
                 查看日志
               </el-button>
             </template>
@@ -141,8 +141,10 @@ const emit = defineEmits<{
 
 // 重写viewLogDetail方法，触发事件
 const handleViewLogDetail = (row: any) => {
-  viewLogDetail(row)
+  console.log('LogQuery: 点击查看日志按钮', row)
+  // 只触发事件，让父组件处理对话框显示
   emit('viewLogDetail', row)
+  console.log('LogQuery: 已触发viewLogDetail事件')
 }
 
 // 组件挂载时自动查询

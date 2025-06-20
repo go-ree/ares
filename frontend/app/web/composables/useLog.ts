@@ -371,6 +371,8 @@ export function useLog() {
       
       let hasReceivedData = false
       let isResolved = false
+      let messageCount = 0  // 添加消息计数器
+      let is404Error = false  // 添加404错误标志
       
       const resolveOnce = (value?: any) => {
         if (!isResolved) {
@@ -460,7 +462,43 @@ export function useLog() {
       
       eventSource.onerror = (error) => {
         console.error('CI日志SSE连接错误:', error)
-        console.log('CI日志SSE连接错误详情 - hasReceivedData:', hasReceivedData, 'retryCount:', retryCount, 'readyState:', eventSource.readyState)
+        console.log('CI日志SSE连接错误详情 - hasReceivedData:', hasReceivedData, 'retryCount:', retryCount, 'readyState:', eventSource.readyState, 'is404Error:', is404Error)
+        
+        // 尝试解析错误数据，检查是否为404错误
+        try {
+          if (error instanceof MessageEvent && error.data) {
+            const errorData = JSON.parse(error.data)
+            console.log('CI日志SSE原生错误处理器解析到错误数据:', errorData)
+            
+            if (errorData.error === '404') {
+              console.log('CI日志SSE原生错误处理器检测到404错误，不再重试')
+              is404Error = true
+              if (!ciLog.value) {
+                ciLog.value = '未找到日志信息'
+              }
+              eventSource.close()
+              eventSourceMap.value.delete(connectionId)
+              streamingStatus.value.set(connectionId, false)
+              clearTimeout(timeout)
+              cleanupCiHeartbeat()
+              rejectOnce(new Error(`任务不存在: ${errorData.error}`))
+              return
+            }
+          }
+        } catch (parseError) {
+          console.log('CI日志SSE原生错误处理器无法解析错误数据:', parseError)
+        }
+        
+        // 如果是404错误，不再重试
+        if (is404Error) {
+          console.log('CI日志SSE 404错误已处理，不再重试')
+          eventSource.close()
+          eventSourceMap.value.delete(connectionId)
+          streamingStatus.value.set(connectionId, false)
+          clearTimeout(timeout)
+          cleanupCiHeartbeat()
+          return
+        }
         
         // 如果连接已经关闭且收到过数据，认为日志已经完成，不再重试
         if (eventSource.readyState === EventSource.CLOSED && hasReceivedData) {
@@ -546,6 +584,7 @@ export function useLog() {
           eventSource.close()
           eventSourceMap.value.delete(connectionId)
           streamingStatus.value.set(connectionId, false)
+          clearTimeout(timeout)
           cleanupCiHeartbeat()
           rejectOnce(new Error('CI日志获取超时，已重试' + maxRetries + '次'))
         }
@@ -565,6 +604,64 @@ export function useLog() {
         eventSourceMap.value.delete(connectionId)
         streamingStatus.value.set(connectionId, false)
         resolveOnce()
+      })
+      
+      // 监听错误事件（event: error）
+      eventSource.addEventListener('error', (event: MessageEvent) => {
+        console.log('收到SSE error事件，处理错误')
+        try {
+          const errorData = JSON.parse(event.data)
+          console.error('CI日志SSE错误事件:', errorData)
+          
+          // 显示错误信息
+          if (!ciLog.value) {
+            ciLog.value = `获取CI日志失败: ${errorData.error || errorData.msg || '未知错误'}`
+          }
+          
+          // 清理资源
+          clearTimeout(timeout)
+          cleanupCiHeartbeat()
+          if (updateTimer.value) {
+            clearTimeout(updateTimer.value)
+            updateTimer.value = null
+          }
+          
+          // 关闭连接
+          eventSource.close()
+          eventSourceMap.value.delete(connectionId)
+          streamingStatus.value.set(connectionId, false)
+          
+          // 根据错误类型决定是否重试
+          if (errorData.error === '404') {
+            console.log('CI日志SSE 404错误，任务可能不存在，不再重试')
+            is404Error = true  // 设置404错误标志
+            if (!ciLog.value) {
+              ciLog.value = '未找到日志信息'
+            }
+            rejectOnce(new Error(`任务不存在: ${errorData.error}`))
+          } else {
+            console.log('CI日志SSE其他错误，尝试重试')
+            if (retryCount < maxRetries) {
+              setTimeout(() => {
+                cleanupConnection(connectionId)
+                fetchCiLogsStream(jobName, buildId, retryCount + 1)
+                  .then(resolveOnce)
+                  .catch(rejectOnce)
+              }, 3000 * (retryCount + 1))
+            } else {
+              rejectOnce(new Error(`CI日志获取失败: ${errorData.error || errorData.msg || '未知错误'}`))
+            }
+          }
+        } catch (parseError) {
+          console.error('解析CI日志SSE错误事件失败:', parseError)
+          // 如果解析失败，按普通错误处理
+          clearTimeout(timeout)
+          cleanupCiHeartbeat()
+          eventSource.close()
+          eventSourceMap.value.delete(connectionId)
+          streamingStatus.value.set(connectionId, false)
+          rejectOnce(new Error('解析错误事件失败'))
+        }
       })
       
       // 监听连接关闭事件
@@ -636,6 +733,7 @@ export function useLog() {
       let hasReceivedData = false
       let isResolved = false
       let messageCount = 0  // 添加消息计数器
+      let is404Error = false  // 添加404错误标志
       
       const resolveOnce = (value?: any) => {
         if (!isResolved) {
@@ -734,7 +832,43 @@ export function useLog() {
       
       eventSource.onerror = (error) => {
         console.error('CD日志SSE连接错误:', error)
-        console.log('CD日志SSE连接错误详情 - hasReceivedData:', hasReceivedData, 'retryCount:', retryCount, 'readyState:', eventSource.readyState)
+        console.log('CD日志SSE连接错误详情 - hasReceivedData:', hasReceivedData, 'retryCount:', retryCount, 'readyState:', eventSource.readyState, 'is404Error:', is404Error)
+        
+        // 尝试解析错误数据，检查是否为404错误
+        try {
+          if (error instanceof MessageEvent && error.data) {
+            const errorData = JSON.parse(error.data)
+            console.log('CD日志SSE原生错误处理器解析到错误数据:', errorData)
+            
+            if (errorData.error === '404') {
+              console.log('CD日志SSE原生错误处理器检测到404错误，不再重试')
+              is404Error = true
+              if (!cdLog.value) {
+                cdLog.value = '未找到日志信息'
+              }
+              eventSource.close()
+              eventSourceMap.value.delete(connectionId)
+              streamingStatus.value.set(connectionId, false)
+              clearTimeout(timeout)
+              cleanupHeartbeat()
+              rejectOnce(new Error(`任务不存在: ${errorData.error}`))
+              return
+            }
+          }
+        } catch (parseError) {
+          console.log('CD日志SSE原生错误处理器无法解析错误数据:', parseError)
+        }
+        
+        // 如果是404错误，不再重试
+        if (is404Error) {
+          console.log('CD日志SSE 404错误已处理，不再重试')
+          eventSource.close()
+          eventSourceMap.value.delete(connectionId)
+          streamingStatus.value.set(connectionId, false)
+          clearTimeout(timeout)
+          cleanupHeartbeat()
+          return
+        }
         
         // 如果连接已经关闭且收到过数据，认为日志已经完成，不再重试
         if (eventSource.readyState === EventSource.CLOSED && hasReceivedData) {
@@ -854,6 +988,64 @@ export function useLog() {
         eventSourceMap.value.delete(connectionId)
         streamingStatus.value.set(connectionId, false)
         resolveOnce()
+      })
+      
+      // 监听错误事件（event: error）
+      eventSource.addEventListener('error', (event: MessageEvent) => {
+        console.log('收到SSE error事件，处理错误')
+        try {
+          const errorData = JSON.parse(event.data)
+          console.error('CD日志SSE错误事件:', errorData)
+          
+          // 显示错误信息
+          if (!cdLog.value) {
+            cdLog.value = `获取CD日志失败: ${errorData.error || errorData.msg || '未知错误'}`
+          }
+          
+          // 清理资源
+          clearTimeout(timeout)
+          cleanupHeartbeat()
+          if (updateTimer.value) {
+            clearTimeout(updateTimer.value)
+            updateTimer.value = null
+          }
+          
+          // 关闭连接
+          eventSource.close()
+          eventSourceMap.value.delete(connectionId)
+          streamingStatus.value.set(connectionId, false)
+          
+          // 根据错误类型决定是否重试
+          if (errorData.error === '404') {
+            console.log('CD日志SSE 404错误，任务可能不存在，不再重试')
+            is404Error = true  // 设置404错误标志
+            if (!cdLog.value) {
+              cdLog.value = '未找到日志信息'
+            }
+            rejectOnce(new Error(`任务不存在: ${errorData.error}`))
+          } else {
+            console.log('CD日志SSE其他错误，尝试重试')
+            if (retryCount < maxRetries) {
+              setTimeout(() => {
+                cleanupConnection(connectionId)
+                fetchCdLogsStream(jobName, buildId, retryCount + 1)
+                  .then(resolveOnce)
+                  .catch(rejectOnce)
+              }, 3000 * (retryCount + 1))
+            } else {
+              rejectOnce(new Error(`CD日志获取失败: ${errorData.error || errorData.msg || '未知错误'}`))
+            }
+          }
+        } catch (parseError) {
+          console.error('解析CD日志SSE错误事件失败:', parseError)
+          // 如果解析失败，按普通错误处理
+          clearTimeout(timeout)
+          cleanupHeartbeat()
+          eventSource.close()
+          eventSourceMap.value.delete(connectionId)
+          streamingStatus.value.set(connectionId, false)
+          rejectOnce(new Error('解析错误事件失败'))
+        }
       })
       
       // 监听连接关闭事件
