@@ -78,9 +78,18 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
 import { Loading, Refresh } from '@element-plus/icons-vue'
 import { useDeploy } from '@/composables/useDeploy'
+
+// 定义props
+interface Props {
+  isActive?: boolean
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  isActive: false
+})
 
 const {
   // 响应式数据
@@ -126,7 +135,9 @@ const pauseAutoRefresh = () => {
 
 // 恢复自动刷新
 const resumeAutoRefresh = () => {
-  startAutoRefresh()
+  if (props.isActive) {
+    startAutoRefresh()
+  }
 }
 
 // 查看日志
@@ -136,16 +147,31 @@ const handleViewLog = (service: any) => {
   emit('viewLog', service)
 }
 
+// 监听标签页激活状态
+watch(() => props.isActive, (isActive) => {
+  if (isActive) {
+    console.log('DeployingList: 工具页激活，加载正在发布的服务列表')
+    refreshDeployingList()
+    startAutoRefresh()
+  } else {
+    console.log('DeployingList: 工具页非激活，停止自动刷新')
+    stopAutoRefresh()
+  }
+}, { immediate: false })
+
 // 暴露方法给父组件
 defineExpose({
   pauseAutoRefresh,
   resumeAutoRefresh
 })
 
-// 组件挂载时开始自动刷新
+// 组件挂载时，如果已经是激活状态则加载数据
 onMounted(() => {
-  refreshDeployingList()
-  startAutoRefresh()
+  if (props.isActive) {
+    console.log('DeployingList: 组件挂载且工具页激活，加载正在发布的服务列表')
+    refreshDeployingList()
+    startAutoRefresh()
+  }
 })
 
 // 组件卸载时停止自动刷新

@@ -18,6 +18,7 @@ export function useLog() {
   const pageSize = ref(10)
   const total = ref(0)
   const logLoading = ref(false)
+  const isFirstLoad = ref(true) // 添加首次加载标志
 
   // 日志对话框相关
   const logDialogVisible = ref(false)
@@ -186,11 +187,16 @@ export function useLog() {
         }
         
         // 显示查询结果提示
-        if (logList.value.length > 0) {
-          ElMessage.success(`查询成功，共找到 ${total.value} 条记录`)
-        } else {
-          ElMessage.info('查询完成，未找到相关记录')
+        if (isFirstLoad.value || (logFilter.serviceName || logFilter.environment || logFilter.dateRange.length > 0)) {
+          if (logList.value.length > 0) {
+            ElMessage.success(`查询成功，共找到 ${total.value} 条记录`)
+          } else {
+            ElMessage.info('查询完成，未找到相关记录')
+          }
         }
+        
+        // 标记已不是首次加载
+        isFirstLoad.value = false
       } else {
         throw new Error(response.data.msg || '查询失败')
       }
@@ -214,6 +220,7 @@ export function useLog() {
     logFilter.dateRange = []
     currentPage.value = 1
     pageSize.value = 10
+    isFirstLoad.value = true // 重置时重新设置首次加载标志
     // 重置后立即查询
     handleSearch()
   }

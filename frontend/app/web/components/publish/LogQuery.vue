@@ -112,15 +112,41 @@
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
       />
+      <div class="jump-to-page">
+        <span>跳转到</span>
+        <el-input-number
+          v-model="jumpPage"
+          :min="1"
+          :max="Math.ceil(total / pageSize)"
+          placeholder="页码"
+          :controls="false"
+          @keyup.enter="handleJumpToPage"
+          @blur="handleJumpToPage"
+        />
+        <span>页</span>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, watch, ref } from 'vue'
 import { Document, Refresh } from '@element-plus/icons-vue'
 import { useLog } from '@/composables/useLog'
 import { useDeploy } from '@/composables/useDeploy'
+import { ElMessage } from 'element-plus'
+
+// 定义props
+interface Props {
+  isActive?: boolean
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  isActive: false
+})
+
+// 跳转页面相关
+const jumpPage = ref('')
 
 const {
   // 响应式数据
@@ -165,12 +191,50 @@ const handleViewLogDetail = (row: any) => {
   console.log('LogQuery: 已触发viewLogDetail事件')
 }
 
-// 组件挂载时自动查询
-onMounted(async () => {
-  // 先加载服务列表
-  await loadAvailableServices()
-  // 然后查询日志
+// 处理跳转到指定页面
+const handleJumpToPage = () => {
+  // 如果输入框为空，不执行跳转
+  if (!jumpPage.value || jumpPage.value === '') {
+    return
+  }
+  
+  const page = parseInt(jumpPage.value)
+  const maxPage = Math.ceil(total.value / pageSize.value)
+  
+  if (isNaN(page) || page < 1 || page > maxPage) {
+    ElMessage.warning(`请输入1-${maxPage}之间的页码`)
+    jumpPage.value = '' // 清空无效输入
+    return
+  }
+  
+  // 设置当前页并触发数据请求
+  currentPage.value = page
+  jumpPage.value = '' // 清空输入框
+  
+  // 确保触发数据请求
   handleSearch()
+}
+
+// 监听标签页激活状态
+watch(() => props.isActive, async (isActive) => {
+  if (isActive) {
+    console.log('LogQuery: 日志页激活，加载服务列表和历史记录')
+    // 先加载服务列表
+    await loadAvailableServices()
+    // 然后查询日志
+    handleSearch()
+  }
+}, { immediate: true })
+
+// 组件挂载时，如果已经是激活状态则加载数据
+onMounted(async () => {
+  if (props.isActive) {
+    console.log('LogQuery: 组件挂载且日志页激活，加载服务列表和历史记录')
+    // 先加载服务列表
+    await loadAvailableServices()
+    // 然后查询日志
+    handleSearch()
+  }
 })
 </script>
 
@@ -208,7 +272,35 @@ onMounted(async () => {
 .pagination {
   padding: 20px;
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 20px;
+}
+
+.jump-to-page {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  color: #606266;
+}
+
+.jump-to-page :deep(.el-input-number) {
+  width: 80px;
+  margin: 0 8px;
+}
+
+.jump-to-page :deep(.el-input-number .el-input__wrapper) {
+  padding-right: 8px;
+  text-align: left;
+}
+
+.jump-to-page :deep(.el-input-number .el-input__inner) {
+  text-align: left;
+}
+
+.jump-to-page :deep(.el-input-number .el-input-number__decrease),
+.jump-to-page :deep(.el-input-number .el-input-number__increase) {
+  display: none;
 }
 
 :deep(.el-table) {

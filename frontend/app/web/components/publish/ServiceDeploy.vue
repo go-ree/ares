@@ -4,18 +4,22 @@
       <el-tabs v-model="activeTab" class="deploy-tabs">
         <el-tab-pane label="工具" name="tool">
           <!-- 发布工具组件 -->
-          <DeployTool />
+          <DeployTool :is-active="activeTab === 'tool'" />
           
           <!-- 正在发布的服务列表组件 -->
           <DeployingList 
             ref="deployingListRef"
+            :is-active="activeTab === 'tool'"
             @view-log="handleViewLog" 
           />
         </el-tab-pane>
         
         <el-tab-pane label="日志" name="log">
           <!-- 日志查询组件 -->
-          <LogQuery @view-log-detail="handleViewLogDetail" />
+          <LogQuery 
+            :is-active="activeTab === 'log'"
+            @view-log-detail="handleViewLogDetail" 
+          />
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -96,6 +100,15 @@ const handleLogDialogClose = () => {
 // 监听主标签页切换
 watch(activeTab, (newTab) => {
   console.log('切换到标签页:', newTab)
+  
+  // 通知子组件标签页切换
+  if (newTab === 'tool') {
+    // 工具页激活时，通知DeployTool和DeployingList加载数据
+    console.log('工具页激活，通知相关组件加载数据')
+  } else if (newTab === 'log') {
+    // 日志页激活时，通知LogQuery加载数据
+    console.log('日志页激活，通知LogQuery加载数据')
+  }
 })
 
 // 组件挂载时确保标签页正确初始化

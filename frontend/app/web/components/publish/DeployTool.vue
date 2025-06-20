@@ -162,9 +162,18 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, watch } from 'vue'
 import { Loading, Plus, Upload, RefreshRight } from '@element-plus/icons-vue'
 import { useDeploy } from '@/composables/useDeploy'
+
+// 定义props
+interface Props {
+  isActive?: boolean
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  isActive: false
+})
 
 const {
   // 响应式数据
@@ -194,9 +203,20 @@ const {
   loadAvailableServices
 } = useDeploy()
 
-// 组件挂载时加载可用服务列表
+// 监听标签页激活状态
+watch(() => props.isActive, (isActive) => {
+  if (isActive && availableServices.value.length === 0) {
+    console.log('DeployTool: 工具页激活，加载服务列表')
+    loadAvailableServices()
+  }
+}, { immediate: true })
+
+// 组件挂载时，如果已经是激活状态则加载服务列表
 onMounted(() => {
-  loadAvailableServices()
+  if (props.isActive && availableServices.value.length === 0) {
+    console.log('DeployTool: 组件挂载且工具页激活，加载服务列表')
+    loadAvailableServices()
+  }
 })
 </script>
 
