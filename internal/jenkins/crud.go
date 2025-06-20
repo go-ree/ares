@@ -188,8 +188,11 @@ func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- []string, errChan 
 
 	// 继续监控增量日志
 	lastLogLength := len(fullLog)
+	heartbeatCount := 0 // 添加心跳计数器
+
 	for {
 		time.Sleep(1 * time.Second)
+		heartbeatCount++
 
 		newLog := build.GetConsoleOutput(ctx)
 		if len(newLog) > lastLogLength {
@@ -206,6 +209,14 @@ func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- []string, errChan 
 				logChan <- newLines
 			}
 			lastLogLength = len(newLog)
+			heartbeatCount = 0 // 重置心跳计数器
+		}
+
+		// 每30秒发送一次心跳信号（空日志），让前端知道连接还在活跃
+		if heartbeatCount >= 3 {
+			// 发送空日志作为心跳信号
+			logChan <- []string{}
+			heartbeatCount = 0
 		}
 
 		if !build.IsRunning(ctx) {
