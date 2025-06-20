@@ -1,12 +1,13 @@
 <template>
   <div class="service-deploy">
-    <el-card class="deploy-card">
-      <el-tabs v-model="activeTab" class="deploy-tabs">
+    <div class="page-header">
+      <h2>服务发布管理</h2>
+    </div>
+    
+    <el-card>
+      <el-tabs v-model="activeTab" type="border-card">
         <el-tab-pane label="工具" name="tool">
-          <!-- 发布工具组件 -->
           <DeployTool :is-active="activeTab === 'tool'" />
-          
-          <!-- 正在发布的服务列表组件 -->
           <DeployingList 
             ref="deployingListRef"
             :is-active="activeTab === 'tool'"
@@ -15,7 +16,6 @@
         </el-tab-pane>
         
         <el-tab-pane label="日志" name="log">
-          <!-- 日志查询组件 -->
           <LogQuery 
             :is-active="activeTab === 'log'"
             @view-log-detail="handleViewLogDetail" 
@@ -24,7 +24,6 @@
       </el-tabs>
     </el-card>
 
-    <!-- 日志详情对话框组件 -->
     <LogDetail 
       v-model:visible="logDetailVisible"
       :log-data="currentLogData"
@@ -119,71 +118,17 @@ onMounted(() => {
 
 <style scoped>
 .service-deploy {
-  height: 100%;
   padding: 20px;
 }
 
-.deploy-card {
-  height: 100%;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+.page-header {
+  margin-bottom: 20px;
 }
 
-.deploy-tabs {
-  height: 100%;
-}
-
-:deep(.el-card__body) {
-  padding: 0;
-  height: 100%;
-}
-
-/* 标签页头部样式 */
-.service-deploy :deep(.el-tabs__header) {
+.page-header h2 {
   margin: 0;
-  padding: 0 20px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
-}
-
-.service-deploy :deep(.el-tabs__nav-wrap) {
-  padding: 0;
-}
-
-.service-deploy :deep(.el-tabs__nav) {
-  border: none;
-}
-
-.service-deploy :deep(.el-tabs__item) {
-  font-size: 14px;
-  font-weight: 500;
-  color: #606266;
-  height: 40px;
-  line-height: 40px;
-  padding: 0 20px;
-}
-
-.service-deploy :deep(.el-tabs__item.is-active) {
-  color: #409eff;
+  font-size: 20px;
   font-weight: 600;
-}
-
-.service-deploy :deep(.el-tabs__active-bar) {
-  background-color: #409eff;
-  height: 2px;
-}
-
-/* 标签页内容区域样式 */
-.service-deploy :deep(.el-tabs__content) {
-  height: calc(100% - 40px);
-  overflow: hidden;
-    padding: 0;
-  }
-  
-.service-deploy :deep(.el-tab-pane) {
-  height: 100%;
-  overflow-y: auto;
-    padding: 0;
+  color: #303133;
 }
 </style> 

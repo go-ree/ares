@@ -113,13 +113,12 @@
         @current-change="handleCurrentChange"
       />
       <div class="jump-to-page">
-        <span>跳转到</span>
-        <el-input-number
-          v-model="jumpPage"
-          :min="1"
-          :max="Math.ceil(total / pageSize)"
+        <span>跳转到第</span>
+        <el-input
+          v-model="jumpPageInput"
+          type="text"
           placeholder="页码"
-          :controls="false"
+          style="width: 60px; margin: 0 5px;"
           @keyup.enter="handleJumpToPage"
           @blur="handleJumpToPage"
         />
@@ -146,7 +145,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 // 跳转页面相关
-const jumpPage = ref('')
+const jumpPageInput = ref('')
 
 const {
   // 响应式数据
@@ -194,22 +193,22 @@ const handleViewLogDetail = (row: any) => {
 // 处理跳转到指定页面
 const handleJumpToPage = () => {
   // 如果输入框为空，不执行跳转
-  if (!jumpPage.value || jumpPage.value === '') {
+  if (!jumpPageInput.value || jumpPageInput.value.trim() === '') {
     return
   }
   
-  const page = parseInt(jumpPage.value)
+  const page = parseInt(jumpPageInput.value.trim())
   const maxPage = Math.ceil(total.value / pageSize.value)
   
   if (isNaN(page) || page < 1 || page > maxPage) {
     ElMessage.warning(`请输入1-${maxPage}之间的页码`)
-    jumpPage.value = '' // 清空无效输入
+    jumpPageInput.value = '' // 清空无效输入
     return
   }
   
   // 设置当前页并触发数据请求
   currentPage.value = page
-  jumpPage.value = '' // 清空输入框
+  jumpPageInput.value = '' // 清空输入框
   
   // 确保触发数据请求
   handleSearch()
@@ -274,7 +273,7 @@ onMounted(async () => {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 20px;
+  gap: 15px;
 }
 
 .jump-to-page {
@@ -282,25 +281,7 @@ onMounted(async () => {
   align-items: center;
   font-size: 14px;
   color: #606266;
-}
-
-.jump-to-page :deep(.el-input-number) {
-  width: 80px;
-  margin: 0 8px;
-}
-
-.jump-to-page :deep(.el-input-number .el-input__wrapper) {
-  padding-right: 8px;
-  text-align: left;
-}
-
-.jump-to-page :deep(.el-input-number .el-input__inner) {
-  text-align: left;
-}
-
-.jump-to-page :deep(.el-input-number .el-input-number__decrease),
-.jump-to-page :deep(.el-input-number .el-input-number__increase) {
-  display: none;
+  gap: 5px;
 }
 
 :deep(.el-table) {
