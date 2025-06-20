@@ -7,7 +7,10 @@
           <DeployTool />
           
           <!-- 正在发布的服务列表组件 -->
-          <DeployingList @view-log="handleViewLog" />
+          <DeployingList 
+            ref="deployingListRef"
+            @view-log="handleViewLog" 
+          />
         </el-tab-pane>
         
         <el-tab-pane label="日志" name="log">
@@ -21,6 +24,7 @@
     <LogDetail 
       v-model:visible="logDetailVisible"
       :log-data="currentLogData"
+      @close="handleLogDialogClose"
     />
   </div>
 </template>
@@ -39,6 +43,9 @@ const activeTab = ref('tool')
 // 日志详情相关
 const logDetailVisible = ref(false)
 const currentLogData = ref<DeployingService | undefined>()
+
+// DeployingList组件引用
+const deployingListRef = ref()
 
 // 查看日志（从发布中服务列表）
 const handleViewLog = (service: DeployingService) => {
@@ -70,6 +77,14 @@ const handleViewLogDetail = (logItem: any) => {
   
   currentLogData.value = deployingService
   logDetailVisible.value = true
+}
+
+// 处理日志对话框关闭
+const handleLogDialogClose = () => {
+  // 恢复DeployingList的自动刷新
+  if (deployingListRef.value && deployingListRef.value.resumeAutoRefresh) {
+    deployingListRef.value.resumeAutoRefresh()
+  }
 }
 
 // 监听主标签页切换
@@ -144,12 +159,12 @@ onMounted(() => {
 .service-deploy :deep(.el-tabs__content) {
   height: calc(100% - 40px);
   overflow: hidden;
-  padding: 0;
-}
-
+    padding: 0;
+  }
+  
 .service-deploy :deep(.el-tab-pane) {
   height: 100%;
   overflow-y: auto;
-  padding: 0;
+    padding: 0;
 }
 </style> 

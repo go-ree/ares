@@ -21,6 +21,7 @@
         v-loading="deployingLoading"
         :max-height="400"
         stripe
+        empty-text="暂无正在发布的服务"
       >
         <el-table-column prop="serviceName" label="服务名称" min-width="150" />
         <el-table-column prop="branch" label="发布分支" min-width="150" />
@@ -73,9 +74,6 @@
         </el-table-column>
       </el-table>
     </div>
-    <div v-if="deployingList.length === 0 && !deployingLoading" class="empty-tip">
-      暂无正在发布的服务
-    </div>
   </div>
 </template>
 
@@ -105,11 +103,6 @@ const emit = defineEmits<{
   viewLog: [service: any]
 }>()
 
-// 查看日志
-const handleViewLog = (service: any) => {
-  emit('viewLog', service)
-}
-
 // 定时刷新
 let refreshTimer: number | null = null
 
@@ -125,6 +118,29 @@ const stopAutoRefresh = () => {
     refreshTimer = null
   }
 }
+
+// 暂停自动刷新
+const pauseAutoRefresh = () => {
+  stopAutoRefresh()
+}
+
+// 恢复自动刷新
+const resumeAutoRefresh = () => {
+  startAutoRefresh()
+}
+
+// 查看日志
+const handleViewLog = (service: any) => {
+  // 暂停自动刷新，避免影响日志查询
+  pauseAutoRefresh()
+  emit('viewLog', service)
+}
+
+// 暴露方法给父组件
+defineExpose({
+  pauseAutoRefresh,
+  resumeAutoRefresh
+})
 
 // 组件挂载时开始自动刷新
 onMounted(() => {
@@ -160,16 +176,6 @@ onUnmounted(() => {
   overflow: hidden;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   max-height: 400px !important;
-}
-
-.empty-tip {
-  text-align: center;
-  padding: 40px;
-  color: #909399;
-  font-size: 14px;
-  background: #fff;
-  border-radius: 8px;
-  margin-top: 16px;
 }
 
 .is-loading {

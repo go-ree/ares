@@ -44,7 +44,14 @@
     </div>
     <div class="log-table">
       <div class="table-container">
-        <el-table :data="logList" style="width: 100%" v-loading="logLoading" :max-height="500" stripe>
+        <el-table 
+          :data="logList" 
+          style="width: 100%" 
+          v-loading="logLoading" 
+          :max-height="500" 
+          stripe
+          empty-text="暂无日志数据"
+        >
           <el-table-column prop="serviceName" label="服务名称" min-width="150" />
           <el-table-column prop="branch" label="发布分支" min-width="120" />
           <el-table-column prop="environment" label="环境" width="100">
@@ -78,11 +85,6 @@
             </template>
           </el-table-column>
         </el-table>
-      </div>
-      
-      <!-- 空数据提示 -->
-      <div v-if="logList.length === 0 && !logLoading" class="empty-data">
-        <el-empty description="暂无日志数据" />
       </div>
       
       <div class="pagination">
@@ -174,11 +176,6 @@ onMounted(() => {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   margin-bottom: 16px;
   max-height: 500px !important;
-}
-
-.empty-data {
-  padding: 40px;
-  text-align: center;
 }
 
 .pagination {
