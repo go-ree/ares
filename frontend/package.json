@@ -8,6 +8,7 @@
     "build:prod": "cross-env NODE_ENV=production npm run type-check && vite build --mode production",
     "build": "npm run build:prod",
     "dev": "cross-env NODE_ENV=development vite --mode development",
+    "start:dev": "npm run dev",
     "start": "npm run dev",
     "preview": "vite preview",
     "serve": "cross-env NODE_ENV=production vite preview --port 5000",
