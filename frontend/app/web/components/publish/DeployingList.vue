@@ -3,20 +3,15 @@
     <div class="section-title">
       <el-icon><Loading /></el-icon>
       <span>正在发布的服务</span>
-      <el-button
-        type="primary"
-        link
-        :loading="deployingLoading"
-        @click="refreshDeployingList"
-      >
+      <el-button type="primary" link :loading="deployingLoading" @click="refreshDeployingList">
         <el-icon><Refresh /></el-icon>
         刷新
       </el-button>
     </div>
     <div class="table-container">
-      <el-table 
-        :data="deployingList" 
-        style="width: 100%" 
+      <el-table
+        :data="deployingList"
+        style="width: 100%"
         border
         v-loading="deployingLoading"
         :max-height="400"
@@ -42,8 +37,8 @@
         </el-table-column>
         <el-table-column prop="progress" label="进度" width="200">
           <template #default="{ row }">
-            <el-progress 
-              :percentage="row.progress" 
+            <el-progress
+              :percentage="row.progress"
               :status="getProgressStatus(row.status)"
               :stroke-width="15"
             />
@@ -62,13 +57,7 @@
               >
                 取消发布
               </el-button>
-              <el-button
-                type="primary"
-                link
-                @click="handleViewLog(row)"
-              >
-                查询日志
-              </el-button>
+              <el-button type="primary" link @click="handleViewLog(row)"> 查询日志 </el-button>
             </el-button-group>
           </template>
         </el-table-column>
@@ -78,106 +67,110 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
-import { Loading, Refresh } from '@element-plus/icons-vue'
-import { useDeploy } from '@/composables/useDeploy'
+import { onMounted, onUnmounted, watch } from 'vue';
+import { Loading, Refresh } from '@element-plus/icons-vue';
+import { useDeploy } from '@/composables/useDeploy';
 
 // 定义props
 interface Props {
-  isActive?: boolean
+  isActive?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  isActive: false
-})
+  isActive: false,
+});
 
 const {
   // 响应式数据
   deployingList,
   deployingLoading,
-  
+
   // 工具函数
   getStatusType,
   getProgressStatus,
   getEnvLabel,
   getEnvType,
-  
+
   // 事件处理函数
   handleCancelDeploy,
-  refreshDeployingList
-} = useDeploy()
+  refreshDeployingList,
+} = useDeploy();
 
 // 定义事件
 const emit = defineEmits<{
-  viewLog: [service: any]
-}>()
+  viewLog: [service: any];
+}>();
 
 // 定时刷新
-let refreshTimer: number | null = null
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 const startAutoRefresh = () => {
   refreshTimer = setInterval(() => {
-    refreshDeployingList()
-  }, 10000) // 每10秒刷新一次
-}
+    refreshDeployingList();
+  }, 10000); // 每10秒刷新一次
+};
 
 const stopAutoRefresh = () => {
   if (refreshTimer) {
-    clearInterval(refreshTimer)
-    refreshTimer = null
+    clearInterval(refreshTimer);
+    refreshTimer = null;
   }
-}
+};
 
 // 暂停自动刷新
 const pauseAutoRefresh = () => {
-  stopAutoRefresh()
-}
+  stopAutoRefresh();
+};
 
 // 恢复自动刷新
 const resumeAutoRefresh = () => {
   if (props.isActive) {
-    startAutoRefresh()
+    startAutoRefresh();
   }
-}
+};
 
 // 查看日志
 const handleViewLog = (service: any) => {
   // 暂停自动刷新，避免影响日志查询
-  pauseAutoRefresh()
-  emit('viewLog', service)
-}
+  pauseAutoRefresh();
+  emit('viewLog', service);
+};
 
 // 监听标签页激活状态
-watch(() => props.isActive, (isActive) => {
-  if (isActive) {
-    console.log('DeployingList: 工具页激活，加载正在发布的服务列表')
-    refreshDeployingList()
-    startAutoRefresh()
-  } else {
-    console.log('DeployingList: 工具页非激活，停止自动刷新')
-    stopAutoRefresh()
-  }
-}, { immediate: false })
+watch(
+  () => props.isActive,
+  isActive => {
+    if (isActive) {
+      console.log('DeployingList: 工具页激活，加载正在发布的服务列表');
+      refreshDeployingList();
+      startAutoRefresh();
+    } else {
+      console.log('DeployingList: 工具页非激活，停止自动刷新');
+      stopAutoRefresh();
+    }
+  },
+  { immediate: false }
+);
 
 // 暴露方法给父组件
 defineExpose({
   pauseAutoRefresh,
-  resumeAutoRefresh
-})
+  resumeAutoRefresh,
+});
 
 // 组件挂载时，如果已经是激活状态则加载数据
 onMounted(() => {
   if (props.isActive) {
-    console.log('DeployingList: 组件挂载且工具页激活，加载正在发布的服务列表')
-    refreshDeployingList()
-    startAutoRefresh()
+    console.log('DeployingList: 组件挂载且工具页激活，加载正在发布的服务列表');
+    refreshDeployingList();
+    startAutoRefresh();
   }
-})
+});
 
 // 组件卸载时停止自动刷新
 onUnmounted(() => {
-  stopAutoRefresh()
-})
+  stopAutoRefresh();
+});
 </script>
 
 <style scoped>
@@ -243,4 +236,4 @@ onUnmounted(() => {
   max-height: 400px !important;
   overflow-y: auto !important;
 }
-</style> 
+</style>

@@ -1,181 +1,193 @@
-import api from '@/config/api'
-import type { 
-  DeployInfo, 
-  DeployRequest, 
+import api from '@/config/api';
+import type {
+  DeployInfo,
+  DeployRequest,
   BatchDeployRequest,
   BatchDeployResponse,
-  DeployQueryParams, 
-  PageResponse, 
+  DeployQueryParams,
+  PageResponse,
   ApiResponse,
   TaskRecord,
+  TaskRecordResult,
   PublishLogQueryParams,
-  PublishLogQueryResponse
-} from '../models/deploy'
+  PublishLogQueryResponse,
+} from '../models/deploy';
 
-const BASE_URL = '/api/v1/deploy'
+const BASE_URL = '/api/v1/deploy';
 
 // 用户信息接口
 interface UserInfo {
-  username: string
-  nameCn: string
+  username: string;
+  nameCn: string;
 }
 
 // 批量发布服务，需要传入用户信息
-export const batchDeploy = async (deployRequests: Omit<DeployRequest, 'publisher'>[], userInfo: UserInfo) => {
+export const batchDeploy = async (
+  deployRequests: Omit<DeployRequest, 'publisher'>[],
+  userInfo: UserInfo
+) => {
   if (!userInfo) {
-    throw new Error('用户信息不能为空')
+    throw new Error('用户信息不能为空');
   }
 
   // 构建批量发布请求，包含发布人信息
   const batchRequest: BatchDeployRequest = {
     batch_publish: deployRequests.map(request => ({
       ...request,
-      publisher: userInfo.nameCn  // 使用中文名作为发布人
-    }))
-  }
+      publisher: userInfo.nameCn, // 使用中文名作为发布人
+    })),
+  };
 
-  return api.post<ApiResponse<BatchDeployResponse>>(`${BASE_URL}/publish/batch`, batchRequest)
-}
+  return api.post<ApiResponse<BatchDeployResponse>>(`${BASE_URL}/publish/batch`, batchRequest);
+};
 
 // 单个应用发布（内部使用批量发布接口）
-export const createDeploy = async (request: Omit<DeployRequest, 'publisher'>, userInfo: UserInfo) => {
-  const response = await batchDeploy([request], userInfo)
+export const createDeploy = async (
+  request: Omit<DeployRequest, 'publisher'>,
+  userInfo: UserInfo
+): Promise<{
+  data: ApiResponse<TaskRecordResult>;
+  status: number;
+  statusText: string;
+}> => {
+  const response = await batchDeploy([request], userInfo);
   return {
-    ...response,
     data: {
       ...response.data,
-      result: response.data.result.task_records[0] // 返回第一个任务记录
-    }
-  }
-}
+      result: response.data.result.task_records[0], // 返回第一个任务记录结果
+    },
+    status: response.status,
+    statusText: response.statusText,
+  };
+};
 
 // 查询发布列表
 export const queryDeploys = async (params: DeployQueryParams) => {
-  return api.post<ApiResponse<PageResponse<DeployInfo>>>(`${BASE_URL}/query`, params)
-}
+  return api.post<ApiResponse<PageResponse<DeployInfo>>>(`${BASE_URL}/query`, params);
+};
 
 // 获取发布列表
 export const getDeployList = (params: DeployQueryParams) => {
-  return api.get<ApiResponse<PageResponse<DeployInfo>>>(`${BASE_URL}/list`, { params })
-}
+  return api.get<ApiResponse<PageResponse<DeployInfo>>>(`${BASE_URL}/list`, { params });
+};
 
 // 获取发布详情
 export const getDeployDetail = (deployId: number) => {
-  return api.get<ApiResponse<DeployInfo>>(`${BASE_URL}/${deployId}`)
-}
+  return api.get<ApiResponse<DeployInfo>>(`${BASE_URL}/${deployId}`);
+};
 
 // 获取任务详情
 export const getTaskDetail = (taskId: number) => {
-  return api.get<ApiResponse<TaskRecord>>(`${BASE_URL}/publish/query/${taskId}`)
-}
+  return api.get<ApiResponse<TaskRecord>>(`${BASE_URL}/publish/query/${taskId}`);
+};
 
 // 取消发布
 export const cancelDeploy = (deployId: number, userInfo: UserInfo, comment?: string) => {
   if (!userInfo) {
-    throw new Error('用户信息不能为空')
+    throw new Error('用户信息不能为空');
   }
 
   return api.post<ApiResponse<void>>(`${BASE_URL}/${deployId}/cancel`, {
     publisher: userInfo.username,
     publisher_cn: userInfo.nameCn,
-    comment
-  })
-}
+    comment,
+  });
+};
 
 // 获取发布日志
 export const getDeployLogs = (deployId: number) => {
-  return api.get<ApiResponse<string>>(`${BASE_URL}/${deployId}/logs`)
-}
+  return api.get<ApiResponse<string>>(`${BASE_URL}/${deployId}/logs`);
+};
 
 // 重新发布
 export const redeploy = async (deployId: number, userInfo: UserInfo, comment?: string) => {
   if (!userInfo) {
-    throw new Error('用户信息不能为空')
+    throw new Error('用户信息不能为空');
   }
 
   return api.post<ApiResponse<DeployInfo>>(`${BASE_URL}/${deployId}/redeploy`, {
     publisher: userInfo.username,
     publisher_cn: userInfo.nameCn,
-    comment
-  })
-}
+    comment,
+  });
+};
 
 // 查询发布日志
 export const queryPublishLogs = async (params: PublishLogQueryParams) => {
-  return api.post<ApiResponse<PublishLogQueryResponse>>(`${BASE_URL}/publish/query`, params)
-}
+  return api.post<ApiResponse<PublishLogQueryResponse>>(`${BASE_URL}/publish/query`, params);
+};
 
 // 查询单个任务的日志
 export const queryTaskLogs = async (taskId: number, logType: 'ci' | 'cd' = 'ci') => {
-  return api.get<ApiResponse<string>>(`${BASE_URL}/task/${taskId}/logs/${logType}`)
-}
+  return api.get<ApiResponse<string>>(`${BASE_URL}/task/${taskId}/logs/${logType}`);
+};
 
 // SSE流式日志查询接口
 export const streamJobLogs = (jobName: string, buildId: number) => {
-  const url = `/api/v1/job/stream/log?job_name=${encodeURIComponent(jobName)}&build_id=${buildId}`
-  
+  const url = `/api/v1/job/stream/log?job_name=${encodeURIComponent(jobName)}&build_id=${buildId}`;
+
   return new Promise<string>((resolve, reject) => {
-    const eventSource = new EventSource(url)
-    let logContent = ''
-    
+    const eventSource = new EventSource(url);
+    let logContent = '';
+
     eventSource.onmessage = (event: MessageEvent) => {
       try {
         // 解析JSON数据
-        const data = JSON.parse(event.data)
+        const data = JSON.parse(event.data);
         if (data.code === 1 && data.result && Array.isArray(data.result)) {
           // 将每一行日志添加到内容中
-          logContent += data.result.join('\n') + '\n'
+          logContent += data.result.join('\n') + '\n';
         } else if (data.code === 0) {
           // 处理错误
-          reject(new Error(data.msg || data.error || '获取日志失败'))
-          eventSource.close()
+          reject(new Error(data.msg || data.error || '获取日志失败'));
+          eventSource.close();
         }
       } catch (error) {
-        console.error('解析SSE数据失败:', error)
-        reject(error)
-        eventSource.close()
+        console.error('解析SSE数据失败:', error);
+        reject(error);
+        eventSource.close();
       }
-    }
-    
+    };
+
     // 监听错误事件
     eventSource.addEventListener('error', (event: MessageEvent) => {
       try {
-        const data = JSON.parse(event.data)
-        reject(new Error(data.msg || data.error || '获取日志失败'))
+        const data = JSON.parse(event.data);
+        reject(new Error(data.msg || data.error || '获取日志失败'));
       } catch (error) {
-        reject(new Error('获取日志失败'))
+        reject(new Error('获取日志失败'));
       }
-      eventSource.close()
-    })
-    
+      eventSource.close();
+    });
+
     // 监听结束事件
     eventSource.addEventListener('end', () => {
-      console.log('SSE流结束')
-      eventSource.close()
-      resolve(logContent)
-    })
-    
-    eventSource.onerror = (error) => {
-      console.error('SSE连接错误:', error)
-      eventSource.close()
-      reject(new Error('SSE连接失败'))
-    }
-    
+      console.log('SSE流结束');
+      eventSource.close();
+      resolve(logContent);
+    });
+
+    eventSource.onerror = error => {
+      console.error('SSE连接错误:', error);
+      eventSource.close();
+      reject(new Error('SSE连接失败'));
+    };
+
     // 监听连接打开
     eventSource.onopen = () => {
-      console.log('SSE连接已建立')
-    }
-    
+      console.log('SSE连接已建立');
+    };
+
     // 设置超时处理
     const timeout = setTimeout(() => {
-      eventSource.close()
-      resolve(logContent) // 超时后返回已获取的日志内容
-    }, 30000) // 30秒超时
-    
+      eventSource.close();
+      resolve(logContent); // 超时后返回已获取的日志内容
+    }, 30000); // 30秒超时
+
     // 监听连接关闭
     eventSource.addEventListener('close', () => {
-      clearTimeout(timeout)
-      resolve(logContent)
-    })
-  })
-} 
+      clearTimeout(timeout);
+      resolve(logContent);
+    });
+  });
+};
