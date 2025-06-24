@@ -1,5 +1,5 @@
 export default {
-  port: 3000,
+  port: 8080,
   apiBaseUrl: 'https://api.chaoscanvas.com',
   database: {
     host: 'localhost',

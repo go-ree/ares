@@ -27,7 +27,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins,
     server: {
-      port: 3000,
+      port: 8080,
       open: true,
       hmr: {
         overlay: true,
