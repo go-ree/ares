@@ -82,6 +82,6 @@ func isValidGitURL(url string) bool {
 	}
 
 	// 进一步验证格式: git@gitlab.ttpai.work:group/repo.git
-	pattern := regexp.MustCompile(`^git@[\w\.-]+:[\w\.-]+/[\w\.-]+\.git$`)
+	pattern := regexp.MustCompile(`^git@[\w\.-]+:[\w\.-]+(?:/[\w\.-]+)*\.git$`)
 	return pattern.MatchString(url)
 }
