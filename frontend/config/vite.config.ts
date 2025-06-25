@@ -72,6 +72,49 @@ export default defineConfig(({ command, mode }) => {
         }
       });
 
+      // 开发模式的 SPA 回退中间件 - 只在 vite preview 不可用时使用
+      server.middlewares.use((req: any, res: any, next: any) => {
+        const url = req.url;
+
+        // 跳过健康检测接口
+        if (url === '/ttpai/inside/checkup') {
+          return next();
+        }
+
+        // 跳过API代理
+        if (url.startsWith('/api/')) {
+          return next();
+        }
+
+        // 跳过 Vite 内部路径和资源
+        if (
+          url.startsWith('/@') ||
+          url.includes('/@') ||
+          url.includes('/node_modules/') ||
+          url.includes('__vite') ||
+          url.includes('?') ||
+          (url.includes('.') && !url.includes('?'))
+        ) {
+          return next();
+        }
+
+        // 对于所有其他路由，返回index.html让Vue Router处理
+        console.log(`[${new Date().toISOString()}] Dev SPA fallback for: ${req.method} ${url}`);
+
+        // 读取并返回index.html
+        const indexPath = path.resolve(process.cwd(), 'index.html');
+
+        if (fs.existsSync(indexPath)) {
+          const html = fs.readFileSync(indexPath, 'utf-8');
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(html);
+        } else {
+          console.error('index.html not found at:', indexPath);
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('index.html not found');
+        }
+      });
+
       console.log('=== Health check middleware configured ===');
     },
     configurePreviewServer(server: any) {
@@ -122,7 +165,7 @@ export default defineConfig(({ command, mode }) => {
         }
       });
 
-      // Preview模式的SPA回退中间件
+      // Preview模式的SPA回退中间件 - 必须保留，因为 vite preview 不会自动处理 SPA 路由
       server.middlewares.use((req: any, res: any, next: any) => {
         const url = req.url;
 
@@ -136,40 +179,46 @@ export default defineConfig(({ command, mode }) => {
           return next();
         }
 
-        // 跳过 Vite 内部路径
-        if (url.startsWith('/@') || url.includes('/@')) {
-          return next();
-        }
-
-        // 跳过 node_modules
-        if (url.includes('/node_modules/')) {
-          return next();
-        }
-
-        // 跳过 __vite__ 相关路径
-        if (url.includes('__vite')) {
-          return next();
-        }
-
-        // 跳过静态资源（包含扩展名的文件）
-        if (url.includes('.') && !url.includes('?')) {
+        // 跳过静态资源文件
+        // 在生产环境中，assets 目录下的文件是真实的静态文件
+        if (url.startsWith('/assets/') || (url.includes('.') && !url.includes('?'))) {
           return next();
         }
 
         // 对于所有其他路由，返回index.html让Vue Router处理
         console.log(`[${new Date().toISOString()}] Preview SPA fallback for: ${req.method} ${url}`);
 
-        // 读取并返回index.html
-        const indexPath = path.resolve(process.cwd(), 'dist/index.html');
-
-        if (fs.existsSync(indexPath)) {
-          const html = fs.readFileSync(indexPath, 'utf-8');
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end(html);
-        } else {
-          console.error('dist/index.html not found at:', indexPath);
-          res.writeHead(404, { 'Content-Type': 'text/plain' });
-          res.end('index.html not found');
+        // 在生产环境中使用 server.transformIndexHtml 来处理 index.html
+        try {
+          const htmlPath = path.join(process.cwd(), 'dist', 'index.html');
+          if (fs.existsSync(htmlPath)) {
+            let html = fs.readFileSync(htmlPath, 'utf-8');
+            // 使用 Vite 的 transformIndexHtml 方法来处理 HTML
+            if (server.transformIndexHtml) {
+              server
+                .transformIndexHtml(url, html)
+                .then((transformedHtml: string) => {
+                  res.writeHead(200, { 'Content-Type': 'text/html' });
+                  res.end(transformedHtml);
+                })
+                .catch((err: any) => {
+                  console.error('Error transforming index.html:', err);
+                  res.writeHead(200, { 'Content-Type': 'text/html' });
+                  res.end(html);
+                });
+            } else {
+              res.writeHead(200, { 'Content-Type': 'text/html' });
+              res.end(html);
+            }
+          } else {
+            console.error('dist/index.html not found at:', htmlPath);
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('index.html not found');
+          }
+        } catch (error: any) {
+          console.error('Error in preview SPA fallback:', error);
+          res.writeHead(500, { 'Content-Type': 'text/plain' });
+          res.end('Internal server error');
         }
       });
     },
