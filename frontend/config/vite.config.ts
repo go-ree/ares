@@ -143,6 +143,15 @@ export default defineConfig(({ command, mode }) => {
       // 添加调试信息
       strictPort: true,
       cors: true,
+      // 允许的主机名
+      allowedHosts: [
+        'localhost',
+        '127.0.0.1',
+        'chaoscanvas.ttpai.top',
+        '.ttpai.top', // 允许所有ttpai.top子域名
+        '.ttpai.fun',
+        '.ttpai.xyz',
+      ],
       proxy: {
         '/api': {
           target: env.VITE_API_BASE_URL || 'http://ares.ttpai.top',
