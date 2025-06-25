@@ -25,7 +25,7 @@ export default defineConfig(({ command, mode }) => {
         mode: server.config?.mode,
       });
 
-      // 健康检测中间件 - 放在最前面
+      // 健康检测中间件 - 放在最前面，优先级最高
       server.middlewares.use('/ttpai/inside/checkup', (req: any, res: any, next: any) => {
         console.log('=== Health check endpoint hit ===');
         console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
@@ -72,7 +72,7 @@ export default defineConfig(({ command, mode }) => {
     configurePreviewServer(server: any) {
       console.log('=== Health check plugin loaded for preview ===');
 
-      // 为preview模式添加健康检测
+      // 为preview模式添加健康检测 - 放在最前面
       server.middlewares.use('/ttpai/inside/checkup', (req: any, res: any, next: any) => {
         console.log('=== Preview Health check endpoint hit ===');
 
@@ -155,11 +155,11 @@ export default defineConfig(({ command, mode }) => {
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './app/web'),
-        '@components': path.resolve(__dirname, './app/web/components'),
-        '@assets': path.resolve(__dirname, './app/web/assets'),
-        '@services': path.resolve(__dirname, './app/web/services'),
-        '@utils': path.resolve(__dirname, './app/web/utils'),
+        '@': path.resolve(__dirname, '../app/web'),
+        '@components': path.resolve(__dirname, '../app/web/components'),
+        '@assets': path.resolve(__dirname, '../app/web/assets'),
+        '@services': path.resolve(__dirname, '../app/web/services'),
+        '@utils': path.resolve(__dirname, '../app/web/utils'),
       },
     },
     build: {

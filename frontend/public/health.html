@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Health Check</title>
+    <meta charset="utf-8">
+</head>
+<body>
+    <script>
+        // 返回JSON格式的健康状态
+        const healthData = {
+            "status": "ok",
+            "timestamp": new Date().toISOString(),
+            "service": "chaoscanvas",
+            "version": "0.0.0",
+            "environment": "development",
+            "hostname": window.location.hostname || "unknown",
+            "nodeEnv": "development",
+            "port": 8080,
+            "mode": "development"
+        };
+        
+        // 设置响应头
+        document.write(JSON.stringify(healthData, null, 2));
+    </script>
+</body>
+</html> 

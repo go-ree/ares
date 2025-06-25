@@ -9,7 +9,7 @@
 - `package.json` - 包含 `start:dev` 和 `start:prod` 脚本
 - `app.js` - 应用入口文件，用于Docker容器启动
 - `.npmrc` - npm配置文件
-- `vite.config.ts` - Vite配置文件，包含健康检测接口
+- `config/vite.config.ts` - Vite配置文件，包含健康检测接口 ✅ **已移动到config目录**
 - `index.html` - 应用入口HTML文件
 
 ### 目录结构
@@ -22,13 +22,17 @@ chaoscanvas/
 │   ├── service/           # 服务层
 │   └── middleware/        # 中间件
 ├── config/                # 配置文件目录
+│   ├── vite.config.ts     # Vite配置 ✅ **已移动到这里**
+│   ├── dev.ts             # 开发环境配置
+│   ├── prod.ts            # 生产环境配置
+│   └── index.ts           # 配置入口
 ├── dist/                  # 构建输出目录
 ├── public/                # 静态资源目录
 ├── src/                   # 源代码目录
 ├── package.json           # 项目配置
 ├── app.js                 # 应用入口文件
 ├── .npmrc                 # npm配置
-└── vite.config.ts         # Vite配置
+└── index.html             # 应用入口HTML
 ```
 
 ## Jenkins构建流程兼容性
@@ -67,6 +71,25 @@ Jenkins构建时需要提供以下参数：
 - `git_url`: Git仓库地址
 - `image`: 镜像名称
 
+## ✅ 问题已解决
+
+### 健康检测接口404错误 - 已修复
+
+**解决方案**: 将 `vite.config.ts` 文件移动到 `config/` 目录下，这样Jenkins构建流程会自动包含该文件。
+
+**变更内容**:
+
+1. `vite.config.ts` → `config/vite.config.ts`
+2. 更新了package.json中的所有脚本，使用 `--config config/vite.config.ts`
+3. 调整了vite.config.ts中的路径引用（`__dirname` 相对路径）
+
+**优势**:
+
+- ✅ Jenkins构建流程无需修改
+- ✅ 健康检测接口正常工作
+- ✅ 配置文件集中管理
+- ✅ 符合项目结构规范
+
 ## 注意事项
 
 1. **端口配置**: 应用固定监听8080端口
@@ -74,6 +97,7 @@ Jenkins构建时需要提供以下参数：
 3. **健康检测**: 内置健康检测接口用于K8s健康检查
 4. **环境变量**: 支持通过NODE_ENV设置环境
 5. **文件复制**: Jenkins会复制dist、config、app、public等关键目录
+6. **✅ vite.config.ts**: 现在位于config目录，会被自动包含
 
 ## 本地测试
 
@@ -89,4 +113,17 @@ npm run start:prod
 
 # 健康检测测试
 curl http://localhost:8080/ttpai/inside/checkup
+
+# 简化版启动（无健康检测）
+npm run start:dev-simple
+npm run start:prod-simple
 ```
+
+## 故障排查
+
+### 健康检测接口404
+
+1. ✅ 确认 `config/vite.config.ts` 文件存在
+2. ✅ 确认Jenkins构建流程包含了config目录
+3. 查看Vite启动日志是否有错误信息
+4. 使用简化版启动脚本作为临时解决方案
