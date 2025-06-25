@@ -1,59 +1,64 @@
-import axios from 'axios'
-import type { AxiosInstance } from 'axios'
+import axios from 'axios';
+import type { AxiosInstance } from 'axios';
+import { useUserStore } from '../stores/user';
+import router from '../routes';
 
 // 创建axios实例
 const api: AxiosInstance = axios.create({
-  timeout: 10000,  // 请求超时时间
+  timeout: 10000, // 请求超时时间
   headers: {
-    'Content-Type': 'application/json'
-  }
-})
+    'Content-Type': 'application/json',
+  },
+});
 
 // 请求拦截器
 api.interceptors.request.use(
-  (config) => {
+  config => {
     // 在发送请求之前做些什么
     // 例如：添加token
-    const token = localStorage.getItem('token')
+    const token = localStorage.getItem('token');
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+      config.headers.Authorization = `Bearer ${token}`;
     }
-    return config
+    return config;
   },
-  (error) => {
+  error => {
     // 对请求错误做些什么
-    return Promise.reject(error)
+    return Promise.reject(error);
   }
-)
+);
 
 // 响应拦截器
 api.interceptors.response.use(
-  (response) => {
+  response => {
     // 对响应数据做点什么
-    return response
+    return response;
   },
-  (error) => {
+  error => {
     // 对响应错误做点什么
     if (error.response) {
       switch (error.response.status) {
         case 401:
-          // 未授权，跳转到登录页
-          window.location.href = '/login'
-          break
+          // 未授权，清除用户信息并跳转到登录页
+          const userStore = useUserStore();
+          userStore.clearUserInfo();
+          localStorage.removeItem('token');
+          router.push('/login');
+          break;
         case 403:
           // 权限不足
-          console.error('没有权限访问该资源')
-          break
+          console.error('没有权限访问该资源');
+          break;
         case 500:
           // 服务器错误
-          console.error('服务器错误')
-          break
+          console.error('服务器错误');
+          break;
         default:
-          console.error('请求失败:', error.response.data)
+          console.error('请求失败:', error.response.data);
       }
     }
-    return Promise.reject(error)
+    return Promise.reject(error);
   }
-)
+);
 
-export default api 
+export default api;

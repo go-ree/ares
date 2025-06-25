@@ -6,13 +6,17 @@
       </template>
       <el-form>
         <el-form-item>
-          <el-input v-model="username" placeholder="用户名" />
+          <el-input v-model="nameCn" placeholder="请输入您的姓名" @keyup.enter="handleLogin" />
         </el-form-item>
         <el-form-item>
-          <el-input v-model="password" type="password" placeholder="密码" />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleLogin" style="width: 100%">登录</el-button>
+          <el-button
+            type="primary"
+            @click="handleLogin"
+            style="width: 100%"
+            :disabled="!nameCn.trim()"
+          >
+            登录
+          </el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -20,26 +24,30 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { useUserStore } from '../stores/user'
+import { ref } from 'vue';
+import { useRouter } from 'vue-router';
+import { useUserStore } from '../stores/user';
 
-const router = useRouter()
-const userStore = useUserStore()
-const username = ref('')
-const password = ref('')
+const router = useRouter();
+const userStore = useUserStore();
+const nameCn = ref('');
 
 const handleLogin = () => {
-  // 模拟登录
+  if (!nameCn.value.trim()) {
+    return;
+  }
+
+  // 简化登录：只需要中文名称
   userStore.setUserInfo({
-    id: 1,
-    username: username.value || 'test_user',
-    nameCn: '测试用户',
-    email: 'test@example.com',
-    roles: ['admin']
-  })
-  router.push('/')
-}
+    id: Date.now(), // 使用时间戳作为临时ID
+    username: nameCn.value,
+    nameCn: nameCn.value,
+    email: `${nameCn.value}@example.com`,
+    roles: ['user'], // 默认用户角色
+  });
+
+  router.push('/');
+};
 </script>
 
 <style scoped>
@@ -63,4 +71,4 @@ const handleLogin = () => {
   margin: 0;
   color: #303133;
 }
-</style> 
+</style>

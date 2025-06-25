@@ -10,7 +10,7 @@
           <el-dropdown>
             <span class="user-info">
               <el-avatar :size="32" :src="user.avatar" />
-              <span class="username">{{ user.name }}</span>
+              <span class="username">{{ userDisplayName }}</span>
               <el-icon><ArrowDown /></el-icon>
             </span>
             <template #dropdown>
@@ -101,13 +101,24 @@
               </el-menu-item>
             </el-sub-menu>
           </el-menu>
-            <div class="aside-collapse-btn" @click="toggleCollapse">
-              <svg :class="{ rotated: isCollapse }" viewBox="64 64 896 896" focusable="false" data-icon="menu-fold" width="22" height="22" fill="currentColor" aria-hidden="true">
-                <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6-8 8-8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6-8 8-8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 000 13.8z"></path>
-              </svg>
+          <div class="aside-collapse-btn" @click="toggleCollapse">
+            <svg
+              :class="{ rotated: isCollapse }"
+              viewBox="64 64 896 896"
+              focusable="false"
+              data-icon="menu-fold"
+              width="22"
+              height="22"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6-8 8-8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6-8 8-8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 000 13.8z"
+              ></path>
+            </svg>
             <span class="collapse-text" :class="{ hidden: isCollapse }">收起</span>
             <span class="collapse-text" :class="{ hidden: !isCollapse }">展开</span>
-            </div>
+          </div>
         </el-aside>
         <!-- 主内容区 -->
         <el-main>
@@ -119,8 +130,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
+import { useUserStore } from '@/stores/user';
 import {
   ArrowDown,
   House,
@@ -134,53 +146,62 @@ import {
   Tools,
   Document,
   DataAnalysis,
-  InfoFilled
-} from '@element-plus/icons-vue'
+  InfoFilled,
+} from '@element-plus/icons-vue';
 
-const router = useRouter()
-const isCollapse = ref(false)
-const activeMenu = computed(() => router.currentRoute.value.path)
+const router = useRouter();
+const userStore = useUserStore();
+const isCollapse = ref(false);
+const activeMenu = computed(() => router.currentRoute.value.path);
 
 // 定义响应式变量存储窗口宽度
-const windowWidth = ref(window.innerWidth)
+const windowWidth = ref(window.innerWidth);
 // 定义自动折叠的宽度阈值
-const COLLAPSE_THRESHOLD = 1200
+const COLLAPSE_THRESHOLD = 1200;
 
 // 监听窗口大小变化
 const handleResize = () => {
-  windowWidth.value = window.innerWidth
+  windowWidth.value = window.innerWidth;
   // 当窗口宽度小于阈值时自动折叠
   if (windowWidth.value < COLLAPSE_THRESHOLD) {
-    isCollapse.value = true
+    isCollapse.value = true;
   } else {
-    isCollapse.value = false
+    isCollapse.value = false;
   }
-}
+};
 
 // 组件挂载时添加监听器
 onMounted(() => {
-  window.addEventListener('resize', handleResize)
+  window.addEventListener('resize', handleResize);
   // 初始化时检查一次
-  handleResize()
-})
+  handleResize();
+});
 
 // 组件卸载时移除监听器
 onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
-})
+  window.removeEventListener('resize', handleResize);
+});
 
 const user = ref({
   name: '测试用户',
-  avatar: 'https://gw.alipayobjects.com/zos/rmsportal/ubnKSIfAJTxIgXOKlciN.png'
-})
+  avatar: 'https://gw.alipayobjects.com/zos/rmsportal/ubnKSIfAJTxIgXOKlciN.png',
+});
+
+// 计算用户显示名称
+const userDisplayName = computed(() => {
+  return userStore.userInfo?.nameCn || '未登录';
+});
 
 const toggleCollapse = () => {
-  isCollapse.value = !isCollapse.value
-}
+  isCollapse.value = !isCollapse.value;
+};
 
 const handleLogout = () => {
-  router.push('/login')
-}
+  // 清除用户信息
+  userStore.logout();
+  // 跳转到登录页
+  router.push('/login');
+};
 </script>
 
 <style scoped>
@@ -290,4 +311,4 @@ const handleLogout = () => {
   align-items: center;
   height: 100%;
 }
-</style> 
+</style>
