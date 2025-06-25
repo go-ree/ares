@@ -18,19 +18,20 @@ export default defineConfig(({ command, mode }) => {
   const healthCheckPlugin = {
     name: 'health-check',
     configureServer(server: any) {
+      console.log('Health check plugin loaded');
+      // 健康检测中间件 - 放在最前面
       server.middlewares.use('/ttpai/inside/checkup', (req: any, res: any, next: any) => {
+        console.log('Health check endpoint hit');
         // 设置 CORS 头
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
         // 处理 OPTIONS 请求
         if (req.method === 'OPTIONS') {
           res.writeHead(200);
           res.end();
           return;
         }
-
         // 返回健康检测响应
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(
@@ -39,6 +40,8 @@ export default defineConfig(({ command, mode }) => {
             timestamp: new Date().toISOString(),
             service: 'chaoscanvas',
             version: process.env.npm_package_version || '0.0.0',
+            environment: process.env.NODE_ENV || 'development',
+            hostname: process.env.HOSTNAME || 'unknown',
           })
         );
       });
@@ -70,6 +73,9 @@ export default defineConfig(({ command, mode }) => {
       watch: {
         usePolling: true,
       },
+      // 添加调试信息
+      strictPort: true,
+      cors: true,
       proxy: {
         '/api': {
           target: env.VITE_API_BASE_URL || 'http://ares.ttpai.top',
