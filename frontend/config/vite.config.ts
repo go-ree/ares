@@ -135,7 +135,6 @@ export default defineConfig(({ command, mode }) => {
     root: process.cwd(),
     server: {
       port: 8080,
-      open: true,
       hmr: {
         overlay: true,
       },
