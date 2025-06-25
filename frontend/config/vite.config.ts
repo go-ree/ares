@@ -121,7 +121,6 @@ export default defineConfig(({ command, mode }) => {
       plugins.push(
         visualizer({
           filename: 'dist/stats.html',
-          open: true,
           gzipSize: true,
           brotliSize: true,
         }) as any
@@ -189,15 +188,15 @@ export default defineConfig(({ command, mode }) => {
         },
       },
 
-      // Terser 压缩配置
-      terserOptions: isProduction
-        ? {
-            compress: {
-              drop_console: true,
-              drop_debugger: true,
-            },
-          }
-        : {},
+      // Terser 压缩配置 - 只在生产环境使用
+      ...(isProduction && {
+        terserOptions: {
+          compress: {
+            drop_console: true,
+            drop_debugger: true,
+          },
+        },
+      }),
     },
 
     // 环境变量配置
