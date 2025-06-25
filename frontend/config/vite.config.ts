@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import path from 'path';
+import fs from 'fs';
 import type { Connect } from 'vite';
 
 // https://vite.dev/config/
@@ -25,7 +26,12 @@ export default defineConfig(({ command, mode }) => {
       });
 
       // 健康检测中间件 - 放在最前面，优先级最高
-      server.middlewares.use('/ttpai/inside/checkup', (req: any, res: any, next: any) => {
+      server.middlewares.use((req: any, res: any, next: any) => {
+        // 只处理健康检测路径
+        if (req.url !== '/ttpai/inside/checkup') {
+          return next();
+        }
+
         console.log('=== Health check endpoint hit ===');
         console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
 
@@ -66,50 +72,18 @@ export default defineConfig(({ command, mode }) => {
         }
       });
 
-      // SPA回退中间件 - 处理所有非API路由，返回index.html
-      server.middlewares.use((req: any, res: any, next: any) => {
-        const url = req.url;
-
-        // 跳过健康检测接口
-        if (url === '/ttpai/inside/checkup') {
-          return next();
-        }
-
-        // 跳过API代理
-        if (url.startsWith('/api/')) {
-          return next();
-        }
-
-        // 跳过静态资源
-        if (url.includes('.') && !url.includes('?')) {
-          return next();
-        }
-
-        // 对于所有其他路由，返回index.html让Vue Router处理
-        console.log(`[${new Date().toISOString()}] SPA fallback for: ${req.method} ${url}`);
-
-        // 读取并返回index.html
-        const fs = require('fs');
-        const indexPath = path.resolve(process.cwd(), 'index.html');
-
-        if (fs.existsSync(indexPath)) {
-          const html = fs.readFileSync(indexPath, 'utf-8');
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end(html);
-        } else {
-          console.error('index.html not found at:', indexPath);
-          res.writeHead(404, { 'Content-Type': 'text/plain' });
-          res.end('index.html not found');
-        }
-      });
-
       console.log('=== Health check middleware configured ===');
     },
     configurePreviewServer(server: any) {
       console.log('=== Health check plugin loaded for preview ===');
 
       // 为preview模式添加健康检测 - 放在最前面
-      server.middlewares.use('/ttpai/inside/checkup', (req: any, res: any, next: any) => {
+      server.middlewares.use((req: any, res: any, next: any) => {
+        // 只处理健康检测路径
+        if (req.url !== '/ttpai/inside/checkup') {
+          return next();
+        }
+
         console.log('=== Preview Health check endpoint hit ===');
 
         try {
@@ -162,7 +136,22 @@ export default defineConfig(({ command, mode }) => {
           return next();
         }
 
-        // 跳过静态资源
+        // 跳过 Vite 内部路径
+        if (url.startsWith('/@') || url.includes('/@')) {
+          return next();
+        }
+
+        // 跳过 node_modules
+        if (url.includes('/node_modules/')) {
+          return next();
+        }
+
+        // 跳过 __vite__ 相关路径
+        if (url.includes('__vite')) {
+          return next();
+        }
+
+        // 跳过静态资源（包含扩展名的文件）
         if (url.includes('.') && !url.includes('?')) {
           return next();
         }
@@ -171,7 +160,6 @@ export default defineConfig(({ command, mode }) => {
         console.log(`[${new Date().toISOString()}] Preview SPA fallback for: ${req.method} ${url}`);
 
         // 读取并返回index.html
-        const fs = require('fs');
         const indexPath = path.resolve(process.cwd(), 'dist/index.html');
 
         if (fs.existsSync(indexPath)) {
