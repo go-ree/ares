@@ -93,7 +93,8 @@ export default defineConfig(({ command, mode }) => {
           url.includes('/node_modules/') ||
           url.includes('__vite') ||
           url.includes('?') ||
-          (url.includes('.') && !url.includes('?'))
+          // 跳过静态资源文件，但允许 assets 目录
+          (url.includes('.') && !url.includes('?') && !url.startsWith('/assets/'))
         ) {
           return next();
         }
