@@ -66,6 +66,43 @@ export default defineConfig(({ command, mode }) => {
         }
       });
 
+      // SPA回退中间件 - 处理所有非API路由，返回index.html
+      server.middlewares.use((req: any, res: any, next: any) => {
+        const url = req.url;
+
+        // 跳过健康检测接口
+        if (url === '/ttpai/inside/checkup') {
+          return next();
+        }
+
+        // 跳过API代理
+        if (url.startsWith('/api/')) {
+          return next();
+        }
+
+        // 跳过静态资源
+        if (url.includes('.') && !url.includes('?')) {
+          return next();
+        }
+
+        // 对于所有其他路由，返回index.html让Vue Router处理
+        console.log(`[${new Date().toISOString()}] SPA fallback for: ${req.method} ${url}`);
+
+        // 读取并返回index.html
+        const fs = require('fs');
+        const indexPath = path.resolve(process.cwd(), 'index.html');
+
+        if (fs.existsSync(indexPath)) {
+          const html = fs.readFileSync(indexPath, 'utf-8');
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(html);
+        } else {
+          console.error('index.html not found at:', indexPath);
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('index.html not found');
+        }
+      });
+
       console.log('=== Health check middleware configured ===');
     },
     configurePreviewServer(server: any) {
@@ -108,6 +145,43 @@ export default defineConfig(({ command, mode }) => {
           console.error('Error in preview health check middleware:', error);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Internal server error', details: error.message }));
+        }
+      });
+
+      // Preview模式的SPA回退中间件
+      server.middlewares.use((req: any, res: any, next: any) => {
+        const url = req.url;
+
+        // 跳过健康检测接口
+        if (url === '/ttpai/inside/checkup') {
+          return next();
+        }
+
+        // 跳过API代理
+        if (url.startsWith('/api/')) {
+          return next();
+        }
+
+        // 跳过静态资源
+        if (url.includes('.') && !url.includes('?')) {
+          return next();
+        }
+
+        // 对于所有其他路由，返回index.html让Vue Router处理
+        console.log(`[${new Date().toISOString()}] Preview SPA fallback for: ${req.method} ${url}`);
+
+        // 读取并返回index.html
+        const fs = require('fs');
+        const indexPath = path.resolve(process.cwd(), 'dist/index.html');
+
+        if (fs.existsSync(indexPath)) {
+          const html = fs.readFileSync(indexPath, 'utf-8');
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(html);
+        } else {
+          console.error('dist/index.html not found at:', indexPath);
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('index.html not found');
         }
       });
     },
