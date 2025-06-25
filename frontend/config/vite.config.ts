@@ -86,6 +86,11 @@ export default defineConfig(({ command, mode }) => {
           return next();
         }
 
+        // 跳过静态资源文件
+        if (url.startsWith('/assets/')) {
+          return next();
+        }
+
         // 跳过 Vite 内部路径和资源
         if (
           url.startsWith('/@') ||
@@ -93,8 +98,7 @@ export default defineConfig(({ command, mode }) => {
           url.includes('/node_modules/') ||
           url.includes('__vite') ||
           url.includes('?') ||
-          // 跳过静态资源文件，但允许 assets 目录
-          (url.includes('.') && !url.includes('?') && !url.startsWith('/assets/'))
+          (url.includes('.') && !url.includes('?'))
         ) {
           return next();
         }
@@ -188,8 +192,7 @@ export default defineConfig(({ command, mode }) => {
         }
 
         // 跳过静态资源文件
-        // 在生产环境中，assets 目录下的文件是真实的静态文件
-        if (url.startsWith('/assets/') || (url.includes('.') && !url.includes('?'))) {
+        if (url.startsWith('/assets/')) {
           return next();
         }
 
