@@ -60,7 +60,7 @@ export default defineConfig(({ command, mode }) => {
           console.log('Health check response:', response);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(response));
-        } catch (error) {
+        } catch (error: any) {
           console.error('Error in health check middleware:', error);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Internal server error', details: error.message }));
@@ -105,7 +105,7 @@ export default defineConfig(({ command, mode }) => {
           console.log('Preview Health check response:', response);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(response));
-        } catch (error) {
+        } catch (error: any) {
           console.error('Error in preview health check middleware:', error);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Internal server error', details: error.message }));
