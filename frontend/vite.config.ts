@@ -18,33 +18,56 @@ export default defineConfig(({ command, mode }) => {
   const healthCheckPlugin = {
     name: 'health-check',
     configureServer(server: any) {
-      console.log('Health check plugin loaded');
+      console.log('=== Health check plugin loaded ===');
+      console.log('Server config:', {
+        port: server.config?.server?.port,
+        host: server.config?.server?.host,
+        mode: server.config?.mode,
+      });
+
       // 健康检测中间件 - 放在最前面
       server.middlewares.use('/ttpai/inside/checkup', (req: any, res: any, next: any) => {
-        console.log('Health check endpoint hit');
-        // 设置 CORS 头
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-        // 处理 OPTIONS 请求
-        if (req.method === 'OPTIONS') {
-          res.writeHead(200);
-          res.end();
-          return;
-        }
-        // 返回健康检测响应
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
+        console.log('=== Health check endpoint hit ===');
+        console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+
+        try {
+          // 设置 CORS 头
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+          // 处理 OPTIONS 请求
+          if (req.method === 'OPTIONS') {
+            console.log('Handling OPTIONS request');
+            res.writeHead(200);
+            res.end();
+            return;
+          }
+
+          // 返回健康检测响应
+          const response = {
             status: 'ok',
             timestamp: new Date().toISOString(),
             service: 'chaoscanvas',
             version: process.env.npm_package_version || '0.0.0',
             environment: process.env.NODE_ENV || 'development',
             hostname: process.env.HOSTNAME || 'unknown',
-          })
-        );
+            nodeEnv: process.env.NODE_ENV,
+            port: server.config?.server?.port,
+            mode: server.config?.mode,
+          };
+
+          console.log('Health check response:', response);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(response));
+        } catch (error) {
+          console.error('Error in health check middleware:', error);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Internal server error', details: error.message }));
+        }
       });
+
+      console.log('=== Health check middleware configured ===');
     },
   };
 
@@ -64,6 +87,8 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     plugins,
+    // 设置根目录
+    root: process.cwd(),
     server: {
       port: 8080,
       open: true,
