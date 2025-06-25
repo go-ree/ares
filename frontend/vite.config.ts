@@ -10,6 +10,9 @@ export default defineConfig(({ command, mode }) => {
   const isProduction = mode === 'production';
   const shouldAnalyze = env.ANALYZE === 'true';
 
+  // 设置 NODE_ENV
+  process.env.NODE_ENV = isProduction ? 'production' : 'development';
+
   const plugins = [vue()];
 
   // 构建分析插件
