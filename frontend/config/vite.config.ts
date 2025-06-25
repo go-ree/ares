@@ -1,7 +1,6 @@
 import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import path from 'path';
-import { visualizer } from 'rollup-plugin-visualizer';
 import type { Connect } from 'vite';
 
 // https://vite.dev/config/
@@ -116,16 +115,18 @@ export default defineConfig(({ command, mode }) => {
 
   const plugins = [vue(), healthCheckPlugin];
 
-  // 构建分析插件
+  // 构建分析插件 - 只在需要分析时导入
   if (shouldAnalyze) {
-    plugins.push(
-      visualizer({
-        filename: 'dist/stats.html',
-        open: true,
-        gzipSize: true,
-        brotliSize: true,
-      }) as any
-    );
+    import('rollup-plugin-visualizer').then(({ visualizer }) => {
+      plugins.push(
+        visualizer({
+          filename: 'dist/stats.html',
+          open: true,
+          gzipSize: true,
+          brotliSize: true,
+        }) as any
+      );
+    });
   }
 
   return {

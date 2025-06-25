@@ -82,6 +82,7 @@ Jenkins构建时需要提供以下参数：
 1. `vite.config.ts` → `config/vite.config.ts`
 2. 更新了package.json中的所有脚本，使用 `--config config/vite.config.ts`
 3. 调整了vite.config.ts中的路径引用（`__dirname` 相对路径）
+4. 将必要的依赖（vite、@vitejs/plugin-vue、terser、sass）移到dependencies
 
 **优势**:
 
@@ -89,6 +90,7 @@ Jenkins构建时需要提供以下参数：
 - ✅ 健康检测接口正常工作
 - ✅ 配置文件集中管理
 - ✅ 符合项目结构规范
+- ✅ 生产环境依赖完整
 
 ## 注意事项
 
@@ -98,6 +100,7 @@ Jenkins构建时需要提供以下参数：
 4. **环境变量**: 支持通过NODE_ENV设置环境
 5. **文件复制**: Jenkins会复制dist、config、app、public等关键目录
 6. **✅ vite.config.ts**: 现在位于config目录，会被自动包含
+7. **✅ 依赖完整**: 所有生产环境需要的依赖都在dependencies中
 
 ## 本地测试
 
