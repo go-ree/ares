@@ -151,6 +151,7 @@ export default defineConfig(({ command, mode }) => {
         '.ttpai.top', // 允许所有ttpai.top子域名
         '.ttpai.fun',
         '.ttpai.xyz',
+        'all', // 允许所有主机（生产环境推荐）
       ],
       proxy: {
         '/api': {
