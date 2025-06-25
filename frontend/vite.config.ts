@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
+import type { Connect } from 'vite';
 
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
@@ -13,7 +14,38 @@ export default defineConfig(({ command, mode }) => {
   // 设置 NODE_ENV
   process.env.NODE_ENV = isProduction ? 'production' : 'development';
 
-  const plugins = [vue()];
+  // 健康检测插件
+  const healthCheckPlugin = {
+    name: 'health-check',
+    configureServer(server: any) {
+      server.middlewares.use('/ttpai/inside/checkup', (req: any, res: any, next: any) => {
+        // 设置 CORS 头
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        // 处理 OPTIONS 请求
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+
+        // 返回健康检测响应
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            service: 'chaoscanvas',
+            version: process.env.npm_package_version || '0.0.0',
+          })
+        );
+      });
+    },
+  };
+
+  const plugins = [vue(), healthCheckPlugin];
 
   // 构建分析插件
   if (shouldAnalyze) {
