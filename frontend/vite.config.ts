@@ -69,6 +69,49 @@ export default defineConfig(({ command, mode }) => {
 
       console.log('=== Health check middleware configured ===');
     },
+    configurePreviewServer(server: any) {
+      console.log('=== Health check plugin loaded for preview ===');
+
+      // 为preview模式添加健康检测
+      server.middlewares.use('/ttpai/inside/checkup', (req: any, res: any, next: any) => {
+        console.log('=== Preview Health check endpoint hit ===');
+
+        try {
+          // 设置 CORS 头
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+          // 处理 OPTIONS 请求
+          if (req.method === 'OPTIONS') {
+            res.writeHead(200);
+            res.end();
+            return;
+          }
+
+          // 返回健康检测响应
+          const response = {
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            service: 'chaoscanvas',
+            version: process.env.npm_package_version || '0.0.0',
+            environment: 'production',
+            hostname: process.env.HOSTNAME || 'unknown',
+            nodeEnv: 'production',
+            port: 8080,
+            mode: 'production',
+          };
+
+          console.log('Preview Health check response:', response);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(response));
+        } catch (error) {
+          console.error('Error in preview health check middleware:', error);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Internal server error', details: error.message }));
+        }
+      });
+    },
   };
 
   const plugins = [vue(), healthCheckPlugin];

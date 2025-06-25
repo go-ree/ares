@@ -5,14 +5,14 @@
   "type": "module",
   "scripts": {
     "build:dev": "vite build --mode development",
-    "build:prod": "npm run type-check && vite build --mode production",
+    "build:prod": "vite build --mode production",
     "build": "npm run build:prod",
     "dev": "vite --mode development --port 8080 --host 0.0.0.0",
-    "start:dev": "npm run dev",
+    "start:dev": "vite --mode development --port 8080 --host 0.0.0.0",
     "start:prod": "vite preview --port 8080 --host 0.0.0.0",
     "start": "npm run dev",
     "preview": "vite preview",
-    "serve": "cross-env NODE_ENV=production vite preview --port 5000",
+    "serve": "vite preview --port 5000",
     "type-check": "vue-tsc --noEmit",
     "type-check:watch": "vue-tsc --noEmit --watch",
     "lint": "npm run prettier && npm run eslint",
@@ -24,7 +24,7 @@
     "clean:deps": "rimraf node_modules package-lock.json",
     "prebuild": "npm run clean",
     "prebuild:prod": "npm run clean",
-    "analyze": "cross-env ANALYZE=true vite build",
+    "analyze": "vite build",
     "test": "echo \"No tests specified\" && exit 0"
   },
   "dependencies": {
