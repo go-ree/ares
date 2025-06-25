@@ -102,10 +102,17 @@ export default defineConfig(({ command, mode }) => {
         console.log(`[${new Date().toISOString()}] Dev SPA fallback for: ${req.method} ${url}`);
 
         // 读取并返回index.html
-        const indexPath = path.resolve(process.cwd(), 'index.html');
+        let indexPath = path.resolve(process.cwd(), 'index.html');
+        let html = '';
+
+        // 如果根目录没有 index.html，尝试使用 dist/index.html
+        if (!fs.existsSync(indexPath)) {
+          indexPath = path.resolve(process.cwd(), 'dist', 'index.html');
+          console.log('Root index.html not found, trying dist/index.html at:', indexPath);
+        }
 
         if (fs.existsSync(indexPath)) {
-          const html = fs.readFileSync(indexPath, 'utf-8');
+          html = fs.readFileSync(indexPath, 'utf-8');
           res.writeHead(200, { 'Content-Type': 'text/html' });
           res.end(html);
         } else {
