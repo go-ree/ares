@@ -139,7 +139,7 @@ export const streamJobLogs = (jobName: string, buildId: number) => {
           logContent += data.result.join('\n') + '\n';
         } else if (data.code === 0) {
           // 处理错误
-          reject(new Error(data.msg || data.error || '获取日志失败'));
+          reject(new Error(data.message || data.error || '获取日志失败'));
           eventSource.close();
         }
       } catch (error) {
@@ -153,7 +153,7 @@ export const streamJobLogs = (jobName: string, buildId: number) => {
     eventSource.addEventListener('error', (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
-        reject(new Error(data.msg || data.error || '获取日志失败'));
+        reject(new Error(data.message || data.error || '获取日志失败'));
       } catch (error) {
         reject(new Error('获取日志失败'));
       }

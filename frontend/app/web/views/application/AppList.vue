@@ -2,13 +2,13 @@
 <template>
   <div class="app-list-page">
     <h2>应用管理</h2>
-    
+
     <!-- 使用高级搜索组件 -->
     <AppAdvancedSearch @search="handleAdvancedSearch" />
 
     <!-- 使用表格组件 -->
-    <AppTable 
-      :app-list="appList" 
+    <AppTable
+      :app-list="appList"
       :loading="loading"
       :total="total"
       @edit="handleEdit"
@@ -19,43 +19,40 @@
     />
 
     <!-- 详情对话框 -->
-    <AppDetailDialog
-      v-model:visible="detailDialogVisible"
-      :app-id="currentAppId"
-    />
+    <AppDetailDialog v-model:visible="detailDialogVisible" :app-id="currentAppId" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import AppTable from '@/components/application/AppTable.vue'
-import AppAdvancedSearch from '@/components/application/AppAdvancedSearch.vue'
-import AppDetailDialog from '@/components/application/AppDetailDialog.vue'
-import { queryApps } from '@/services/application'
-import type { AppInfo, AppQueryParams, PageResponse } from '@/models/application'
+import { ref, onMounted } from 'vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import AppTable from '@/components/application/AppTable.vue';
+import AppAdvancedSearch from '@/components/application/AppAdvancedSearch.vue';
+import AppDetailDialog from '@/components/application/AppDetailDialog.vue';
+import { queryApps } from '@/services/application';
+import type { AppInfo, AppQueryParams, PageResponse } from '@/models/application';
 
 // 分页参数
-const pageNum = ref(1)
-const pageSize = ref(10)
-const total = ref(0)
+const pageNum = ref(1);
+const pageSize = ref(10);
+const total = ref(0);
 
 // 应用列表数据
-const appList = ref<AppInfo[]>([])
+const appList = ref<AppInfo[]>([]);
 
 // 加载状态
-const loading = ref(false)
+const loading = ref(false);
 
 // 保存当前的搜索条件
-const currentSearchParams = ref<Partial<AppQueryParams>>({})
+const currentSearchParams = ref<Partial<AppQueryParams>>({});
 
 // 详情对话框状态
-const detailDialogVisible = ref(false)
-const currentAppId = ref<number>()
+const detailDialogVisible = ref(false);
+const currentAppId = ref<number>();
 
 // 获取应用列表数据
 const fetchAppList = async (params: Partial<AppQueryParams> = {}) => {
-  loading.value = true
+  loading.value = true;
   try {
     // 合并当前搜索条件和传入的参数
     const queryParams: AppQueryParams = {
@@ -63,90 +60,89 @@ const fetchAppList = async (params: Partial<AppQueryParams> = {}) => {
       ...params, // 新的参数会覆盖旧的参数
       page_num: params.page_num ?? pageNum.value,
       page_size: params.page_size ?? pageSize.value,
-    }
-    
-    const response = await queryApps(queryParams)
-    if (response.data.code === 1) {  // 检查响应状态码
-      appList.value = response.data.result.apps
-      total.value = response.data.result.total
-      
+    };
+
+    const response = await queryApps(queryParams);
+    if (response.data.code === 1) {
+      // 检查响应状态码
+      appList.value = response.data.result.apps;
+      total.value = response.data.result.total;
+
       // 更新本地分页状态
-      pageNum.value = response.data.result.page_num
-      pageSize.value = response.data.result.page_size
+      pageNum.value = response.data.result.page_num;
+      pageSize.value = response.data.result.page_size;
     } else {
-      ElMessage.error(response.data.msg || '获取应用列表失败')
+      ElMessage.error(response.data.message || '获取应用列表失败');
     }
   } catch (error) {
-    console.error('获取应用列表失败:', error)
-    ElMessage.error('获取应用列表失败')
+    console.error('获取应用列表失败:', error);
+    ElMessage.error('获取应用列表失败');
   } finally {
-    loading.value = false
+    loading.value = false;
   }
-}
+};
 
 // 高级搜索处理函数
 const handleAdvancedSearch = (searchParams: Partial<AppQueryParams>) => {
   // 更新当前搜索条件
-  currentSearchParams.value = { ...searchParams }
+  currentSearchParams.value = { ...searchParams };
   // 重置页码到第一页
-  pageNum.value = 1
+  pageNum.value = 1;
   // 使用新的搜索条件获取数据
-  fetchAppList({ ...searchParams, page_num: 1 })
-}
+  fetchAppList({ ...searchParams, page_num: 1 });
+};
 
 // 处理分页变化
 const handlePageChange = (newPage: number) => {
-  pageNum.value = newPage
-  fetchAppList({ page_num: newPage })
-}
+  pageNum.value = newPage;
+  fetchAppList({ page_num: newPage });
+};
 
 // 处理每页条数变化
 const handleSizeChange = (newSize: number) => {
-  pageSize.value = newSize
-  pageNum.value = 1
-  fetchAppList({ page_size: newSize, page_num: 1 })
-}
+  pageSize.value = newSize;
+  pageNum.value = 1;
+  fetchAppList({ page_size: newSize, page_num: 1 });
+};
 
 // 搜索处理函数
 const handleSearch = (keyword: string) => {
-  console.log('搜索关键词:', keyword)
+  console.log('搜索关键词:', keyword);
   // 这里实现简单搜索逻辑
-}
+};
 
 // 编辑处理函数
 const handleEdit = (row: any) => {
-  console.log('编辑应用:', row)
+  console.log('编辑应用:', row);
   // 这里可以实现编辑逻辑
-}
+};
 
 // 删除处理函数
 const handleDelete = (row: any) => {
-  ElMessageBox.confirm(
-    `确定要删除应用 ${row.app_name} 吗？`,
-    '警告',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }
-  ).then(() => {
-    // 这里实现删除逻辑
-    ElMessage.success('删除成功')
-  }).catch(() => {
-    ElMessage.info('已取消删除')
+  ElMessageBox.confirm(`确定要删除应用 ${row.app_name} 吗？`, '警告', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning',
   })
-}
+    .then(() => {
+      // 这里实现删除逻辑
+      ElMessage.success('删除成功');
+    })
+    .catch(() => {
+      ElMessage.info('已取消删除');
+    });
+};
 
 // 处理详情按钮点击
 const handleDetail = (row: AppInfo) => {
-  currentAppId.value = row.app_id
-  detailDialogVisible.value = true
-}
+  currentAppId.value = row.app_id;
+  detailDialogVisible.value = true;
+};
 
 // 页面加载时获取数据
 onMounted(() => {
-  fetchAppList()
-})
+  fetchAppList();
+});
 </script>
 
 <style scoped>
@@ -182,4 +178,4 @@ h2 {
   background-color: #fff;
   border-top: 1px solid #ebeef5;
 }
-</style> 
+</style>
