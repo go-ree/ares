@@ -2,6 +2,7 @@ package main
 
 import (
 	"ares/internal/jenkins"
+	"ares/internal/k8s"
 	"context"
 	"os"
 	"os/signal"
@@ -49,6 +50,12 @@ func main() {
 	}
 
 	err = jenkins.Init()
+	if err != nil {
+		os.Exit(5)
+	}
+
+	// 初始化K8s客户端管理器
+	err = k8s.Init()
 	if err != nil {
 		os.Exit(5)
 	}

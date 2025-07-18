@@ -21,3 +21,19 @@ jenkins:
   token:  "118f677d3e8596a6bde966ca5f57c2d018"
   username: "admin"
   password: "hello@ttpai"
+
+k8s:
+  clusters:
+    dev:
+      name: "k8s-k6-dev"
+      config_path: "config/k6-cluster-config"
+      description: "开发环境K6集群"
+    test:
+      name: "k8s-k2-test" 
+      config_path: "config/k2-cluster-config"
+      description: "测试环境K2集群"
+    moni:
+      name: "k8s-k2-moni"
+      config_path: "config/k2-cluster-config" 
+      description: "模拟环境K2集群"
+

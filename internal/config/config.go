@@ -29,7 +29,14 @@ type Config struct {
 		Token    string `yaml:"token"`
 		UserName string `yaml:"username"`
 		Password string `yaml:"password"`
-	}
+	} `yaml:"jenkins"`
+	K8s struct {
+		Clusters map[string]struct {
+			Name        string `yaml:"name"`
+			ConfigPath  string `yaml:"config_path"`
+			Description string `yaml:"description"`
+		} `yaml:"clusters"`
+	} `yaml:"k8s"`
 }
 
 var Main = &Config{}
