@@ -141,6 +141,10 @@ func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity
 		Env:       creatReq.Env,
 		Publisher: creatReq.Publisher,
 	}
+	// 这里打个补丁，为了兼容非标准的 ceshi 环境，将其转换为test环境
+	if req.Env == "ceshi" {
+		req.Env = "test"
+	}
 
 	app, err := pm.VerifyApp(req)
 	if err != nil {
