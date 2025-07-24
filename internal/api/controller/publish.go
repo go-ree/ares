@@ -59,6 +59,9 @@ func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
 		c.JSON(500, util.ResponseFailure("", err.Error()))
 		return
 	}
+	if publishBatchResult.FailureCount != 0 {
+		c.JSON(200, util.ResponseFailure("部分任务创建失败", publishBatchResult))
+	}
 	c.JSON(200, util.ResponseSuccessful("发布任务创建成功", publishBatchResult))
 }
 
