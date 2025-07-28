@@ -17,8 +17,11 @@ type PublishQuery struct {
 	Publisher string `json:"publisher" form:"publisher"`
 	Branch    string `json:"branch" form:"branch"`
 	util.ParamPage
-	StartTime time.Time `json:"start_time" form:"start_time" time_format:"2006-01-02 15:04:05"` // 开始时间
-	EndTime   time.Time `json:"end_time" form:"end_time" time_format:"2006-01-02 15:04:05"`     // 结束时间
+	StartTime string `json:"start_time" form:"start_time"` // 开始时间（字符串格式）
+	EndTime   string `json:"end_time" form:"end_time"`     // 结束时间（字符串格式）
+	// 解析后的时间字段
+	parsedStartTime *time.Time
+	parsedEndTime   *time.Time
 }
 
 // PublishQueryResult
@@ -33,11 +36,11 @@ type PublishQueryResult struct {
 // buildTimeRangeQuery 在查询构建时使用
 // 查询时间范围为：查询的开始时间要比创建时间小，查询的结束时间要比更新时间大
 func (pm *PublishManager) buildTimeRangeQuery(session *xorm.Session, query *PublishQuery) *xorm.Session {
-	if !query.StartTime.IsZero() {
-		session = session.And("created_at >= ?", query.StartTime)
+	if query.parsedStartTime != nil {
+		session = session.And("created_at >= ?", *query.parsedStartTime)
 	}
-	if !query.EndTime.IsZero() {
-		session = session.And("updated_at <= ?", query.EndTime)
+	if query.parsedEndTime != nil {
+		session = session.And("updated_at <= ?", *query.parsedEndTime)
 	}
 	return session
 }
@@ -102,6 +105,11 @@ func (pm *PublishManager) taskSorting(session *xorm.Session, params *PublishQuer
 
 // QueryBuildPublish 查询构建任务列表
 func (pm *PublishManager) QueryBuildPublish(ctx context.Context, params PublishQuery) (*PublishQueryResult, error) {
+	// 时间格式兼容处理
+	if err := pm.parseTimeFormats(&params); err != nil {
+		return nil, fmt.Errorf("时间格式解析失败: %w", err)
+	}
+
 	// 参数验证
 	if err := params.Validate(); err != nil {
 		return nil, fmt.Errorf("参数验证失败: %w", err)
@@ -112,8 +120,20 @@ func (pm *PublishManager) QueryBuildPublish(ctx context.Context, params PublishQ
 		"env", params.Env,
 		"publisher", params.Publisher,
 		"branch", params.Branch,
-		"start_time", params.StartTime.Format("2006-01-02 15:04:05"),
-		"end_time", params.EndTime.Format("2006-01-02 15:04:05"))
+		"start_time", params.StartTime,
+		"end_time", params.EndTime,
+		"parsed_start_time", func() string {
+			if params.parsedStartTime != nil {
+				return params.parsedStartTime.Format("2006-01-02 15:04:05")
+			}
+			return "nil"
+		}(),
+		"parsed_end_time", func() string {
+			if params.parsedEndTime != nil {
+				return params.parsedEndTime.Format("2006-01-02 15:04:05")
+			}
+			return "nil"
+		}())
 
 	// 构建查询条件
 	query := pm.buildPublishQuery(ctx, params)
@@ -166,4 +186,55 @@ func (pm *PublishManager) QueryBuildPublish(ctx context.Context, params PublishQ
 	}
 
 	return result, nil
+}
+
+// parseTimeSmart 智能解析时间，支持多种格式
+func (pm *PublishManager) parseTimeSmart(timeStr string) (*time.Time, error) {
+	if timeStr == "" {
+		return nil, nil
+	}
+
+	// 支持的时间格式（按优先级排序）
+	timeFormats := []string{
+		time.RFC3339,                    // "2025-07-23T16:00:00Z"
+		"2006-01-02T15:04:05.000Z",      // "2025-07-23T16:00:00.000Z"
+		"2006-01-02T15:04:05Z",          // "2025-07-23T16:00:00Z"
+		"2006-01-02T15:04:05.000-07:00", // "2025-07-23T16:00:00.000+08:00"
+		"2006-01-02T15:04:05-07:00",     // "2025-07-23T16:00:00+08:00"
+		"2006-01-02 15:04:05",           // "2025-07-23 16:00:00"
+		"2006-01-02 15:04",              // "2025-07-23 16:00"
+		"2006-01-02",                    // "2025-07-23"
+	}
+
+	// 尝试解析
+	for _, format := range timeFormats {
+		if t, err := time.Parse(format, timeStr); err == nil {
+			return &t, nil
+		}
+	}
+
+	return nil, fmt.Errorf("无法解析时间格式: %s", timeStr)
+}
+
+// parseTimeFormats 解析时间格式，支持多种格式兼容
+func (pm *PublishManager) parseTimeFormats(params *PublishQuery) error {
+	// 解析开始时间
+	if params.StartTime != "" {
+		parsedTime, err := pm.parseTimeSmart(params.StartTime)
+		if err != nil {
+			return fmt.Errorf("解析开始时间失败: %w", err)
+		}
+		params.parsedStartTime = parsedTime
+	}
+
+	// 解析结束时间
+	if params.EndTime != "" {
+		parsedTime, err := pm.parseTimeSmart(params.EndTime)
+		if err != nil {
+			return fmt.Errorf("解析结束时间失败: %w", err)
+		}
+		params.parsedEndTime = parsedTime
+	}
+
+	return nil
 }

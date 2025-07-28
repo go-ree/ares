@@ -23,15 +23,15 @@ func (q *PublishQuery) Validate() error {
 
 // validateTimeRange 验证时间范围
 func (q *PublishQuery) validateTimeRange() error {
-	if !q.StartTime.IsZero() {
-		if q.EndTime.IsZero() {
+	if q.parsedStartTime != nil {
+		if q.parsedEndTime == nil {
 			return fmt.Errorf("结束时间不能为空")
 		}
-		if q.EndTime.Before(q.StartTime) {
+		if q.parsedEndTime.Before(*q.parsedStartTime) {
 			return fmt.Errorf("结束时间不能早于开始时间")
 		}
 		// 可选：添加时间范围限制
-		if q.EndTime.Sub(q.StartTime) > 30*24*time.Hour {
+		if q.parsedEndTime.Sub(*q.parsedStartTime) > 30*24*time.Hour {
 			return fmt.Errorf("时间范围不能超过30天")
 		}
 	}
