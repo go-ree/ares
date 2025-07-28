@@ -114,8 +114,9 @@ func (am *AppManager) QueryApps(ctx context.Context, params AppQuery) (*AppQuery
 	totalPages := am.utilManager.CalculateTotalPages(total, pageSize)
 
 	// 验证页码是否合法
-	if totalPages > 0 && params.PageNum > totalPages {
-		return nil, fmt.Errorf("请求的页码 %d 超出总页数 %d", params.PageNum, totalPages)
+	pageNum := params.GetPageNum()
+	if totalPages > 0 && pageNum > totalPages {
+		return nil, fmt.Errorf("请求的页码 %d 超出总页数 %d", pageNum, totalPages)
 	}
 
 	// 如果有数据，再进行分页查询
@@ -134,7 +135,7 @@ func (am *AppManager) QueryApps(ctx context.Context, params AppQuery) (*AppQuery
 		slog.Info("查询到应用数据",
 			"total", total,
 			"actual_count", len(apps),
-			"page_num", params.PageNum,
+			"page_num", params.GetPageNum(),
 			"page_size", pageSize,
 			"offset", offset)
 	}
@@ -143,7 +144,7 @@ func (am *AppManager) QueryApps(ctx context.Context, params AppQuery) (*AppQuery
 	result := &AppQueryResult{
 		Total:      total,
 		Apps:       apps,
-		PageNum:    params.PageNum,
+		PageNum:    params.GetPageNum(),
 		PageSize:   pageSize,
 		TotalPages: totalPages,
 	}

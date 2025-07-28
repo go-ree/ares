@@ -2,6 +2,7 @@ package util
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -16,8 +17,8 @@ import (
 //	   }
 //	}
 type ParamPage struct {
-	PageNum  int         `form:"page_num" json:"page_num" binding:"omitempty,min=1"`
-	PageSize int         `form:"page_size" json:"page_size" binding:"omitempty,min=1,max=200"` // 前端可选 15 30 50 100 200
+	PageNum  interface{} `form:"page_num" json:"page_num" binding:"omitempty,min=1"`
+	PageSize interface{} `form:"page_size" json:"page_size" binding:"omitempty,min=1,max=200"` // 前端可选 15 30 50 100 200
 	Sort     *SortOption `form:"sort" collection_format:"csv"`
 }
 
@@ -31,20 +32,94 @@ func NewUtilManager() *ParamPage {
 	return &ParamPage{}
 }
 
+// GetPageNum 获取页码，兼容 string 和 int 类型
+func (p *ParamPage) GetPageNum() int {
+	if p.PageNum == nil {
+		return 0
+	}
+
+	switch v := p.PageNum.(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case string:
+		if val, err := strconv.Atoi(v); err == nil {
+			return val
+		}
+		return 0
+	default:
+		// 尝试转换为字符串再解析
+		if str, ok := fmt.Sprintf("%v", v), true; ok {
+			if val, err := strconv.Atoi(str); err == nil {
+				return val
+			}
+		}
+		return 0
+	}
+}
+
+// GetPageSize 获取每页大小，兼容 string 和 int 类型
+func (p *ParamPage) GetPageSize() int {
+	if p.PageSize == nil {
+		return 0
+	}
+
+	switch v := p.PageSize.(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case string:
+		if val, err := strconv.Atoi(v); err == nil {
+			return val
+		}
+		return 0
+	default:
+		// 尝试转换为字符串再解析
+		if str, ok := fmt.Sprintf("%v", v), true; ok {
+			if val, err := strconv.Atoi(str); err == nil {
+				return val
+			}
+		}
+		return 0
+	}
+}
+
+// SetPageNum 设置页码
+func (p *ParamPage) SetPageNum(pageNum int) {
+	p.PageNum = pageNum
+}
+
+// SetPageSize 设置每页大小
+func (p *ParamPage) SetPageSize(pageSize int) {
+	p.PageSize = pageSize
+}
+
 // NormalizePagination 规范化分页参数
 func (p *ParamPage) NormalizePagination(params *ParamPage) (int, int) {
+	// 获取页码和每页大小
+	pageNum := params.GetPageNum()
+	pageSize := params.GetPageSize()
+
 	// 默认分页参数
-	if params.PageNum <= 0 {
-		params.PageNum = 1
+	if pageNum <= 0 {
+		pageNum = 1
+		params.SetPageNum(pageNum)
 	}
-	if params.PageSize <= 0 {
-		params.PageSize = 5
+	if pageSize <= 0 {
+		pageSize = 5
+		params.SetPageSize(pageSize)
 	}
 
 	// 计算正确的偏移量
-	offset := (params.PageNum - 1) * params.PageSize
+	offset := (pageNum - 1) * pageSize
 
-	return params.PageSize, offset
+	return pageSize, offset
 }
 
 // CalculateTotalPages 计算总页数
