@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"log/slog"
+	"strings"
 )
 
 type PodController struct {
@@ -49,11 +50,54 @@ func (pc *PodController) GetAppPods(c *gin.Context) {
 		"env", env,
 		"namespace", namespace)
 
-	// 构造标签选择器
-	labelSelector := fmt.Sprintf("app=%s", appName)
+	// 尝试多种查询方式
+	var podInfo []k8s.PodInfo
+	var err error
 
-	// 调用PodManager获取Pod列表
-	podInfo, err := pc.podManager.GetPodsInNamespace(c.Request.Context(), namespace, env, labelSelector)
+	// 方式1: 通过app.kubernetes.io/name标签查询（标准K8s标签）
+	labelSelector := fmt.Sprintf("app.kubernetes.io/name=%s", appName)
+	podInfo, err = pc.podManager.GetPodsInNamespace(c.Request.Context(), namespace, env, labelSelector)
+	if err == nil && len(podInfo) > 0 {
+		slog.Info("通过app.kubernetes.io/name标签查询成功",
+			"app_name", appName,
+			"env", env,
+			"namespace", namespace,
+			"pod_count", len(podInfo))
+		c.JSON(200, util.ResponseSuccessful("查询成功", podInfo))
+		return
+	}
+
+	// 方式2: 通过app标签查询（传统标签）
+	labelSelector = fmt.Sprintf("app=%s", appName)
+	podInfo, err = pc.podManager.GetPodsInNamespace(c.Request.Context(), namespace, env, labelSelector)
+	if err == nil && len(podInfo) > 0 {
+		slog.Info("通过app标签查询成功",
+			"app_name", appName,
+			"env", env,
+			"namespace", namespace,
+			"pod_count", len(podInfo))
+		c.JSON(200, util.ResponseSuccessful("查询成功", podInfo))
+		return
+	}
+
+	// 方式3: 通过pod名称前缀查询（如果app_name看起来像pod名称）
+	if strings.Contains(appName, "-") {
+		// 构造pod名称前缀查询
+		podNamePrefix := appName
+		podInfo, err = pc.podManager.GetPodsByNamePrefix(c.Request.Context(), namespace, env, podNamePrefix)
+		if err == nil && len(podInfo) > 0 {
+			slog.Info("通过pod名称前缀查询成功",
+				"app_name", appName,
+				"env", env,
+				"namespace", namespace,
+				"pod_count", len(podInfo))
+			c.JSON(200, util.ResponseSuccessful("查询成功", podInfo))
+			return
+		}
+	}
+
+	// 方式4: 获取所有pod，然后过滤
+	podInfo, err = pc.podManager.GetPodsInNamespace(c.Request.Context(), namespace, env, "")
 	if err != nil {
 		c.JSON(500, util.ResponseFailure("查询失败", err.Error()))
 		slog.Error("获取pod信息失败",
@@ -64,8 +108,60 @@ func (pc *PodController) GetAppPods(c *gin.Context) {
 		return
 	}
 
-	slog.Info("Pod列表获取成功",
+	// 过滤包含app_name的pod
+	var filteredPods []k8s.PodInfo
+	for _, pod := range podInfo {
+		if strings.Contains(pod.Name, appName) {
+			filteredPods = append(filteredPods, pod)
+		}
+	}
+
+	slog.Info("Pod列表获取完成",
 		"app_name", appName,
+		"env", env,
+		"namespace", namespace,
+		"total_pods", len(podInfo),
+		"filtered_pods", len(filteredPods))
+
+	c.JSON(200, util.ResponseSuccessful("查询成功", filteredPods))
+}
+
+// GetAllPods
+// @Tags K8S
+// @Summary 获取命名空间中的所有pod列表（调试用）
+// @Param env query string true "环境"
+// @Param namespace query string false "命名空间" default(default)
+// @Success 200 {object} util.ResponseTemplate{code=int,result=[]k8s.PodInfo} "成功"
+// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
+// @Router	/api/v1/k8s/pod/list [get]
+func (pc *PodController) GetAllPods(c *gin.Context) {
+	// 从查询参数获取值
+	env := c.Query("env")
+	namespace := c.DefaultQuery("namespace", "default")
+
+	// 参数验证
+	if env == "" {
+		c.JSON(400, util.ResponseFailure("参数错误", "env不能为空"))
+		return
+	}
+
+	slog.Info("获取所有Pod列表",
+		"env", env,
+		"namespace", namespace)
+
+	// 获取所有Pod
+	podInfo, err := pc.podManager.GetPodsInNamespace(c.Request.Context(), namespace, env, "")
+	if err != nil {
+		c.JSON(500, util.ResponseFailure("查询失败", err.Error()))
+		slog.Error("获取pod信息失败",
+			"env", env,
+			"namespace", namespace,
+			"error", err.Error())
+		return
+	}
+
+	slog.Info("所有Pod列表获取成功",
 		"env", env,
 		"namespace", namespace,
 		"pod_count", len(podInfo))
@@ -120,4 +216,59 @@ func (pc *PodController) GetK8sDebugInfo(c *gin.Context) {
 
 	slog.Info("K8s调试信息获取完成", "debug_info", debugInfo)
 	c.JSON(200, util.ResponseSuccessful("调试信息获取成功", debugInfo))
+}
+
+// GetDeploymentsByLabel
+// @Tags K8S
+// @Summary 通过标签查询Deployment
+// @Param label_selector query string true "标签选择器，如：app.kubernetes.io/name=abtesting-ms"
+// @Param env query string true "环境"
+// @Param namespace query string false "命名空间" default(default)
+// @Success 200 {object} util.ResponseTemplate{code=int,result=[]k8s.ApplicationStatus} "成功"
+// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
+// @Router	/api/v1/k8s/deployment/query [get]
+func (pc *PodController) GetDeploymentsByLabel(c *gin.Context) {
+	// 从查询参数获取值
+	labelSelector := c.Query("label_selector")
+	env := c.Query("env")
+	namespace := c.DefaultQuery("namespace", "default")
+
+	// 参数验证
+	if labelSelector == "" {
+		c.JSON(400, util.ResponseFailure("参数错误", "label_selector不能为空"))
+		return
+	}
+	if env == "" {
+		c.JSON(400, util.ResponseFailure("参数错误", "env不能为空"))
+		return
+	}
+
+	slog.Info("通过标签查询Deployment",
+		"label_selector", labelSelector,
+		"env", env,
+		"namespace", namespace)
+
+	// 创建ApplicationManager实例
+	appManager := k8s.NewApplicationManager()
+
+	// 调用ApplicationManager查询Deployment
+	deployments, err := appManager.GetDeploymentsByLabel(c.Request.Context(), namespace, env, labelSelector)
+	if err != nil {
+		c.JSON(500, util.ResponseFailure("查询失败", err.Error()))
+		slog.Error("查询Deployment失败",
+			"label_selector", labelSelector,
+			"env", env,
+			"namespace", namespace,
+			"error", err.Error())
+		return
+	}
+
+	slog.Info("Deployment查询成功",
+		"label_selector", labelSelector,
+		"env", env,
+		"namespace", namespace,
+		"count", len(deployments))
+
+	c.JSON(200, util.ResponseSuccessful("查询成功", deployments))
 }

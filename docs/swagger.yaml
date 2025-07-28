@@ -165,6 +165,65 @@ definitions:
       node_status:
         type: string
     type: object
+  k8s.ApplicationStatus:
+    properties:
+      app_name:
+        type: string
+      available_replicas:
+        type: integer
+      created_at:
+        type: string
+      env:
+        type: string
+      exists:
+        type: boolean
+      image:
+        type: string
+      message:
+        type: string
+      namespace:
+        type: string
+      ready_replicas:
+        type: integer
+      replicas:
+        type: integer
+      service_exists:
+        type: boolean
+      service_port:
+        type: integer
+      service_type:
+        type: string
+    type: object
+  k8s.PodInfo:
+    properties:
+      created_at:
+        type: string
+      host_ip:
+        type: string
+      labels:
+        additionalProperties:
+          type: string
+        type: object
+      message:
+        type: string
+      name:
+        type: string
+      namespace:
+        type: string
+      node_name:
+        type: string
+      phase:
+        description: Pod阶段：Pending、Running、Succeeded、Failed、Unknown
+        type: string
+      pod_ip:
+        type: string
+      restart_count:
+        type: integer
+      started_at:
+        type: string
+      status:
+        type: string
+    type: object
   publish.CreateBatchPublishRequest:
     properties:
       batch_publish:
@@ -265,7 +324,7 @@ definitions:
       help:
         description: 显示接口文档地址，便于别人排错
         type: string
-      msg:
+      message:
         description: 对请求结果的描述消息，可以为空
         type: string
       result:
@@ -694,6 +753,48 @@ paths:
       summary: 查询构建任务历史
       tags:
       - Publish
+  /api/v1/deploy/publish/query/{task_id}:
+    get:
+      description: 根据任务的执行id，查询构建任务详情信息
+      parameters:
+      - description: 构建任务ID
+        in: path
+        name: task_id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/publish.PublishQueryResult'
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 查询构建任务详情
+      tags:
+      - Publish
   /api/v1/deploy/publish/status:
     get:
       responses:
@@ -786,6 +887,178 @@ paths:
       summary: 获取流式的构建日志 (SSE格式)
       tags:
       - Publish
+  /api/v1/k8s/debug:
+    get:
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  additionalProperties: true
+                  type: object
+              type: object
+      summary: 获取K8s环境调试信息
+      tags:
+      - K8S
+  /api/v1/k8s/deployment/query:
+    get:
+      parameters:
+      - description: 标签选择器，如：app.kubernetes.io/name=abtesting-ms
+        in: query
+        name: label_selector
+        required: true
+        type: string
+      - description: 环境
+        in: query
+        name: env
+        required: true
+        type: string
+      - default: default
+        description: 命名空间
+        in: query
+        name: namespace
+        type: string
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  items:
+                    $ref: '#/definitions/k8s.ApplicationStatus'
+                  type: array
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 通过标签查询Deployment
+      tags:
+      - K8S
+  /api/v1/k8s/pod/list:
+    get:
+      parameters:
+      - description: 环境
+        in: query
+        name: env
+        required: true
+        type: string
+      - default: default
+        description: 命名空间
+        in: query
+        name: namespace
+        type: string
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  items:
+                    $ref: '#/definitions/k8s.PodInfo'
+                  type: array
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 获取命名空间中的所有pod列表（调试用）
+      tags:
+      - K8S
+  /api/v1/k8s/pod/query:
+    get:
+      parameters:
+      - description: 应用名称
+        in: query
+        name: app_name
+        required: true
+        type: string
+      - description: 环境
+        in: query
+        name: env
+        required: true
+        type: string
+      - default: default
+        description: 命名空间
+        in: query
+        name: namespace
+        type: string
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  items:
+                    $ref: '#/definitions/k8s.PodInfo'
+                  type: array
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 获取应用的pod列表
+      tags:
+      - K8S
   /api/v1/status/nodes:
     get:
       responses:

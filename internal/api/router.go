@@ -79,6 +79,10 @@ func Router(r gin.IRouter) {
 		{
 			// 获取pods信息
 			k8s.GET("/pod/query", podController.GetAppPods)
+			// 获取所有pods信息（调试用）
+			k8s.GET("/pod/list", podController.GetAllPods)
+			// 通过标签查询Deployment
+			k8s.GET("/deployment/query", podController.GetDeploymentsByLabel)
 			// K8s调试信息
 			k8s.GET("/debug", podController.GetK8sDebugInfo)
 		}

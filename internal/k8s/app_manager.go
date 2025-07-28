@@ -270,6 +270,92 @@ func (am *ApplicationManager) GetApplicationStatus(ctx context.Context, appName,
 	return status, nil
 }
 
+// GetDeploymentsByLabel 通过标签查询Deployment
+func (am *ApplicationManager) GetDeploymentsByLabel(ctx context.Context, namespace, env, labelSelector string) ([]ApplicationStatus, error) {
+	if !IsEnvAvailable(env) {
+		return nil, fmt.Errorf("环境 %s 不可用", env)
+	}
+
+	client := am.getClientForEnv(env)
+	if client == nil {
+		return nil, fmt.Errorf("无法获取环境 %s 的K8s客户端", env)
+	}
+
+	am.logger.Info("开始通过标签查询Deployment",
+		"namespace", namespace,
+		"env", env,
+		"label_selector", labelSelector)
+
+	// 查询Deployment
+	deployments, err := client.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("查询Deployment失败: %w", err)
+	}
+
+	var results []ApplicationStatus
+	for _, deployment := range deployments.Items {
+		status := am.convertDeploymentToStatus(&deployment, env)
+
+		// 检查对应的Service是否存在
+		service, err := client.CoreV1().Services(namespace).Get(ctx, deployment.Name, metav1.GetOptions{})
+		if err == nil {
+			status.ServiceExists = true
+			status.ServiceType = string(service.Spec.Type)
+			if len(service.Spec.Ports) > 0 {
+				status.ServicePort = service.Spec.Ports[0].Port
+			}
+		} else if !errors.IsNotFound(err) {
+			am.logger.Warn("查询Service失败",
+				"deployment", deployment.Name,
+				"namespace", namespace,
+				"error", err.Error())
+		}
+
+		results = append(results, *status)
+	}
+
+	am.logger.Info("通过标签查询Deployment完成",
+		"namespace", namespace,
+		"env", env,
+		"label_selector", labelSelector,
+		"count", len(results))
+
+	return results, nil
+}
+
+// convertDeploymentToStatus 将Deployment转换为ApplicationStatus
+func (am *ApplicationManager) convertDeploymentToStatus(deployment *appsv1.Deployment, env string) *ApplicationStatus {
+	status := &ApplicationStatus{
+		AppName:           deployment.Name,
+		Namespace:         deployment.Namespace,
+		Env:               env,
+		Exists:            true,
+		Replicas:          *deployment.Spec.Replicas,
+		ReadyReplicas:     deployment.Status.ReadyReplicas,
+		AvailableReplicas: deployment.Status.AvailableReplicas,
+		CreatedAt:         deployment.CreationTimestamp.Time,
+		ServiceExists:     false,
+	}
+
+	// 获取镜像信息
+	if len(deployment.Spec.Template.Spec.Containers) > 0 {
+		status.Image = deployment.Spec.Template.Spec.Containers[0].Image
+	}
+
+	// 设置状态消息
+	if deployment.Status.ReadyReplicas == *deployment.Spec.Replicas && deployment.Status.ReadyReplicas > 0 {
+		status.Message = "运行正常"
+	} else if deployment.Status.ReadyReplicas == 0 {
+		status.Message = "无可用副本"
+	} else {
+		status.Message = fmt.Sprintf("部分就绪 (%d/%d)", deployment.Status.ReadyReplicas, *deployment.Spec.Replicas)
+	}
+
+	return status
+}
+
 // ensureNamespace 确保命名空间存在
 func (am *ApplicationManager) ensureNamespace(ctx context.Context, client *kubernetes.Clientset, namespace string) error {
 	_, err := client.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})

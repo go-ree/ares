@@ -25,11 +25,13 @@ func Init() error {
 	// 从配置文件构建集群配置
 	configs, err := buildClusterConfigs()
 	if err != nil {
+		slog.Error("构建集群配置失败", "error:", err)
 		return fmt.Errorf("构建集群配置失败: %w", err)
 	}
 
 	// 初始化客户端管理器
 	if err := InitManager(configs); err != nil {
+		slog.Error("初始化客户端管理器失败", "error:", err)
 		return fmt.Errorf("初始化客户端管理器失败: %w", err)
 	}
 

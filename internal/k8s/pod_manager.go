@@ -415,6 +415,46 @@ func (pm *PodManager) WaitForPodReady(ctx context.Context, podName, namespace, e
 	}
 }
 
+// GetPodsByNamePrefix 通过Pod名称前缀获取Pod列表
+func (pm *PodManager) GetPodsByNamePrefix(ctx context.Context, namespace, env, namePrefix string) ([]PodInfo, error) {
+	if !IsEnvAvailable(env) {
+		return nil, fmt.Errorf("环境 %s 不可用", env)
+	}
+
+	client := pm.getClientForEnv(env)
+	if client == nil {
+		return nil, fmt.Errorf("无法获取环境 %s 的K8s客户端", env)
+	}
+
+	pm.logger.Info("开始通过名称前缀获取Pod列表",
+		"namespace", namespace,
+		"env", env,
+		"name_prefix", namePrefix)
+
+	// 获取所有Pod
+	podList, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("获取Pod列表失败: %w", err)
+	}
+
+	// 过滤匹配前缀的Pod
+	var pods []PodInfo
+	for _, pod := range podList.Items {
+		if strings.HasPrefix(pod.Name, namePrefix) {
+			podInfo := pm.convertPodToPodInfo(&pod)
+			pods = append(pods, *podInfo)
+		}
+	}
+
+	pm.logger.Info("通过名称前缀获取Pod列表完成",
+		"namespace", namespace,
+		"env", env,
+		"name_prefix", namePrefix,
+		"count", len(pods))
+
+	return pods, nil
+}
+
 // convertPodToPodInfo 将K8s Pod转换为PodInfo
 func (pm *PodManager) convertPodToPodInfo(pod *corev1.Pod) *PodInfo {
 	info := &PodInfo{
@@ -431,14 +471,36 @@ func (pm *PodManager) convertPodToPodInfo(pod *corev1.Pod) *PodInfo {
 	// 设置状态信息
 	info.Status = string(pod.Status.Phase)
 	if len(pod.Status.Conditions) > 0 {
-		var conditions []string
+		// 优先显示PodReady状态
 		for _, condition := range pod.Status.Conditions {
-			if condition.Status == corev1.ConditionTrue {
-				conditions = append(conditions, string(condition.Type))
+			if condition.Type == corev1.PodReady {
+				if condition.Status == corev1.ConditionTrue {
+					info.Status = "Ready"
+				} else {
+					info.Status = "NotReady"
+				}
+				break
 			}
 		}
-		if len(conditions) > 0 {
-			info.Status = strings.Join(conditions, ",")
+
+		// 如果没有PodReady条件，则显示Phase
+		if info.Status == string(pod.Status.Phase) {
+			// 对于Running状态的Pod，可以显示更详细的状态
+			if pod.Status.Phase == corev1.PodRunning {
+				// 检查是否有容器未就绪
+				allContainersReady := true
+				for _, containerStatus := range pod.Status.ContainerStatuses {
+					if !containerStatus.Ready {
+						allContainersReady = false
+						break
+					}
+				}
+				if allContainersReady {
+					info.Status = "Running"
+				} else {
+					info.Status = "Running(NotReady)"
+				}
+			}
 		}
 	}
 
