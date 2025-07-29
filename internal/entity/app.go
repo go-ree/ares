@@ -9,7 +9,7 @@ import (
 type Apps struct {
 	AppId          int        `xorm:"INT(11) pk autoincr 'app_id'" json:"app_id"`
 	AppName        string     `xorm:"varchar(255) notnull 'app_name'" json:"app_name"`
-	RundeckAppName string     `xorm:"varchar(255) default null 'rundeck_app_name'" json:"rundeck_app_name"`
+	RundeckAppName *string    `xorm:"varchar(255) 'rundeck_app_name'" json:"rundeck_app_name"`
 	AppNameCn      string     `xorm:"varchar(255) default 'NULL' 'app_name_cn'" json:"app_name_cn"`
 	Owner          string     `xorm:"varchar(100) notnull 'owner'" json:"owner"`
 	OwnerCN        string     `xorm:"varchar(100) notnull 'owner_cn'" json:"owner_cn"`

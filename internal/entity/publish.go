@@ -10,7 +10,7 @@ import (
 type TaskRecord struct {
 	TaskId         int             `xorm:"INT(11) pk autoincr 'task_id'" json:"task_id"`
 	AppName        string          `xorm:"VARCHAR(255) not null 'app_name'" json:"app_name"`
-	RundeckAppName string          `xorm:"VARCHAR(255) default null 'rundeck_app_name'" json:"rundeck_app_name"`
+	RundeckAppName *string         `xorm:"VARCHAR(255) 'rundeck_app_name'" json:"rundeck_app_name"`
 	Branch         string          `xorm:"VARCHAR(100) not null 'branch'" json:"branch"`
 	Env            string          `xorm:"VARCHAR(255) not null 'env'" json:"env"`
 	Publisher      string          `xorm:"VARCHAR(255) not null 'publisher'" json:"publisher"`

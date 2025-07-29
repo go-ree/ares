@@ -1467,15 +1467,9 @@ const docTemplate = `{
                 "owner_cn": {
                     "type": "string"
                 },
-                "page_num": {
-                    "type": "integer",
-                    "minimum": 1
-                },
+                "page_num": {},
                 "page_size": {
-                    "description": "前端可选 15 30 50 100 200",
-                    "type": "integer",
-                    "maximum": 200,
-                    "minimum": 1
+                    "description": "前端可选 15 30 50 100 200"
                 },
                 "sort": {
                     "$ref": "#/definitions/util.SortOption"
@@ -1618,6 +1612,9 @@ const docTemplate = `{
                 "owner_cn": {
                     "type": "string"
                 },
+                "rundeck_app_name": {
+                    "type": "string"
+                },
                 "updated_at": {
                     "type": "string",
                     "format": "date-time"
@@ -1669,6 +1666,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "publisher": {
+                    "type": "string"
+                },
+                "rundeck_app_name": {
                     "type": "string"
                 },
                 "status": {
@@ -1829,6 +1829,9 @@ const docTemplate = `{
                 "env": {
                     "type": "string"
                 },
+                "is_rundeck": {
+                    "type": "boolean"
+                },
                 "publisher": {
                     "type": "string"
                 }
@@ -1858,21 +1861,18 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "end_time": {
-                    "description": "结束时间",
+                    "description": "结束时间（字符串格式）",
                     "type": "string"
                 },
                 "env": {
                     "type": "string"
                 },
-                "page_num": {
-                    "type": "integer",
-                    "minimum": 1
+                "is_rundeck": {
+                    "type": "boolean"
                 },
+                "page_num": {},
                 "page_size": {
-                    "description": "前端可选 15 30 50 100 200",
-                    "type": "integer",
-                    "maximum": 200,
-                    "minimum": 1
+                    "description": "前端可选 15 30 50 100 200"
                 },
                 "publisher": {
                     "type": "string"
@@ -1881,7 +1881,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/util.SortOption"
                 },
                 "start_time": {
-                    "description": "开始时间",
+                    "description": "开始时间（字符串格式）",
                     "type": "string"
                 }
             }

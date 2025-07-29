@@ -36,13 +36,13 @@ type CreatePublishRequest struct {
 
 // PublishRequest 实际发布需要用到的参数
 type PublishRequest struct {
-	AppName         string `json:"app_name"`
-	RundeckAppName  string `json:"rundeck_app_name"`
-	Branch          string `json:"branch"`
-	Env             string `json:"env"`
-	Publisher       string `json:"publisher"`
-	AppId           int    `json:"app_id"`
-	CodePackageType string `json:"code_package_type"`
+	AppName         string  `json:"app_name"`
+	RundeckAppName  *string `json:"rundeck_app_name"`
+	Branch          string  `json:"branch"`
+	Env             string  `json:"env"`
+	Publisher       string  `json:"publisher"`
+	AppId           int     `json:"app_id"`
+	CodePackageType string  `json:"code_package_type"`
 }
 
 // CreateBatchPublishRequest 批量触发发布动作请求
@@ -157,15 +157,24 @@ func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity
 		Branch:    creatReq.Branch,
 		Env:       creatReq.Env,
 		Publisher: creatReq.Publisher,
+		// RundeckAppName 将在验证后设置
 	}
 	// 这里打个补丁，为了兼容非标准的 ceshi 环境，将其转换为test环境
 	if req.Env == "ceshi" {
 		req.Env = "test"
 	}
-	app, err := pm.VerifyRunDeckApp(req)
-	if !creatReq.IsRundeck {
+	var app *entity.Apps
+
+	if creatReq.IsRundeck {
+		app, err = pm.VerifyRunDeckApp(req)
+		// 设置 RundeckAppName
+		if app != nil && app.RundeckAppName != nil {
+			req.RundeckAppName = app.RundeckAppName
+		}
+	} else {
 		app, err = pm.VerifyApp(req)
 	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +324,7 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 	//
 	taskRecord := &entity.TaskRecord{
 		AppName:        app.AppName,
-		RundeckAppName: app.RundeckAppName,
+		RundeckAppName: app.RundeckAppName, // 现在是指针类型，可以直接赋值
 		Publisher:      req.Publisher,
 		Branch:         req.Branch,
 		Env:            req.Env,
