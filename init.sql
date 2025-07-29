@@ -2,6 +2,7 @@
 CREATE TABLE ares.apps (
     app_id INT(11) AUTO_INCREMENT PRIMARY KEY,
     app_name VARCHAR(255) NOT NULL,
+    rundeck_app_name VARCHAR(255) DEFAULT null,
     app_name_cn VARCHAR(255) DEFAULT 'NULL',
     owner VARCHAR(100) NOT NULL,
     owner_cn varchar(100) NOT NULL,
@@ -46,6 +47,7 @@ CREATE TABLE ares.app_configs (
 CREATE TABLE ares.task_record (
     task_id INT(11) AUTO_INCREMENT PRIMARY KEY,
     app_name VARCHAR(255) NOT NULL,
+    rundeck_app_name VARCHAR(255) DEFAULT null,
     branch VARCHAR(100) NOT NULL,
     publisher VARCHAR(255) NOT NULL,
     env     varchar(100) NOT NULL,

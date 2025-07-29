@@ -7,17 +7,18 @@ import (
 
 // Apps 应用信息
 type Apps struct {
-	AppId         int        `xorm:"INT(11) pk autoincr 'app_id'" json:"app_id"`
-	AppName       string     `xorm:"varchar(255) notnull 'app_name'" json:"app_name"`
-	AppNameCn     string     `xorm:"varchar(255) default 'NULL' 'app_name_cn'" json:"app_name_cn"`
-	Owner         string     `xorm:"varchar(100) notnull 'owner'" json:"owner"`
-	OwnerCN       string     `xorm:"varchar(100) notnull 'owner_cn'" json:"owner_cn"`
-	DevLanguage   string     `xorm:"varchar(100) notnull 'dev_language'" json:"dev_language"`
-	DescriptionCN string     `xorm:"varchar(255) default 'NULL' 'description_cn'" json:"description_cn"`
-	GitUrl        string     `xorm:"varchar(255) notnull 'git_url'" json:"git_url"`
-	CreatedTime   time.Time  `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at" swaggertype:"string" format:"date-time"`
-	UpdatedTime   time.Time  `xorm:"timestamp updated notnull DEFAULT CURRENT_TIMESTAMP 'updated_at'" json:"updated_at" swaggertype:"string" format:"date-time"`
-	DeletedTime   *time.Time `xorm:"timestamp deleted 'deleted_at'" json:"deleted_at" swaggertype:"string" format:"date-time"`
+	AppId          int        `xorm:"INT(11) pk autoincr 'app_id'" json:"app_id"`
+	AppName        string     `xorm:"varchar(255) notnull 'app_name'" json:"app_name"`
+	RundeckAppName string     `xorm:"varchar(255) default null 'rundeck_app_name'" json:"rundeck_app_name"`
+	AppNameCn      string     `xorm:"varchar(255) default 'NULL' 'app_name_cn'" json:"app_name_cn"`
+	Owner          string     `xorm:"varchar(100) notnull 'owner'" json:"owner"`
+	OwnerCN        string     `xorm:"varchar(100) notnull 'owner_cn'" json:"owner_cn"`
+	DevLanguage    string     `xorm:"varchar(100) notnull 'dev_language'" json:"dev_language"`
+	DescriptionCN  string     `xorm:"varchar(255) default 'NULL' 'description_cn'" json:"description_cn"`
+	GitUrl         string     `xorm:"varchar(255) notnull 'git_url'" json:"git_url"`
+	CreatedTime    time.Time  `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at" swaggertype:"string" format:"date-time"`
+	UpdatedTime    time.Time  `xorm:"timestamp updated notnull DEFAULT CURRENT_TIMESTAMP 'updated_at'" json:"updated_at" swaggertype:"string" format:"date-time"`
+	DeletedTime    *time.Time `xorm:"timestamp deleted 'deleted_at'" json:"deleted_at" swaggertype:"string" format:"date-time"`
 }
 
 // AppConfigs 应用配置

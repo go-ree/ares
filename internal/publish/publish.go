@@ -31,11 +31,13 @@ type CreatePublishRequest struct {
 	Branch    string `json:"branch"`
 	Env       string `json:"env"`
 	Publisher string `json:"publisher"`
+	IsRundeck bool   `json:"is_rundeck"`
 }
 
 // PublishRequest 实际发布需要用到的参数
 type PublishRequest struct {
 	AppName         string `json:"app_name"`
+	RundeckAppName  string `json:"rundeck_app_name"`
 	Branch          string `json:"branch"`
 	Env             string `json:"env"`
 	Publisher       string `json:"publisher"`
@@ -67,6 +69,21 @@ type CreateBatchPublishResponse struct {
 func (pm *PublishManager) VerifyApp(req *PublishRequest) (*entity.Apps, error) {
 	var app []entity.Apps
 	err := db.Engine.Where("app_name = ? AND deleted_at IS NULL", req.AppName).Find(&app)
+	if err != nil {
+		return nil, fmt.Errorf("应用信息查询失败：%s", err)
+	}
+	if len(app) == 0 {
+		return nil, fmt.Errorf("未找到应用：%s", req.AppName)
+	}
+	if len(app) > 1 {
+		return nil, fmt.Errorf("匹配到 %d 条记录信息，请检查app_name：%s 是否唯一存在", len(app), req.AppName)
+	}
+	return &app[0], nil
+}
+
+func (pm *PublishManager) VerifyRunDeckApp(req *PublishRequest) (*entity.Apps, error) {
+	var app []entity.Apps
+	err := db.Engine.Where("rundeck_app_name = ? AND deleted_at IS NULL", req.AppName).Find(&app)
 	if err != nil {
 		return nil, fmt.Errorf("应用信息查询失败：%s", err)
 	}
@@ -145,8 +162,10 @@ func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity
 	if req.Env == "ceshi" {
 		req.Env = "test"
 	}
-
-	app, err := pm.VerifyApp(req)
+	app, err := pm.VerifyRunDeckApp(req)
+	if !creatReq.IsRundeck {
+		app, err = pm.VerifyApp(req)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -295,13 +314,14 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 	// 然后携带相关的发布信息，对jenkins发送api请求，jenkins会返回对应的build_number，这个用于查询执行状态和获取日志信息。
 	//
 	taskRecord := &entity.TaskRecord{
-		AppName:       app.AppName,
-		Publisher:     req.Publisher,
-		Branch:        req.Branch,
-		Env:           req.Env,
-		PipelineParam: json.RawMessage(jsonStr),
-		Products:      image,
-		Status:        "init",
+		AppName:        app.AppName,
+		RundeckAppName: app.RundeckAppName,
+		Publisher:      req.Publisher,
+		Branch:         req.Branch,
+		Env:            req.Env,
+		PipelineParam:  json.RawMessage(jsonStr),
+		Products:       image,
+		Status:         "init",
 	}
 	// 需要在这里显式的把一些有默认值的给排除掉，golang会将未使用的值赋值为零值，而不是使用默认值
 	_, err = db.Engine.Omit("ci_build_id", "cd_build_id", "message", "ci_job_name", "cd_job_name", "auto_deploy").Insert(taskRecord)

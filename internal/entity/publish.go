@@ -8,23 +8,24 @@ import (
 // TaskRecord 任务记录
 // swagger:model
 type TaskRecord struct {
-	TaskId        int             `xorm:"INT(11) pk autoincr 'task_id'" json:"task_id"`
-	AppName       string          `xorm:"VARCHAR(255) not null 'app_name'" json:"app_name"`
-	Branch        string          `xorm:"VARCHAR(100) not null 'branch'" json:"branch"`
-	Env           string          `xorm:"VARCHAR(255) not null 'env'" json:"env"`
-	Publisher     string          `xorm:"VARCHAR(255) not null 'publisher'" json:"publisher"`
-	CiBuildId     int64           `xorm:"int(11) DEFAULT 0 'ci_build_id'" json:"ci_build_id"`
-	CdBuildId     int64           `xorm:"int(11) DEFAULT 0 'cd_build_id'" json:"cd_build_id"`
-	PipelineParam json.RawMessage `xorm:"JSON  'pipeline_param' " json:"pipeline_param" swaggertype:"string"`
-	Status        string          `xorm:"VARCHAR(100) DEFAULT 'init' 'status'" json:"status"`
-	Message       string          `xorm:"VARCHAR(255) DEFAULT 'NULL' 'message'" json:"message"`
-	CiJobName     string          `xorm:"VARCHAR(100) DEFAULT 'NULL' 'ci_job_name'" json:"ci_job_name"`
-	CdJobName     string          `xorm:"VARCHAR(100) DEFAULT 'NULL' 'cd_job_name'" json:"cd_job_name"`
-	AutoDeploy    int             `xorm:"TINYINT(1) DEFAULT(1) 'auto_deploy'" json:"auto_deploy"`
-	Products      string          `xorm:"VARCHAR(255) DEFAULT 'NULL' 'products'" json:"products"`
-	CreatedTime   time.Time       `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at" swaggertype:"string" format:"date-time"`
-	UpdatedTime   time.Time       `xorm:"timestamp updated notnull DEFAULT CURRENT_TIMESTAMP 'updated_at'" json:"updated_at" swaggertype:"string" format:"date-time"`
-	DeletedTime   *time.Time      `xorm:"timestamp deleted 'deleted_at'" json:"deleted_at" swaggertype:"string" format:"date-time"`
+	TaskId         int             `xorm:"INT(11) pk autoincr 'task_id'" json:"task_id"`
+	AppName        string          `xorm:"VARCHAR(255) not null 'app_name'" json:"app_name"`
+	RundeckAppName string          `xorm:"VARCHAR(255) default null 'rundeck_app_name'" json:"rundeck_app_name"`
+	Branch         string          `xorm:"VARCHAR(100) not null 'branch'" json:"branch"`
+	Env            string          `xorm:"VARCHAR(255) not null 'env'" json:"env"`
+	Publisher      string          `xorm:"VARCHAR(255) not null 'publisher'" json:"publisher"`
+	CiBuildId      int64           `xorm:"int(11) DEFAULT 0 'ci_build_id'" json:"ci_build_id"`
+	CdBuildId      int64           `xorm:"int(11) DEFAULT 0 'cd_build_id'" json:"cd_build_id"`
+	PipelineParam  json.RawMessage `xorm:"JSON  'pipeline_param' " json:"pipeline_param" swaggertype:"string"`
+	Status         string          `xorm:"VARCHAR(100) DEFAULT 'init' 'status'" json:"status"`
+	Message        string          `xorm:"VARCHAR(255) DEFAULT 'NULL' 'message'" json:"message"`
+	CiJobName      string          `xorm:"VARCHAR(100) DEFAULT 'NULL' 'ci_job_name'" json:"ci_job_name"`
+	CdJobName      string          `xorm:"VARCHAR(100) DEFAULT 'NULL' 'cd_job_name'" json:"cd_job_name"`
+	AutoDeploy     int             `xorm:"TINYINT(1) DEFAULT(1) 'auto_deploy'" json:"auto_deploy"`
+	Products       string          `xorm:"VARCHAR(255) DEFAULT 'NULL' 'products'" json:"products"`
+	CreatedTime    time.Time       `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at" swaggertype:"string" format:"date-time"`
+	UpdatedTime    time.Time       `xorm:"timestamp updated notnull DEFAULT CURRENT_TIMESTAMP 'updated_at'" json:"updated_at" swaggertype:"string" format:"date-time"`
+	DeletedTime    *time.Time      `xorm:"timestamp deleted 'deleted_at'" json:"deleted_at" swaggertype:"string" format:"date-time"`
 }
 
 type Pipelines struct {
