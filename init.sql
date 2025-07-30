@@ -72,11 +72,10 @@ CREATE TABLE ares.task_record (
     deleted_at TIMESTAMP NULL DEFAULT NULL
 );
 
-CREATE TABLE ares.pipelinesJobCombination (
+CREATE TABLE ares.pipelines (
     id INT(11) AUTO_INCREMENT PRIMARY KEY,
     job_name VARCHAR(100) NOT NULL UNIQUE,
     description_cn VARCHAR(255) NOT NULL,
-    code_package_type VARCHAR(100) NOT NULL UNIQUE,
     url VARCHAR(255) NOT NULL,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -102,13 +101,13 @@ CREATE TABLE ares.pipelines_job_combination (
     -- 外键约束（字段类型完全兼容）
     CONSTRAINT fk_pipelines_ci_job
     FOREIGN KEY (ci_job_name)
-    REFERENCES ares.pipelinesJobCombination(job_name)
+    REFERENCES ares.pipelines(job_name)
     ON DELETE RESTRICT
     ON UPDATE CASCADE,
 
     CONSTRAINT fk_pipelines_cd_job
     FOREIGN KEY (cd_job_name)
-    REFERENCES ares.pipelinesJobCombination(job_name)
+    REFERENCES ares.pipelines(job_name)
     ON DELETE RESTRICT
     ON UPDATE CASCADE,
 

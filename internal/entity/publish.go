@@ -29,11 +29,10 @@ type TaskRecord struct {
 }
 
 type Pipelines struct {
-	Id              int    `xorm:"INT(11) pk autoincr 'id'" json:"id"`
-	JobName         string `xorm:"VARCHAR(100) notnull unique 'job_name'" json:"job_name"`
-	DescriptionCN   string `xorm:"VARCHAR(255) notnull 'description_cn'" json:"description_cn"`
-	CodePackageType string `xorm:"VARCHAR(100) notnull unique 'code_package_type'" json:"code_package_type"`
-	URL             string `xorm:"VARCHAR(255) notnull 'url'" json:"url"`
+	Id            int    `xorm:"INT(11) pk autoincr 'id'" json:"id"`
+	JobName       string `xorm:"VARCHAR(100) notnull unique 'job_name'" json:"job_name"`
+	DescriptionCN string `xorm:"VARCHAR(255) notnull 'description_cn'" json:"description_cn"`
+	URL           string `xorm:"VARCHAR(255) notnull 'url'" json:"url"`
 
 	CreatedTime time.Time  `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at" swaggertype:"string" format:"date-time"`
 	UpdatedTime time.Time  `xorm:"timestamp updated notnull DEFAULT CURRENT_TIMESTAMP 'updated_at'" json:"updated_at" swaggertype:"string" format:"date-time"`
