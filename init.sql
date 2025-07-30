@@ -72,7 +72,7 @@ CREATE TABLE ares.task_record (
     deleted_at TIMESTAMP NULL DEFAULT NULL
 );
 
-CREATE TABLE ares.pipelines (
+CREATE TABLE ares.pipelinesJobCombination (
     id INT(11) AUTO_INCREMENT PRIMARY KEY,
     job_name VARCHAR(100) NOT NULL UNIQUE,
     description_cn VARCHAR(255) NOT NULL,
@@ -83,6 +83,37 @@ CREATE TABLE ares.pipelines (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL
 );
+
+CREATE TABLE ares.pipelines_job_combination (
+    id INT(11) AUTO_INCREMENT PRIMARY KEY,
+    description_cn VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+    -- 与pipelines.job_name完全匹配的字段定义
+    ci_job_name VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+    cd_job_name VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+    code_package_type VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL UNIQUE,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL DEFAULT NULL,
+
+    INDEX idx_cd_job (cd_job_name),
+    INDEX idx_ci_job (ci_job_name),
+
+    -- 外键约束（字段类型完全兼容）
+    CONSTRAINT fk_pipelines_ci_job
+    FOREIGN KEY (ci_job_name)
+    REFERENCES ares.pipelinesJobCombination(job_name)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE,
+
+    CONSTRAINT fk_pipelines_cd_job
+    FOREIGN KEY (cd_job_name)
+    REFERENCES ares.pipelinesJobCombination(job_name)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE,
+
+    UNIQUE INDEX uk_ci_cd_combination (ci_job_name, cd_job_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 #######################################以上均为投产版##########################################################
 # 创建env表，用来存储环境对应集群信息
 CREATE TABLE ares.env_configs (

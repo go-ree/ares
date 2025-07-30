@@ -111,27 +111,18 @@ func (tm *TaskManager) handlePackagingSuccess(task entity.TaskRecord) error {
 
 // triggerJenkinsBuild 触发 Jenkins 构建任务
 func (tm *TaskManager) triggerJenkinsBuild(task entity.TaskRecord) error {
-	// 在这里手动定义所有应用部署用的job名称
-	autoDeployJobName := "deploy-k8s"
 	jenkinsParam, err := tool.ToMapStringInterface(task.PipelineParam)
 	if err != nil {
 		return fmt.Errorf("转换参数失败：%s", err)
 	}
 
-	var pipelines []entity.Pipelines
-	err = db.Engine.Where("code_package_type = ? AND deleted_at IS NULL", autoDeployJobName).Find(&pipelines)
-	if err != nil || len(pipelines) == 0 {
-		return fmt.Errorf("未找到环境配置")
-	}
-
-	jobBuildId, _, err := jenkins.CreateBuildTask(pipelines[0].JobName, jenkinsParam)
+	jobBuildId, _, err := jenkins.CreateBuildTask(task.CdJobName, jenkinsParam)
 	if err != nil {
 		return fmt.Errorf("创建构建任务失败：%s", err)
 	}
 
 	// 更新任务信息
 	task.Status = entity.StatusDeploying
-	task.CdJobName = pipelines[0].JobName
 	task.CdBuildId = jobBuildId
 	_, err = db.Engine.ID(task.TaskId).Update(&task)
 	slog.Info("任务自动部署中",

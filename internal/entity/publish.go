@@ -40,6 +40,18 @@ type Pipelines struct {
 	DeletedTime *time.Time `xorm:"timestamp deleted 'deleted_at'" json:"deleted_at" swaggertype:"string" format:"date-time"`
 }
 
+type PipelinesJobCombination struct {
+	Id              int    `xorm:"INT(11) pk autoincr 'id'" json:"id"`
+	DescriptionCN   string `xorm:"VARCHAR(255) notnull 'description_cn'" json:"description_cn"`
+	CiJobName       string `xorm:"VARCHAR(100) notnull 'ci_job_name'" json:"ci_job_name"` // 关联pipelines.job_name
+	CdJobName       string `xorm:"VARCHAR(100) notnull 'cd_job_name'" json:"cd_job_name"` // 关联pipelines.job_name
+	CodePackageType string `xorm:"VARCHAR(100) notnull unique 'code_package_type'" json:"code_package_type"`
+
+	CreatedTime time.Time  `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at" swaggertype:"string" format:"date-time"`
+	UpdatedTime time.Time  `xorm:"timestamp updated notnull DEFAULT CURRENT_TIMESTAMP 'updated_at'" json:"updated_at" swaggertype:"string" format:"date-time"`
+	DeletedTime *time.Time `xorm:"timestamp deleted 'deleted_at'" json:"deleted_at" swaggertype:"string" format:"date-time"`
+}
+
 type EnvConfigs struct {
 	ID                int    `xorm:"INT(11) pk autoincr 'id'" json:"id"`
 	Env               string `xorm:"VARCHAR(100) notnull unique 'env'" json:"env"`

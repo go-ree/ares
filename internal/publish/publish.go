@@ -129,19 +129,19 @@ func (pm *PublishManager) VerifyEnvConfigs(req *PublishRequest) (*entity.EnvConf
 }
 
 // VerifyPipelines 检验指定的管线信息
-func (pm *PublishManager) VerifyPipelines(req *PublishRequest) (*entity.Pipelines, error) {
-	var pipelines []entity.Pipelines
-	err := db.Engine.Where("code_package_type = ? AND deleted_at IS NULL", req.CodePackageType).Find(&pipelines)
+func (pm *PublishManager) VerifyPipelines(req *PublishRequest) (*entity.PipelinesJobCombination, error) {
+	var pipelinesJobCombination []entity.PipelinesJobCombination
+	err := db.Engine.Where("code_package_type = ? AND deleted_at IS NULL", req.CodePackageType).Find(&pipelinesJobCombination)
 	if err != nil {
 		return nil, fmt.Errorf("代码包类型所属管线查询失败：%s", err)
 	}
-	if len(pipelines) == 0 {
-		return nil, fmt.Errorf("未找到%s应用类型对应管线配置,请在 pipelines 表中定义", req.CodePackageType)
+	if len(pipelinesJobCombination) == 0 {
+		return nil, fmt.Errorf("未找到%s应用类型对应管线配置,请在 pipelines_job_combination 表中定义", req.CodePackageType)
 	}
-	if len(pipelines) > 1 {
-		return nil, fmt.Errorf("匹配到 %d 条记录信息，请检查code_package_type：%s 是否唯一存在", len(pipelines), req.CodePackageType)
+	if len(pipelinesJobCombination) > 1 {
+		return nil, fmt.Errorf("匹配到 %d 条记录信息，请检查pipelines_job_combination中code_package_type：%s 是否唯一存在", len(pipelinesJobCombination), req.CodePackageType)
 	}
-	return &pipelines[0], nil
+	return &pipelinesJobCombination[0], nil
 }
 
 // CreatePublish 创建单次发布动作
@@ -204,7 +204,7 @@ func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity
 	}
 
 	// 对相应的管线创建新的构建任务
-	jobBuildId, _, err := jenkins.CreateBuildTask(pipelines.JobName, jenkinsParam)
+	jobBuildId, _, err := jenkins.CreateBuildTask(pipelines.CiJobName, jenkinsParam)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,8 @@ func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity
 	taskRecord.TaskId = taskRecordResult.TaskId
 	taskRecord.CiBuildId = jobBuildId
 	taskRecord.Status = "packaging"
-	taskRecord.CiJobName = pipelines.JobName
+	taskRecord.CiJobName = pipelines.CiJobName
+	taskRecord.CdJobName = pipelines.CdJobName
 	// 更新指定id的数据
 	affected, err := db.Engine.ID(taskRecord.TaskId).Update(&taskRecord)
 	if err != nil {
