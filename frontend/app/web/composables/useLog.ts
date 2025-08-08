@@ -446,6 +446,10 @@ export function useLog() {
             if (performanceMetrics.value.totalDataCount === 1) {
               console.log('首次收到CI日志数据，立即显示历史日志:', data.result.length, '行');
               ciLog.value = data.result.join('\n') + '\n';
+              // 首次数据到达，立即关闭 loading，避免一直转圈
+              if (ciLogLoading.value) {
+                ciLogLoading.value = false;
+              }
               // 立即滚动到底部
               setTimeout(() => scrollToBottomIfActive('ci', ciLogContainer.value), 100);
             } else {
@@ -840,6 +844,10 @@ export function useLog() {
             if (performanceMetrics.value.cdDataCount === 1) {
               console.log('首次收到CD日志数据，立即显示历史日志:', data.result.length, '行');
               cdLog.value = data.result.join('\n') + '\n';
+              // 首次数据到达，立即关闭 loading，避免一直转圈
+              if (cdLogLoading.value) {
+                cdLogLoading.value = false;
+              }
               // 立即滚动到底部
               setTimeout(() => scrollToBottomIfActive('cd', cdLogContainer.value), 100);
             } else {
