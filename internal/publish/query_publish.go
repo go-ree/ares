@@ -17,6 +17,7 @@ type PublishQuery struct {
 	Env       string `json:"env" form:"env"`
 	Publisher string `json:"publisher" form:"publisher"`
 	Branch    string `json:"branch" form:"branch"`
+	Status    string `json:"status" form:"status"`
 	util.ParamPage
 	StartTime string `json:"start_time" form:"start_time"` // 开始时间（字符串格式）
 	EndTime   string `json:"end_time" form:"end_time"`     // 结束时间（字符串格式）
@@ -69,6 +70,9 @@ func (pm *PublishManager) buildPublishQuery(ctx context.Context, params PublishQ
 	}
 	if params.Branch != "" {
 		session = session.Where("branch LIKE ?", "%"+params.Branch+"%")
+	}
+	if params.Status != "" {
+		session = session.Where("status = ?", params.Status)
 	}
 
 	// 添加时间范围查询
@@ -126,6 +130,7 @@ func (pm *PublishManager) QueryBuildPublish(ctx context.Context, params PublishQ
 		"env", params.Env,
 		"publisher", params.Publisher,
 		"branch", params.Branch,
+		"status", params.Status,
 		"start_time", params.StartTime,
 		"end_time", params.EndTime,
 		"parsed_start_time", func() string {
