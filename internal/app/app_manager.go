@@ -123,7 +123,7 @@ func (am *AppManager) CreateAppWithTx(ctx context.Context, req *CreateAppRequest
 		AppName:       req.AppName,
 		AppNameCn:     req.AppNameCN,
 		Owner:         req.Owner,
-		OwnerCN:       req.Owner,
+		OwnerCN:       req.OwnerCN,
 		DevLanguage:   req.DevLanguage,
 		DescriptionCN: req.DescriptionCN,
 		GitUrl:        req.GitUrl,
