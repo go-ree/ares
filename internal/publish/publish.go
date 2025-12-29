@@ -32,6 +32,7 @@ type CreatePublishRequest struct {
 	Env       string `json:"env"`
 	Publisher string `json:"publisher"`
 	IsRundeck bool   `json:"is_rundeck"`
+	ExtraData any    `json:"extra_data,omitempty"` // 新增：接口类型
 }
 
 // PublishRequest 实际发布需要用到的参数
@@ -43,6 +44,7 @@ type PublishRequest struct {
 	Publisher       string  `json:"publisher"`
 	AppId           int     `json:"app_id"`
 	CodePackageType string  `json:"code_package_type"`
+	ExtraData       any     `json:"extra_data,omitempty"` // 新增：接口类型
 }
 
 // CreateBatchPublishRequest 批量触发发布动作请求
@@ -157,6 +159,7 @@ func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity
 		Branch:    creatReq.Branch,
 		Env:       creatReq.Env,
 		Publisher: creatReq.Publisher,
+		ExtraData: creatReq.ExtraData,
 		// RundeckAppName 将在验证后设置
 	}
 	// 这里打个补丁，为了兼容非标准的 ceshi 环境，将其转换为test环境
@@ -202,6 +205,9 @@ func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity
 	if err != nil {
 		return nil, err
 	}
+
+	// 这里需要传入一个任务id，因为上面已经拿到返回值了，直接在这里传入即可
+	jenkinsParam["task_id"] = strconv.Itoa(taskRecordResult.TaskId)
 
 	// 对相应的管线创建新的构建任务
 	jobBuildId, _, err := jenkins.CreateBuildTask(pipelines.CiJobName, jenkinsParam)
@@ -315,6 +321,62 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 	JenkinsParam["domain_path"] = appConfig.DomainPath
 	JenkinsParam["image"] = image
 	JenkinsParam["dev_language"] = app.DevLanguage
+
+	// 透传 extra_data：只要有值就合并进 JenkinsParam，且不覆盖现有 key
+	if req.ExtraData != nil {
+		// stringify 将任意值转换为 string，复杂类型优先 JSON 序列化
+		stringify := func(v any) (string, bool) {
+			if v == nil {
+				return "", false
+			}
+			if s, ok := v.(string); ok {
+				if s == "" {
+					return "", false
+				}
+				return s, true
+			}
+			if b, err := json.Marshal(v); err == nil {
+				ss := string(b)
+				if ss == "" || ss == "null" {
+					return "", false
+				}
+				return ss, true
+			}
+			// 兜底：转字符串
+			ss := fmt.Sprint(v)
+			if ss == "" {
+				return "", false
+			}
+			return ss, true
+		}
+
+		mergeKV := func(k string, v any) {
+			if k == "" {
+				return
+			}
+			if _, exists := JenkinsParam[k]; exists {
+				return // 不覆盖现有 key
+			}
+			if s, ok := stringify(v); ok {
+				JenkinsParam[k] = s
+			}
+		}
+
+		switch extra := req.ExtraData.(type) {
+		case map[string]any:
+			for k, v := range extra {
+				mergeKV(k, v)
+			}
+		case map[string]string:
+			for k, v := range extra {
+				mergeKV(k, v)
+			}
+		default:
+			// 非 map 类型无法展开为多个键：整体透传为 extra_data（同样不覆盖）
+			mergeKV("extra_data", extra)
+		}
+	}
+
 	jsonStr, err := tool.ToJSON(JenkinsParam)
 	if err != nil {
 		return nil, nil, err
