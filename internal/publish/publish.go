@@ -450,6 +450,18 @@ func (pm *PublishManager) GetTaskRecordDetails(taskID int) (*entity.TaskRecord, 
 	if !has {
 		return nil, fmt.Errorf("未找到任务详情，task_id: %d", taskID)
 	}
+
+	// 回填任务图片（方案B：图片表），保持前端好处理：没数据返回空数组而不是 null
+	imgMap, err := fetchTaskRecordImagesByTaskIDs([]int{taskID})
+	if err != nil {
+		return nil, fmt.Errorf("查询任务图片失败：%s", err)
+	}
+	if imgs, ok := imgMap[taskID]; ok {
+		taskRecord.AppletImages = imgs
+	} else {
+		taskRecord.AppletImages = make([]entity.AppletImage, 0)
+	}
+
 	slog.Info("查询任务详情成功", "task_id", taskID)
 	return &taskRecord, nil
 }
