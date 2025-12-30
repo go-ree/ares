@@ -23,6 +23,7 @@ type TaskRecord struct {
 	CdJobName      string          `xorm:"VARCHAR(100) DEFAULT 'NULL' 'cd_job_name'" json:"cd_job_name"`
 	AutoDeploy     int             `xorm:"TINYINT(1) DEFAULT(1) 'auto_deploy'" json:"auto_deploy"`
 	Products       string          `xorm:"VARCHAR(255) DEFAULT 'NULL' 'products'" json:"products"`
+	AppletImages   []AppletImage   `xorm:"-" json:"applet_images"` // 新增：任务图片（仅对外返回）
 	CreatedTime    time.Time       `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at" swaggertype:"string" format:"date-time"`
 	UpdatedTime    time.Time       `xorm:"timestamp updated notnull DEFAULT CURRENT_TIMESTAMP 'updated_at'" json:"updated_at" swaggertype:"string" format:"date-time"`
 	DeletedTime    *time.Time      `xorm:"timestamp deleted 'deleted_at'" json:"deleted_at" swaggertype:"string" format:"date-time"`

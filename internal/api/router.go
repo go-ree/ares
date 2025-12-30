@@ -5,8 +5,9 @@ import (
 
 	_ "ares/docs"
 	"ares/internal/api/controller"
+
 	"github.com/gin-gonic/gin"
-	"github.com/swaggo/files"                  // swagger embed files
+	swaggerFiles "github.com/swaggo/files"     // swagger embed files
 	ginSwagger "github.com/swaggo/gin-swagger" // gin-swagger middleware
 )
 
@@ -42,6 +43,8 @@ func Router(r gin.IRouter) {
 			deploy.POST("/publish/query", publishController.QueryBuildTaskList)
 			// 获取job任务构建详情
 			deploy.GET("/publish/query/:task_id", publishController.QueryTaskRecordDetails)
+			// 覆盖写入任务图片
+			deploy.POST("/publish/images/:task_id", publishController.UpsertTaskAppletImages)
 
 			// 获取当前还在发布中的任务
 			deploy.GET("/publish/status", publishController.GetBuildTaskList)

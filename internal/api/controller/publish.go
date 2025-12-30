@@ -3,9 +3,10 @@ package controller
 import (
 	"ares/internal/api/util"
 	"ares/internal/publish"
-	"github.com/gin-gonic/gin"
 	"log/slog"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
 )
 
 type PublishController struct {
@@ -138,4 +139,37 @@ func (pc *PublishController) QueryTaskRecordDetails(c *gin.Context) {
 	}
 
 	c.JSON(200, util.ResponseSuccessful("查询成功", result))
+}
+
+// UpsertTaskAppletImages
+// @Tags Publish
+// @Summary 覆盖写入任务的小程序图片
+// @Description 覆盖写入指定 task_id 的图片列表（按 type 维度去重，后者覆盖前者）
+// @Param task_id path int true "构建任务ID"
+// @Param request body publish.UpsertTaskAppletImagesRequest true "图片列表"
+// @Success 200 {object} util.ResponseTemplate{code=int} "成功"
+// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
+// @Router /api/v1/deploy/publish/images/{task_id} [post]
+func (pc *PublishController) UpsertTaskAppletImages(c *gin.Context) {
+	taskIDStr := c.Param("task_id")
+	taskID, err := strconv.Atoi(taskIDStr)
+	if err != nil {
+		c.JSON(400, util.ResponseFailure("无效的任务ID", err.Error()))
+		return
+	}
+
+	var req publish.UpsertTaskAppletImagesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+		return
+	}
+
+	if err := pc.publishManager.UpsertTaskAppletImages(taskID, req.AppletImages); err != nil {
+		c.JSON(500, util.ResponseFailure("写入失败", err.Error()))
+		slog.Error("写入任务图片失败", "task_id", taskID, "error", err)
+		return
+	}
+
+	c.JSON(200, util.ResponseSuccessful("写入成功", nil))
 }

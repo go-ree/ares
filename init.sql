@@ -72,6 +72,18 @@ CREATE TABLE ares.task_record (
     deleted_at TIMESTAMP NULL DEFAULT NULL
 );
 
+-- 任务图片表：按 task_id 存放多种渠道（type）的图片 url
+CREATE TABLE ares.task_record_images (
+    id BIGINT(20) AUTO_INCREMENT PRIMARY KEY,
+    task_id INT(11) NOT NULL,
+    img_type VARCHAR(32) NOT NULL,
+    url VARCHAR(1024) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_task_id_img_type (task_id, img_type),
+    INDEX idx_task_id (task_id)
+);
+
 CREATE TABLE ares.pipelines (
     id INT(11) AUTO_INCREMENT PRIMARY KEY,
     job_name VARCHAR(100) NOT NULL UNIQUE,

@@ -51,6 +51,7 @@ func InitializeDB() error {
 		new(entity.Apps),
 		new(entity.AppConfigs),
 		new(entity.TaskRecord),
+		new(entity.TaskRecordImage),
 		new(entity.Pipelines),
 		new(entity.EnvConfigs),
 	)

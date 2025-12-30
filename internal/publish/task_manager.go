@@ -49,7 +49,6 @@ func (tm *TaskManager) UpdateTaskStatuses() {
 
 	}
 	wg.Wait()
-	return
 }
 
 // fetchTasks 查询状态为编译中、编译成功或打包中的任务

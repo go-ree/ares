@@ -186,6 +186,24 @@ func (pm *PublishManager) QueryBuildPublish(ctx context.Context, params PublishQ
 			"page_num", params.GetPageNum(),
 			"page_size", pageSize,
 			"offset", offset)
+
+		// 批量回填任务图片：仅新增字段 applet_images，不影响原有字段
+		taskIDs := make([]int, 0, len(taskRecord))
+		for i := range taskRecord {
+			taskIDs = append(taskIDs, taskRecord[i].TaskId)
+		}
+		imgMap, err := fetchTaskRecordImagesByTaskIDs(taskIDs)
+		if err != nil {
+			return nil, err
+		}
+		for i := range taskRecord {
+			if imgs, ok := imgMap[taskRecord[i].TaskId]; ok {
+				taskRecord[i].AppletImages = imgs
+			} else {
+				// 保持前端好处理：没数据返回空数组而不是 null
+				taskRecord[i].AppletImages = make([]entity.AppletImage, 0)
+			}
+		}
 	}
 
 	// 构建返回结果
