@@ -44,6 +44,19 @@ CREATE TABLE ares.app_configs (
     FOREIGN KEY (app_id) REFERENCES apps(app_id)
 );
 
+-- 多域名配置：基于 app_configs.config_id 绑定多个 host/path
+CREATE TABLE ares.app_config_domains (
+    id BIGINT(20) AUTO_INCREMENT PRIMARY KEY,
+    config_id INT(11) NOT NULL,
+    host VARCHAR(255) NOT NULL,
+    path VARCHAR(255) NOT NULL DEFAULT '/',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL DEFAULT NULL,
+    UNIQUE KEY uk_config_id_host_path (config_id, host, path),
+    INDEX idx_config_id (config_id)
+);
+
 CREATE TABLE ares.task_record (
     task_id INT(11) AUTO_INCREMENT PRIMARY KEY,
     app_name VARCHAR(255) NOT NULL,

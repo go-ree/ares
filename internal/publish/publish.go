@@ -319,6 +319,22 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 	JenkinsParam["pre_stop_command"] = appConfig.PreStopCommand
 	JenkinsParam["domain"] = appConfig.Domain
 	JenkinsParam["domain_path"] = appConfig.DomainPath
+
+	// 多域名支持：优先读取 app_config_domains，存在则额外下发 domains（JSON 字符串），不影响旧的 domain/domain_path
+	if appConfig.ConfigID > 0 {
+		rows, err := fetchAppConfigDomains(appConfig.ConfigID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("查询多域名配置失败：%s", err)
+		}
+		domains := normalizeIngressDomains(rows)
+		if len(domains) > 0 {
+			b, err := json.Marshal(domains)
+			if err != nil {
+				return nil, nil, fmt.Errorf("序列化多域名配置失败：%s", err)
+			}
+			JenkinsParam["domains"] = string(b)
+		}
+	}
 	JenkinsParam["image"] = image
 	JenkinsParam["dev_language"] = app.DevLanguage
 

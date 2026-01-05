@@ -50,6 +50,7 @@ func InitializeDB() error {
 	err := Engine.Sync2(
 		new(entity.Apps),
 		new(entity.AppConfigs),
+		new(entity.AppConfigDomain),
 		new(entity.TaskRecord),
 		new(entity.TaskRecordImage),
 		new(entity.Pipelines),
