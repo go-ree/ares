@@ -4,9 +4,13 @@
       <template #header>
         <h2>系统登录</h2>
       </template>
-      <el-form>
+      <el-form @submit.prevent>
         <el-form-item>
-          <el-input v-model="nameCn" placeholder="请输入您的姓名" @keyup.enter="handleLogin" />
+          <el-input
+            v-model="nameCn"
+            placeholder="请输入您的姓名"
+            @keyup.enter.prevent="handleLogin"
+          />
         </el-form-item>
         <el-form-item>
           <el-button

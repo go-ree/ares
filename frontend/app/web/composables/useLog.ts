@@ -209,7 +209,7 @@ export function useLog() {
         // 标记已不是首次加载
         isFirstLoad.value = false;
       } else {
-        throw new Error(response.data.msg || '查询失败');
+        throw new Error(response.data.message || '查询失败');
       }
     } catch (error) {
       console.error('查询日志失败:', error);
@@ -446,6 +446,10 @@ export function useLog() {
             if (performanceMetrics.value.totalDataCount === 1) {
               console.log('首次收到CI日志数据，立即显示历史日志:', data.result.length, '行');
               ciLog.value = data.result.join('\n') + '\n';
+              // 首次数据到达，立即关闭 loading，避免一直转圈
+              if (ciLogLoading.value) {
+                ciLogLoading.value = false;
+              }
               // 立即滚动到底部
               setTimeout(() => scrollToBottomIfActive('ci', ciLogContainer.value), 100);
             } else {
@@ -455,12 +459,12 @@ export function useLog() {
             performanceMetrics.value.updateCount++;
           } else if (data.code === 0) {
             // 处理错误，但不清理连接
-            console.error('CI日志SSE错误:', data.msg || data.error);
+            console.error('CI日志SSE错误:', data.message || data.error);
             if (!ciLog.value) {
-              ciLog.value = '获取CI日志失败: ' + (data.msg || data.error);
+              ciLog.value = '获取CI日志失败: ' + (data.message || data.error);
             }
-            rejectOnce(new Error(data.msg || data.error || '获取 CI 日志失败'));
-          } else if (data.code === 1 && data.msg === 'end') {
+            rejectOnce(new Error(data.message || data.error || '获取 CI 日志失败'));
+          } else if (data.code === 1 && data.message === 'end') {
             // 日志流结束，立即执行最后的批量更新
             if (updateTimer.value) {
               clearTimeout(updateTimer.value);
@@ -664,7 +668,7 @@ export function useLog() {
 
           // 显示错误信息
           if (!ciLog.value) {
-            ciLog.value = `获取CI日志失败: ${errorData.error || errorData.msg || '未知错误'}`;
+            ciLog.value = `获取CI日志失败: ${errorData.error || errorData.message || '未知错误'}`;
           }
 
           // 清理资源
@@ -702,7 +706,7 @@ export function useLog() {
               );
             } else {
               rejectOnce(
-                new Error(`CI日志获取失败: ${errorData.error || errorData.msg || '未知错误'}`)
+                new Error(`CI日志获取失败: ${errorData.error || errorData.message || '未知错误'}`)
               );
             }
           }
@@ -840,6 +844,10 @@ export function useLog() {
             if (performanceMetrics.value.cdDataCount === 1) {
               console.log('首次收到CD日志数据，立即显示历史日志:', data.result.length, '行');
               cdLog.value = data.result.join('\n') + '\n';
+              // 首次数据到达，立即关闭 loading，避免一直转圈
+              if (cdLogLoading.value) {
+                cdLogLoading.value = false;
+              }
               // 立即滚动到底部
               setTimeout(() => scrollToBottomIfActive('cd', cdLogContainer.value), 100);
             } else {
@@ -850,12 +858,12 @@ export function useLog() {
             performanceMetrics.value.updateCount++;
           } else if (data.code === 0) {
             // 处理错误，但不清理连接
-            console.error('CD日志SSE错误:', data.msg || data.error);
+            console.error('CD日志SSE错误:', data.message || data.error);
             if (!cdLog.value) {
-              cdLog.value = '获取CD日志失败: ' + (data.msg || data.error);
+              cdLog.value = '获取CD日志失败: ' + (data.message || data.error);
             }
-            rejectOnce(new Error(data.msg || data.error || '获取 CD 日志失败'));
-          } else if (data.code === 1 && data.msg === 'end') {
+            rejectOnce(new Error(data.message || data.error || '获取 CD 日志失败'));
+          } else if (data.code === 1 && data.message === 'end') {
             // 日志流结束，立即执行最后的批量更新
             console.log('CD日志SSE收到结束信号');
             if (updateTimer.value) {
@@ -1079,7 +1087,7 @@ export function useLog() {
 
           // 显示错误信息
           if (!cdLog.value) {
-            cdLog.value = `获取CD日志失败: ${errorData.error || errorData.msg || '未知错误'}`;
+            cdLog.value = `获取CD日志失败: ${errorData.error || errorData.message || '未知错误'}`;
           }
 
           // 清理资源
@@ -1117,7 +1125,7 @@ export function useLog() {
               );
             } else {
               rejectOnce(
-                new Error(`CD日志获取失败: ${errorData.error || errorData.msg || '未知错误'}`)
+                new Error(`CD日志获取失败: ${errorData.error || errorData.message || '未知错误'}`)
               );
             }
           }
