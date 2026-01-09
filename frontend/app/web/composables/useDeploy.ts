@@ -225,10 +225,16 @@ export function useDeploy() {
 
       if (response.data.code === 1) {
         const taskRecord = response.data.result;
-        service.taskId = taskRecord.task_record.task_id;
+        const taskId = taskRecord?.task_record?.task_id;
+        if (!taskId) {
+          throw new Error(
+            taskRecord?.error || response.data.msg || (response.data as any).message || '发布失败'
+          );
+        }
+        service.taskId = taskId;
         ElMessage.success(`${service.serviceName} 发布任务已提交`);
       } else {
-        throw new Error(response.data.message || '发布失败');
+        throw new Error(response.data.msg || (response.data as any).message || '发布失败');
       }
     } catch (error) {
       service.status = '发布失败';
@@ -261,10 +267,16 @@ export function useDeploy() {
 
       if (response.data.code === 1) {
         const taskRecord = response.data.result;
-        service.taskId = taskRecord.task_record.task_id;
+        const taskId = taskRecord?.task_record?.task_id;
+        if (!taskId) {
+          throw new Error(
+            taskRecord?.error || response.data.msg || (response.data as any).message || '重发失败'
+          );
+        }
+        service.taskId = taskId;
         ElMessage.success(`${service.serviceName} 重发任务已提交`);
       } else {
-        throw new Error(response.data.message || '重发失败');
+        throw new Error(response.data.msg || (response.data as any).message || '重发失败');
       }
     } catch (error) {
       service.status = '发布失败';
@@ -333,7 +345,7 @@ export function useDeploy() {
           }
         }
       } else {
-        throw new Error(response.data.message || '批量发布失败');
+        throw new Error(response.data.msg || '批量发布失败');
       }
     } catch (error) {
       console.error('批量发布失败:', error);
@@ -408,7 +420,7 @@ export function useDeploy() {
           }
         }
       } else {
-        throw new Error(response.data.message || '批量重发失败');
+        throw new Error(response.data.msg || '批量重发失败');
       }
     } catch (error) {
       console.error('批量重发失败:', error);
@@ -448,7 +460,7 @@ export function useDeploy() {
       const response = await api.get('/api/v1/deploy/publish/status');
 
       if (response.data.code !== 1) {
-        throw new Error(response.data.message || '获取发布中服务列表失败');
+        throw new Error(response.data.msg || '获取发布中服务列表失败');
       }
 
       // 将 API 返回的数据转换为组件需要的格式
@@ -499,7 +511,7 @@ export function useDeploy() {
         console.log('加载到的服务列表:', availableServices.value);
       } else {
         console.error('API返回错误:', response.data);
-        throw new Error(response.data.message || '获取服务列表失败');
+        throw new Error(response.data.msg || '获取服务列表失败');
       }
     } catch (error) {
       console.error('获取服务列表失败:', error);
