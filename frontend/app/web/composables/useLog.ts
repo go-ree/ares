@@ -5,6 +5,8 @@ import api from '@/config/api';
 import type { LogItem, DeployingService, LogFilter } from '@/types/deploy';
 
 export function useLog() {
+  const LOG_BATCH_FLUSH_MS = 200; // 100~300ms 批量追加，避免频繁重排
+
   // 日志筛选条件
   const logFilter = reactive<LogFilter>({
     serviceName: '',
@@ -36,6 +38,9 @@ export function useLog() {
   // SSE连接状态 - 改为Map管理多个连接
   const eventSourceMap = ref<Map<string, EventSource>>(new Map());
   const streamingStatus = ref<Map<string, boolean>>(new Map());
+  // SSE断线续传 offset（服务端会在每条消息带 id，浏览器会自动用 Last-Event-ID 重连；
+  // 这里额外缓存 last offset，用于“手动重建连接/重试”时可带 start 提升体验）
+  const lastOffsetMap = ref<Map<string, number>>(new Map());
 
   // 生成连接ID
   const generateConnectionId = (type: 'ci' | 'cd', jobName: string, buildId: number) => {
@@ -49,6 +54,7 @@ export function useLog() {
       eventSource.close();
       eventSourceMap.value.delete(connectionId);
       streamingStatus.value.delete(connectionId);
+      lastOffsetMap.value.delete(connectionId);
       console.log(`清理SSE连接: ${connectionId}`);
     }
   };
@@ -61,6 +67,7 @@ export function useLog() {
     });
     eventSourceMap.value.clear();
     streamingStatus.value.clear();
+    lastOffsetMap.value.clear();
   };
 
   // 工具函数
@@ -386,12 +393,15 @@ export function useLog() {
       // 先清理之前的CI连接
       cleanupConnection(generateConnectionId('ci', jobName, buildId));
 
-      const url = `/api/v1/job/stream/log?job_name=${encodeURIComponent(jobName)}&build_id=${buildId}`;
+      const connectionId = generateConnectionId('ci', jobName, buildId);
+      const start = lastOffsetMap.value.get(connectionId);
+      const url =
+        `/api/v1/job/stream/log?job_name=${encodeURIComponent(jobName)}&build_id=${buildId}` +
+        (typeof start === 'number' && !Number.isNaN(start) ? `&start=${start}` : '');
 
       console.log(`开始获取CI日志 (重试次数: ${retryCount}):`, { jobName, buildId, url });
 
-      const eventSource = new EventSource(url);
-      const connectionId = generateConnectionId('ci', jobName, buildId);
+      const eventSource = new EventSource(url, { withCredentials: false });
       eventSourceMap.value.set(connectionId, eventSource);
       streamingStatus.value.set(connectionId, true);
 
@@ -399,6 +409,7 @@ export function useLog() {
       let isResolved = false;
       let messageCount = 0; // 添加消息计数器
       let is404Error = false; // 添加404错误标志
+      let handledServerErrorEvent = false; // event: error（服务端推送）已处理标志，避免与 onerror 重复处理
 
       const resolveOnce = (value?: any) => {
         if (!isResolved) {
@@ -418,6 +429,12 @@ export function useLog() {
         try {
           console.log('CI日志SSE收到数据:', event.data);
           hasReceivedData = true;
+          if (event.lastEventId) {
+            const offset = Number(event.lastEventId);
+            if (!Number.isNaN(offset)) {
+              lastOffsetMap.value.set(connectionId, offset);
+            }
+          }
 
           // 记录第一个数据的时间
           if (performanceMetrics.value.firstDataTime === 0) {
@@ -429,18 +446,11 @@ export function useLog() {
 
           performanceMetrics.value.totalDataCount++;
 
-          // 解析JSON数据
+          // 解析JSON数据（只关心 result: string[]）
           const data = JSON.parse(event.data);
           if (data.code === 1 && data.result && Array.isArray(data.result)) {
-            // 如果是空数组，说明是心跳信号，不更新日志内容
-            if (data.result.length === 0) {
-              console.log('CI日志SSE收到心跳信号，连接保持活跃');
-              // 重置心跳计数器
-              if (ciHeartbeatInterval) {
-                ciHeartbeatCount = 0;
-              }
-              return;
-            }
+            // 空数组直接忽略（后端心跳通过 event: ping 推送）
+            if (data.result.length === 0) return;
 
             // 如果是首次收到数据，立即显示历史日志
             if (performanceMetrics.value.totalDataCount === 1) {
@@ -464,23 +474,6 @@ export function useLog() {
               ciLog.value = '获取CI日志失败: ' + (data.message || data.error);
             }
             rejectOnce(new Error(data.message || data.error || '获取 CI 日志失败'));
-          } else if (data.code === 1 && data.message === 'end') {
-            // 日志流结束，立即执行最后的批量更新
-            if (updateTimer.value) {
-              clearTimeout(updateTimer.value);
-              updateTimer.value = null;
-            }
-            batchUpdateLogs();
-
-            console.log('=== CI日志SSE流正常结束 ===');
-            console.log('连接ID:', connectionId);
-            console.log('总数据量:', performanceMetrics.value.totalDataCount);
-            // 正确关闭连接
-            eventSource.close();
-            eventSourceMap.value.delete(connectionId);
-            streamingStatus.value.set(connectionId, false);
-            console.log('CI日志SSE连接已清理');
-            resolveOnce();
           }
         } catch (error) {
           console.error('解析CI日志SSE数据失败:', error);
@@ -491,7 +484,14 @@ export function useLog() {
         }
       };
 
+      // 心跳：event: ping（无需处理）
+      eventSource.addEventListener('ping', () => {
+        // ignore
+      });
+
       eventSource.onerror = error => {
+        // 如果已收到服务端 error 事件并处理，避免重复走网络错误逻辑
+        if (handledServerErrorEvent) return;
         console.error('CI日志SSE连接错误:', error);
         console.log(
           'CI日志SSE连接错误详情 - hasReceivedData:',
@@ -659,9 +659,10 @@ export function useLog() {
         resolveOnce();
       });
 
-      // 监听错误事件（event: error）
+      // 监听错误事件（event: error）- 这是服务端主动推送的错误事件
       eventSource.addEventListener('error', (event: MessageEvent) => {
         console.log('收到SSE error事件，处理错误');
+        handledServerErrorEvent = true;
         try {
           const errorData = JSON.parse(event.data);
           console.error('CI日志SSE错误事件:', errorData);
@@ -780,12 +781,15 @@ export function useLog() {
       // 先清理之前的CD连接
       cleanupConnection(generateConnectionId('cd', jobName, buildId));
 
-      const url = `/api/v1/job/stream/log?job_name=${encodeURIComponent(jobName)}&build_id=${buildId}`;
+      const connectionId = generateConnectionId('cd', jobName, buildId);
+      const start = lastOffsetMap.value.get(connectionId);
+      const url =
+        `/api/v1/job/stream/log?job_name=${encodeURIComponent(jobName)}&build_id=${buildId}` +
+        (typeof start === 'number' && !Number.isNaN(start) ? `&start=${start}` : '');
 
       console.log(`开始获取CD日志 (重试次数: ${retryCount}):`, { jobName, buildId, url });
 
-      const eventSource = new EventSource(url);
-      const connectionId = generateConnectionId('cd', jobName, buildId);
+      const eventSource = new EventSource(url, { withCredentials: false });
       eventSourceMap.value.set(connectionId, eventSource);
       streamingStatus.value.set(connectionId, true);
 
@@ -793,6 +797,7 @@ export function useLog() {
       let isResolved = false;
       let messageCount = 0; // 添加消息计数器
       let is404Error = false; // 添加404错误标志
+      let handledServerErrorEvent = false; // event: error（服务端推送）已处理标志
 
       const resolveOnce = (value?: any) => {
         if (!isResolved) {
@@ -813,6 +818,12 @@ export function useLog() {
           messageCount++;
           console.log(`CD日志SSE收到第${messageCount}条数据:`, event.data);
           hasReceivedData = true;
+          if (event.lastEventId) {
+            const offset = Number(event.lastEventId);
+            if (!Number.isNaN(offset)) {
+              lastOffsetMap.value.set(connectionId, offset);
+            }
+          }
 
           // 记录第一个数据的时间
           if (performanceMetrics.value.cdFirstDataTime === 0) {
@@ -825,20 +836,13 @@ export function useLog() {
           performanceMetrics.value.cdDataCount++;
           console.log(`CD日志数据计数: ${performanceMetrics.value.cdDataCount}`);
 
-          // 解析JSON数据
+          // 解析JSON数据（只关心 result: string[]）
           const data = JSON.parse(event.data);
           console.log('CD日志解析结果:', data);
 
           if (data.code === 1 && data.result && Array.isArray(data.result)) {
-            // 如果是空数组，说明是心跳信号，不更新日志内容
-            if (data.result.length === 0) {
-              console.log('CD日志SSE收到心跳信号，连接保持活跃');
-              // 重置心跳计数器
-              if (heartbeatInterval) {
-                heartbeatCount = 0;
-              }
-              return;
-            }
+            // 空数组直接忽略（后端心跳通过 event: ping 推送）
+            if (data.result.length === 0) return;
 
             // 如果是首次收到数据，立即显示历史日志
             if (performanceMetrics.value.cdDataCount === 1) {
@@ -863,25 +867,6 @@ export function useLog() {
               cdLog.value = '获取CD日志失败: ' + (data.message || data.error);
             }
             rejectOnce(new Error(data.message || data.error || '获取 CD 日志失败'));
-          } else if (data.code === 1 && data.message === 'end') {
-            // 日志流结束，立即执行最后的批量更新
-            console.log('CD日志SSE收到结束信号');
-            if (updateTimer.value) {
-              clearTimeout(updateTimer.value);
-              updateTimer.value = null;
-            }
-            batchUpdateLogs();
-
-            console.log('=== CD日志SSE流正常结束 ===');
-            console.log('连接ID:', connectionId);
-            console.log('总消息数:', messageCount);
-            console.log('总数据量:', performanceMetrics.value.cdDataCount);
-            // 正确关闭连接
-            eventSource.close();
-            eventSourceMap.value.delete(connectionId);
-            streamingStatus.value.set(connectionId, false);
-            console.log('CD日志SSE连接已清理');
-            resolveOnce();
           } else {
             console.log('CD日志SSE收到未知数据格式:', data);
           }
@@ -894,7 +879,13 @@ export function useLog() {
         }
       };
 
+      // 心跳：event: ping（无需处理）
+      eventSource.addEventListener('ping', () => {
+        // ignore
+      });
+
       eventSource.onerror = error => {
+        if (handledServerErrorEvent) return;
         console.error('CD日志SSE连接错误:', error);
         console.log(
           'CD日志SSE连接错误详情 - hasReceivedData:',
@@ -1081,6 +1072,7 @@ export function useLog() {
       // 监听错误事件（event: error）
       eventSource.addEventListener('error', (event: MessageEvent) => {
         console.log('收到SSE error事件，处理错误');
+        handledServerErrorEvent = true;
         try {
           const errorData = JSON.parse(event.data);
           console.error('CD日志SSE错误事件:', errorData);
@@ -1524,7 +1516,7 @@ export function useLog() {
       console.log('执行批量更新定时器');
       batchUpdateLogs();
       updateTimer.value = null;
-    }, 50); // 减少到50ms，提升响应速度
+    }, LOG_BATCH_FLUSH_MS);
   };
 
   // 获取显示的日志内容（限制行数提升性能）
