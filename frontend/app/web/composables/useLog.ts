@@ -589,6 +589,11 @@ export function useLog() {
         // 确保连接状态为活跃
         streamingStatus.value.set(connectionId, true);
         console.log('CI连接状态已设置为活跃');
+        // 连接已建立就结束“获取中”的 loading，让界面至少显示“实时获取中/等待输出”
+        // 注意：真正的日志追加仍依赖服务端正确 flush SSE event（以 \n\n 结束事件）
+        if (ciLogLoading.value) {
+          ciLogLoading.value = false;
+        }
       };
 
       // 设置超时处理
@@ -997,6 +1002,10 @@ export function useLog() {
         // 确保连接状态为活跃
         streamingStatus.value.set(connectionId, true);
         console.log('CD连接状态已设置为活跃');
+        // 连接已建立就结束“获取中”的 loading，让界面至少显示“实时获取中/等待输出”
+        if (cdLogLoading.value) {
+          cdLogLoading.value = false;
+        }
       };
 
       // 设置超时处理
