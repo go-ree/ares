@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"io"
+	"strconv"
 	"sync"
 )
 
@@ -68,7 +69,14 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 		return
 	}
 
-	logChan := make(chan []string)
+	// EventSource 断线重连会自动携带 Last-Event-ID：这里用它作为 progressiveText 的 start，实现零前端改动的断线续传
+	if lastID := c.GetHeader("Last-Event-ID"); lastID != "" {
+		if v, err := strconv.ParseInt(lastID, 10, 64); err == nil && v >= 0 {
+			query.Start = v
+		}
+	}
+
+	logChan := make(chan jenkins.BuildLogChunk)
 	errChan := make(chan error, 1)
 	var mu sync.Mutex
 
@@ -96,19 +104,25 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 	// 使用Stream方法处理响应
 	c.Stream(func(w io.Writer) bool {
 		select {
-		case logLines, ok := <-logChan:
+		case chunk, ok := <-logChan:
 			if !ok {
 				return false
 			}
+			// 心跳：只用于保持连接，不触发前端默认 onmessage（event != message）
+			if chunk.IsPing {
+				_, _ = fmt.Fprintf(w, "event: ping\nid: %d\ndata: {}\n\n", chunk.NextStart)
+				return true
+			}
 			mu.Lock()
 			// 将日志列表包装在响应对象中
-			response := util.ResponseSuccessful("", logLines)
+			response := util.ResponseSuccessful("", chunk.Lines)
 			responseBytes, err := json.Marshal(response)
 			if err != nil {
 				mu.Unlock()
 				return false
 			}
-			_, err = fmt.Fprintf(w, "data: %s\n\n", string(responseBytes))
+			// 使用 SSE id 实现断线续传（EventSource 自动携带 Last-Event-ID 重连）
+			_, err = fmt.Fprintf(w, "id: %d\ndata: %s\n\n", chunk.NextStart, string(responseBytes))
 			if err != nil {
 				mu.Unlock()
 				return false
