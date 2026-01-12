@@ -54,7 +54,7 @@ export function useLog() {
       eventSource.close();
       eventSourceMap.value.delete(connectionId);
       streamingStatus.value.delete(connectionId);
-      lastOffsetMap.value.delete(connectionId);
+      // 不删除 lastOffsetMap：用于“手动重建连接/重试”时携带 start=offset 增强续传体验
       console.log(`清理SSE连接: ${connectionId}`);
     }
   };
@@ -380,7 +380,12 @@ export function useLog() {
 
   // 使用SSE获取CI日志
   const fetchCiLogsStream = async (jobName: string, buildId: number, retryCount = 0) => {
-    const maxRetries = 5; // 增加重试次数，提高连接稳定性
+    // 说明：
+    // - 这里只做“标准 SSE 消费者”：message/ping/end/error
+    // - 断线重连/Last-Event-ID 由浏览器 EventSource 自动完成
+    // - 服务端会在每条消息带 id，前端仅缓存 lastEventId 以便“手动重建连接”时带 start
+    // - 不再做自定义心跳/超时/递归重试（这些容易误判“暂时没新日志”为异常）
+    void retryCount;
 
     return new Promise<void>((resolve, reject) => {
       // 检查是否已经存在相同的活跃连接
@@ -403,13 +408,9 @@ export function useLog() {
 
       const eventSource = new EventSource(url, { withCredentials: false });
       eventSourceMap.value.set(connectionId, eventSource);
-      streamingStatus.value.set(connectionId, true);
+      streamingStatus.value.set(connectionId, false);
 
-      let hasReceivedData = false;
       let isResolved = false;
-      let messageCount = 0; // 添加消息计数器
-      let is404Error = false; // 添加404错误标志
-      let handledServerErrorEvent = false; // event: error（服务端推送）已处理标志，避免与 onerror 重复处理
 
       const resolveOnce = (value?: any) => {
         if (!isResolved) {
@@ -427,8 +428,6 @@ export function useLog() {
 
       eventSource.onmessage = (event: MessageEvent) => {
         try {
-          console.log('CI日志SSE收到数据:', event.data);
-          hasReceivedData = true;
           if (event.lastEventId) {
             const offset = Number(event.lastEventId);
             if (!Number.isNaN(offset)) {
@@ -436,50 +435,34 @@ export function useLog() {
             }
           }
 
-          // 记录第一个数据的时间
-          if (performanceMetrics.value.firstDataTime === 0) {
-            performanceMetrics.value.firstDataTime = Date.now();
-            const connectionDelay =
-              performanceMetrics.value.firstDataTime - performanceMetrics.value.connectionTime;
-            console.log(`SSE第一个数据延迟: ${connectionDelay}ms`);
-          }
-
-          performanceMetrics.value.totalDataCount++;
-
           // 解析JSON数据（只关心 result: string[]）
           const data = JSON.parse(event.data);
           if (data.code === 1 && data.result && Array.isArray(data.result)) {
             // 空数组直接忽略（后端心跳通过 event: ping 推送）
             if (data.result.length === 0) return;
 
-            // 如果是首次收到数据，立即显示历史日志
-            if (performanceMetrics.value.totalDataCount === 1) {
-              console.log('首次收到CI日志数据，立即显示历史日志:', data.result.length, '行');
+            // 首次内容直接渲染；后续走批量队列
+            if (!ciLog.value) {
               ciLog.value = data.result.join('\n') + '\n';
-              // 首次数据到达，立即关闭 loading，避免一直转圈
-              if (ciLogLoading.value) {
-                ciLogLoading.value = false;
-              }
+              ciLogLoading.value = false;
               // 立即滚动到底部
               setTimeout(() => scrollToBottomIfActive('ci', ciLogContainer.value), 100);
             } else {
-              // 后续数据使用批量更新，提升性能
               addToUpdateQueue('ci', data.result);
             }
-            performanceMetrics.value.updateCount++;
           } else if (data.code === 0) {
-            // 处理错误，但不清理连接
-            console.error('CI日志SSE错误:', data.message || data.error);
-            if (!ciLog.value) {
-              ciLog.value = '获取CI日志失败: ' + (data.message || data.error);
-            }
-            rejectOnce(new Error(data.message || data.error || '获取 CI 日志失败'));
+            const msg = data.message || data.msg || data.error || '获取 CI 日志失败';
+            if (!ciLog.value) ciLog.value = `获取CI日志失败: ${msg}`;
+            // 服务端返回业务错误：关闭连接
+            cleanupConnection(connectionId);
+            rejectOnce(new Error(msg));
           }
         } catch (error) {
           console.error('解析CI日志SSE数据失败:', error);
           if (!ciLog.value) {
             ciLog.value = '解析CI日志数据失败';
           }
+          cleanupConnection(connectionId);
           rejectOnce(error);
         }
       };
@@ -489,291 +472,50 @@ export function useLog() {
         // ignore
       });
 
-      eventSource.onerror = error => {
-        // 如果已收到服务端 error 事件并处理，避免重复走网络错误逻辑
-        if (handledServerErrorEvent) return;
-        console.error('CI日志SSE连接错误:', error);
-        console.log(
-          'CI日志SSE连接错误详情 - hasReceivedData:',
-          hasReceivedData,
-          'retryCount:',
-          retryCount,
-          'readyState:',
-          eventSource.readyState,
-          'is404Error:',
-          is404Error
-        );
-
-        // 尝试解析错误数据，检查是否为404错误
-        try {
-          if (error instanceof MessageEvent && error.data) {
-            const errorData = JSON.parse(error.data);
-            console.log('CI日志SSE原生错误处理器解析到错误数据:', errorData);
-
-            if (errorData.error === '404') {
-              console.log('CI日志SSE原生错误处理器检测到404错误，不再重试');
-              is404Error = true;
-              if (!ciLog.value) {
-                ciLog.value = '未找到日志信息';
-              }
-              eventSource.close();
-              eventSourceMap.value.delete(connectionId);
-              streamingStatus.value.set(connectionId, false);
-              clearTimeout(timeout);
-              cleanupCiHeartbeat();
-              rejectOnce(new Error(`任务不存在: ${errorData.error}`));
-              return;
-            }
-          }
-        } catch (parseError) {
-          console.log('CI日志SSE原生错误处理器无法解析错误数据:', parseError);
-        }
-
-        // 如果是404错误，不再重试
-        if (is404Error) {
-          console.log('CI日志SSE 404错误已处理，不再重试');
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
-          cleanupCiHeartbeat();
-          return;
-        }
-
-        // 如果连接已经关闭且收到过数据，认为日志已经完成，不再重试
-        if (eventSource.readyState === EventSource.CLOSED && hasReceivedData) {
-          console.log('CI日志SSE连接已关闭且收到过数据，认为日志已完成');
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
-          resolveOnce();
-          return;
-        }
-
-        if (retryCount < maxRetries) {
-          // 如果未超过重试次数，尝试重试（无论是否收到过数据）
-          console.log(`CI日志SSE连接失败，${retryCount + 1}秒后重试...`);
-          // 清理当前连接
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-
-          setTimeout(
-            () => {
-              // 强制清理现有连接，确保重试能成功
-              cleanupConnection(connectionId);
-              fetchCiLogsStream(jobName, buildId, retryCount + 1)
-                .then(resolveOnce)
-                .catch(rejectOnce);
-            },
-            3000 * (retryCount + 1)
-          ); // 增加重试延迟，给服务器更多时间恢复
-        } else {
-          // 超过重试次数，清理连接
-          console.log('CI日志SSE连接失败，已超过重试次数');
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
-          rejectOnce(new Error('CI日志SSE连接失败，已重试' + maxRetries + '次'));
-        }
-      };
-
       eventSource.onopen = () => {
-        console.log('=== CI日志SSE连接已建立 ===');
-        console.log('连接ID:', connectionId);
-        console.log('URL:', url);
-        performanceMetrics.value.connectionTime = Date.now();
-        console.log('SSE连接建立时间:', new Date().toISOString());
-        // 确保连接状态为活跃
         streamingStatus.value.set(connectionId, true);
-        console.log('CI连接状态已设置为活跃');
-        // 连接已建立就结束“获取中”的 loading，让界面至少显示“实时获取中/等待输出”
-        // 注意：真正的日志追加仍依赖服务端正确 flush SSE event（以 \n\n 结束事件）
-        if (ciLogLoading.value) {
-          ciLogLoading.value = false;
-        }
+        ciLogLoading.value = false;
+        resolveOnce();
       };
-
-      // 设置超时处理
-      const timeout = setTimeout(() => {
-        console.log(
-          'CI日志SSE超时，hasReceivedData:',
-          hasReceivedData,
-          'retryCount:',
-          retryCount,
-          'readyState:',
-          eventSource.readyState
-        );
-
-        // 如果连接已经关闭且收到过数据，认为日志已经完成，不再重试
-        if (eventSource.readyState === EventSource.CLOSED && hasReceivedData) {
-          console.log('CI日志SSE超时但连接已关闭且收到过数据，认为日志已完成');
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          resolveOnce();
-          return;
-        }
-
-        if (retryCount < maxRetries) {
-          // 超时且未超过重试次数，尝试重试（无论是否收到过数据）
-          console.log(`CI日志SSE超时，${retryCount + 1}秒后重试...`);
-          // 清理当前连接
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          cleanupCiHeartbeat();
-
-          setTimeout(
-            () => {
-              // 强制清理现有连接，确保重试能成功
-              cleanupConnection(connectionId);
-              fetchCiLogsStream(jobName, buildId, retryCount + 1)
-                .then(resolveOnce)
-                .catch(rejectOnce);
-            },
-            3000 * (retryCount + 1)
-          ); // 增加重试延迟，给服务器更多时间恢复
-        } else {
-          // 超过重试次数，清理连接
-          console.log('CI日志SSE超时，已超过重试次数');
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
-          cleanupCiHeartbeat();
-          rejectOnce(new Error('CI日志获取超时，已重试' + maxRetries + '次'));
-        }
-      }, 60000); // 增加到60秒超时，给CI日志更多时间
 
       // 监听日志流结束事件（event: end）
-      eventSource.addEventListener('end', (event: MessageEvent) => {
-        console.log('收到SSE end事件，日志流结束');
-        clearTimeout(timeout);
-        cleanupCiHeartbeat();
+      eventSource.addEventListener('end', () => {
         if (updateTimer.value) {
           clearTimeout(updateTimer.value);
           updateTimer.value = null;
         }
         batchUpdateLogs();
-        eventSource.close();
-        eventSourceMap.value.delete(connectionId);
-        streamingStatus.value.set(connectionId, false);
-        resolveOnce();
+        cleanupConnection(connectionId);
       });
 
       // 监听错误事件（event: error）- 这是服务端主动推送的错误事件
-      eventSource.addEventListener('error', (event: MessageEvent) => {
-        console.log('收到SSE error事件，处理错误');
-        handledServerErrorEvent = true;
-        try {
-          const errorData = JSON.parse(event.data);
-          console.error('CI日志SSE错误事件:', errorData);
-
-          // 显示错误信息
-          if (!ciLog.value) {
-            ciLog.value = `获取CI日志失败: ${errorData.error || errorData.message || '未知错误'}`;
+      eventSource.addEventListener('error', (event: Event) => {
+        // 注意：EventSource 原生 error 事件既可能是网络错误(Event)，也可能是服务端自定义 event:error(MessageEvent)
+        if (event instanceof MessageEvent && event.data) {
+          try {
+            const errorData = JSON.parse(event.data);
+            const msg = errorData.error || errorData.message || '未知错误';
+            if (!ciLog.value) ciLog.value = `获取CI日志失败: ${msg}`;
+            cleanupConnection(connectionId);
+            rejectOnce(new Error(msg));
+          } catch {
+            if (!ciLog.value) ciLog.value = '获取CI日志失败: 解析错误事件失败';
+            cleanupConnection(connectionId);
+            rejectOnce(new Error('解析错误事件失败'));
           }
-
-          // 清理资源
-          clearTimeout(timeout);
-          cleanupCiHeartbeat();
-          if (updateTimer.value) {
-            clearTimeout(updateTimer.value);
-            updateTimer.value = null;
-          }
-
-          // 关闭连接
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
+        } else {
+          // 网络错误：不主动 close，交给浏览器自动重连
           streamingStatus.value.set(connectionId, false);
-
-          // 根据错误类型决定是否重试
-          if (errorData.error === '404') {
-            console.log('CI日志SSE 404错误，任务可能不存在，不再重试');
-            is404Error = true; // 设置404错误标志
-            if (!ciLog.value) {
-              ciLog.value = '未找到日志信息';
-            }
-            rejectOnce(new Error(`任务不存在: ${errorData.error}`));
-          } else {
-            console.log('CI日志SSE其他错误，尝试重试');
-            if (retryCount < maxRetries) {
-              setTimeout(
-                () => {
-                  cleanupConnection(connectionId);
-                  fetchCiLogsStream(jobName, buildId, retryCount + 1)
-                    .then(resolveOnce)
-                    .catch(rejectOnce);
-                },
-                3000 * (retryCount + 1)
-              );
-            } else {
-              rejectOnce(
-                new Error(`CI日志获取失败: ${errorData.error || errorData.message || '未知错误'}`)
-              );
-            }
-          }
-        } catch (parseError) {
-          console.error('解析CI日志SSE错误事件失败:', parseError);
-          // 如果解析失败，按普通错误处理
-          clearTimeout(timeout);
-          cleanupCiHeartbeat();
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          rejectOnce(new Error('解析错误事件失败'));
-        }
-      });
-
-      // 监听连接关闭事件
-      eventSource.addEventListener('close', event => {
-        console.log('CI日志SSE连接关闭事件触发');
-        clearTimeout(timeout);
-        cleanupCiHeartbeat();
-        eventSourceMap.value.delete(connectionId);
-        streamingStatus.value.set(connectionId, false);
-        // 如果收到过数据，认为日志已完成
-        if (hasReceivedData) {
-          console.log('CI日志SSE连接关闭且收到过数据，认为日志已完成');
+          ciLogLoading.value = false;
           resolveOnce();
         }
       });
-
-      // 添加心跳检测机制，在日志流暂停期间保持连接
-      let ciHeartbeatCount = 0;
-      const ciHeartbeatInterval = setInterval(() => {
-        ciHeartbeatCount++;
-        console.log(`CI日志SSE心跳检测 #${ciHeartbeatCount} - 连接状态: ${eventSource.readyState}`);
-
-        // 如果连接已关闭，清理心跳定时器
-        if (eventSource.readyState === EventSource.CLOSED) {
-          console.log('CI日志SSE连接已关闭，停止心跳检测');
-          clearInterval(ciHeartbeatInterval);
-          return;
-        }
-
-        // 如果长时间没有收到数据，可能是连接问题
-        if (ciHeartbeatCount > 60) {
-          // 60秒没有数据
-          console.log('CI日志SSE心跳检测超时，连接可能有问题');
-          clearInterval(ciHeartbeatInterval);
-          // 不主动关闭连接，让错误处理逻辑处理
-        }
-      }, 1000); // 每秒检测一次
-
-      // 在连接关闭时清理心跳定时器
-      const cleanupCiHeartbeat = () => {
-        clearInterval(ciHeartbeatInterval);
-      };
     });
   };
 
   // 使用SSE获取CD日志
   const fetchCdLogsStream = async (jobName: string, buildId: number, retryCount = 0) => {
-    const maxRetries = 5; // 增加重试次数，提高CD日志连接稳定性
+    void retryCount;
 
     return new Promise<void>((resolve, reject) => {
       // 检查是否已经存在相同的活跃连接
@@ -796,13 +538,9 @@ export function useLog() {
 
       const eventSource = new EventSource(url, { withCredentials: false });
       eventSourceMap.value.set(connectionId, eventSource);
-      streamingStatus.value.set(connectionId, true);
+      streamingStatus.value.set(connectionId, false);
 
-      let hasReceivedData = false;
       let isResolved = false;
-      let messageCount = 0; // 添加消息计数器
-      let is404Error = false; // 添加404错误标志
-      let handledServerErrorEvent = false; // event: error（服务端推送）已处理标志
 
       const resolveOnce = (value?: any) => {
         if (!isResolved) {
@@ -820,9 +558,6 @@ export function useLog() {
 
       eventSource.onmessage = (event: MessageEvent) => {
         try {
-          messageCount++;
-          console.log(`CD日志SSE收到第${messageCount}条数据:`, event.data);
-          hasReceivedData = true;
           if (event.lastEventId) {
             const offset = Number(event.lastEventId);
             if (!Number.isNaN(offset)) {
@@ -830,48 +565,26 @@ export function useLog() {
             }
           }
 
-          // 记录第一个数据的时间
-          if (performanceMetrics.value.cdFirstDataTime === 0) {
-            performanceMetrics.value.cdFirstDataTime = Date.now();
-            const connectionDelay =
-              performanceMetrics.value.cdFirstDataTime - performanceMetrics.value.cdConnectionTime;
-            console.log(`CD日志SSE第一个数据延迟: ${connectionDelay}ms`);
-          }
-
-          performanceMetrics.value.cdDataCount++;
-          console.log(`CD日志数据计数: ${performanceMetrics.value.cdDataCount}`);
-
           // 解析JSON数据（只关心 result: string[]）
           const data = JSON.parse(event.data);
-          console.log('CD日志解析结果:', data);
 
           if (data.code === 1 && data.result && Array.isArray(data.result)) {
             // 空数组直接忽略（后端心跳通过 event: ping 推送）
             if (data.result.length === 0) return;
 
-            // 如果是首次收到数据，立即显示历史日志
-            if (performanceMetrics.value.cdDataCount === 1) {
-              console.log('首次收到CD日志数据，立即显示历史日志:', data.result.length, '行');
+            if (!cdLog.value) {
               cdLog.value = data.result.join('\n') + '\n';
-              // 首次数据到达，立即关闭 loading，避免一直转圈
-              if (cdLogLoading.value) {
-                cdLogLoading.value = false;
-              }
+              cdLogLoading.value = false;
               // 立即滚动到底部
               setTimeout(() => scrollToBottomIfActive('cd', cdLogContainer.value), 100);
             } else {
-              // 后续数据使用批量更新，提升性能
-              console.log(`CD日志后续数据，添加到更新队列: ${data.result.length} 行`);
               addToUpdateQueue('cd', data.result);
             }
-            performanceMetrics.value.updateCount++;
           } else if (data.code === 0) {
-            // 处理错误，但不清理连接
-            console.error('CD日志SSE错误:', data.message || data.error);
-            if (!cdLog.value) {
-              cdLog.value = '获取CD日志失败: ' + (data.message || data.error);
-            }
-            rejectOnce(new Error(data.message || data.error || '获取 CD 日志失败'));
+            const msg = data.message || data.msg || data.error || '获取 CD 日志失败';
+            if (!cdLog.value) cdLog.value = `获取CD日志失败: ${msg}`;
+            cleanupConnection(connectionId);
+            rejectOnce(new Error(msg));
           } else {
             console.log('CD日志SSE收到未知数据格式:', data);
           }
@@ -880,6 +593,7 @@ export function useLog() {
           if (!cdLog.value) {
             cdLog.value = '解析CD日志数据失败';
           }
+          cleanupConnection(connectionId);
           rejectOnce(error);
         }
       };
@@ -889,299 +603,43 @@ export function useLog() {
         // ignore
       });
 
-      eventSource.onerror = error => {
-        if (handledServerErrorEvent) return;
-        console.error('CD日志SSE连接错误:', error);
-        console.log(
-          'CD日志SSE连接错误详情 - hasReceivedData:',
-          hasReceivedData,
-          'retryCount:',
-          retryCount,
-          'readyState:',
-          eventSource.readyState,
-          'is404Error:',
-          is404Error
-        );
-
-        // 尝试解析错误数据，检查是否为404错误
-        try {
-          if (error instanceof MessageEvent && error.data) {
-            const errorData = JSON.parse(error.data);
-            console.log('CD日志SSE原生错误处理器解析到错误数据:', errorData);
-
-            if (errorData.error === '404') {
-              console.log('CD日志SSE原生错误处理器检测到404错误，不再重试');
-              is404Error = true;
-              if (!cdLog.value) {
-                cdLog.value = '未找到日志信息';
-              }
-              eventSource.close();
-              eventSourceMap.value.delete(connectionId);
-              streamingStatus.value.set(connectionId, false);
-              clearTimeout(timeout);
-              cleanupHeartbeat();
-              rejectOnce(new Error(`任务不存在: ${errorData.error}`));
-              return;
-            }
-          }
-        } catch (parseError) {
-          console.log('CD日志SSE原生错误处理器无法解析错误数据:', parseError);
-        }
-
-        // 如果是404错误，不再重试
-        if (is404Error) {
-          console.log('CD日志SSE 404错误已处理，不再重试');
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
-          cleanupHeartbeat();
-          return;
-        }
-
-        // 如果连接已经关闭且收到过数据，认为日志已经完成，不再重试
-        if (eventSource.readyState === EventSource.CLOSED && hasReceivedData) {
-          console.log('CD日志SSE连接已关闭且收到过数据，认为日志已完成');
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
-          cleanupHeartbeat();
-          resolveOnce();
-          return;
-        }
-
-        // 如果收到过数据但连接还在，可能是日志流暂停，不要立即重试
-        if (hasReceivedData && eventSource.readyState !== EventSource.CLOSED) {
-          console.log(
-            'CD日志SSE连接错误但已收到数据且连接未关闭，可能是日志流暂停，等待更多数据...'
-          );
-          return;
-        }
-
-        if (retryCount < maxRetries) {
-          // 如果未超过重试次数，尝试重试（无论是否收到过数据）
-          console.log(`CD日志SSE连接失败，${retryCount + 1}秒后重试...`);
-          // 清理当前连接
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-
-          // 强制清理超时定时器
-          clearTimeout(timeout);
-          cleanupHeartbeat();
-
-          setTimeout(
-            () => {
-              // 强制清理现有连接，确保重试能成功
-              cleanupConnection(connectionId);
-              fetchCdLogsStream(jobName, buildId, retryCount + 1)
-                .then(resolveOnce)
-                .catch(rejectOnce);
-            },
-            3000 * (retryCount + 1)
-          ); // 增加重试延迟，给服务器更多时间恢复
-        } else {
-          // 超过重试次数，清理连接
-          console.log('CD日志SSE连接失败，已超过重试次数');
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
-          cleanupHeartbeat();
-          rejectOnce(new Error('CD日志SSE连接失败，已重试' + maxRetries + '次'));
-        }
-      };
-
       eventSource.onopen = () => {
-        console.log('=== CD日志SSE连接已建立 ===');
-        console.log('连接ID:', connectionId);
-        console.log('URL:', url);
-        performanceMetrics.value.cdConnectionTime = Date.now();
-        console.log('CD日志SSE连接建立时间:', new Date().toISOString());
-        // 确保连接状态为活跃
         streamingStatus.value.set(connectionId, true);
-        console.log('CD连接状态已设置为活跃');
-        // 连接已建立就结束“获取中”的 loading，让界面至少显示“实时获取中/等待输出”
-        if (cdLogLoading.value) {
-          cdLogLoading.value = false;
-        }
+        cdLogLoading.value = false;
+        resolveOnce();
       };
-
-      // 设置超时处理
-      const timeout = setTimeout(() => {
-        console.log(
-          'CD日志SSE超时，hasReceivedData:',
-          hasReceivedData,
-          'retryCount:',
-          retryCount,
-          'readyState:',
-          eventSource.readyState
-        );
-
-        // 如果连接已经关闭且收到过数据，认为日志已经完成，不再重试
-        if (eventSource.readyState === EventSource.CLOSED && hasReceivedData) {
-          console.log('CD日志SSE超时但连接已关闭且收到过数据，认为日志已完成');
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
-          cleanupHeartbeat();
-          resolveOnce();
-          return;
-        }
-
-        if (retryCount < maxRetries) {
-          // 超时且未超过重试次数，尝试重试（无论是否收到过数据）
-          console.log(`CD日志SSE超时，${retryCount + 1}秒后重试...`);
-          // 清理当前连接
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          cleanupHeartbeat();
-
-          setTimeout(
-            () => {
-              // 强制清理现有连接，确保重试能成功
-              cleanupConnection(connectionId);
-              fetchCdLogsStream(jobName, buildId, retryCount + 1)
-                .then(resolveOnce)
-                .catch(rejectOnce);
-            },
-            3000 * (retryCount + 1)
-          ); // 增加重试延迟，给服务器更多时间恢复
-        } else {
-          // 超过重试次数，清理连接
-          console.log('CD日志SSE超时，已超过重试次数');
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
-          cleanupHeartbeat();
-          rejectOnce(new Error('CD日志获取超时，已重试' + maxRetries + '次'));
-        }
-      }, 120000); // 增加到120秒超时，给CD日志更多时间处理暂停期
 
       // 监听日志流结束事件（event: end）
-      eventSource.addEventListener('end', (event: MessageEvent) => {
-        console.log('收到SSE end事件，日志流结束');
-        clearTimeout(timeout);
-        cleanupHeartbeat();
+      eventSource.addEventListener('end', () => {
         if (updateTimer.value) {
           clearTimeout(updateTimer.value);
           updateTimer.value = null;
         }
         batchUpdateLogs();
-        eventSource.close();
-        eventSourceMap.value.delete(connectionId);
-        streamingStatus.value.set(connectionId, false);
-        resolveOnce();
+        cleanupConnection(connectionId);
       });
 
       // 监听错误事件（event: error）
-      eventSource.addEventListener('error', (event: MessageEvent) => {
-        console.log('收到SSE error事件，处理错误');
-        handledServerErrorEvent = true;
-        try {
-          const errorData = JSON.parse(event.data);
-          console.error('CD日志SSE错误事件:', errorData);
-
-          // 显示错误信息
-          if (!cdLog.value) {
-            cdLog.value = `获取CD日志失败: ${errorData.error || errorData.message || '未知错误'}`;
+      eventSource.addEventListener('error', (event: Event) => {
+        if (event instanceof MessageEvent && event.data) {
+          try {
+            const errorData = JSON.parse(event.data);
+            const msg = errorData.error || errorData.message || '未知错误';
+            if (!cdLog.value) cdLog.value = `获取CD日志失败: ${msg}`;
+            cleanupConnection(connectionId);
+            rejectOnce(new Error(msg));
+          } catch {
+            if (!cdLog.value) cdLog.value = '获取CD日志失败: 解析错误事件失败';
+            cleanupConnection(connectionId);
+            rejectOnce(new Error('解析错误事件失败'));
           }
-
-          // 清理资源
-          clearTimeout(timeout);
-          cleanupHeartbeat();
-          if (updateTimer.value) {
-            clearTimeout(updateTimer.value);
-            updateTimer.value = null;
-          }
-
-          // 关闭连接
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
+        } else {
+          // 网络错误：不主动 close，交给浏览器自动重连
           streamingStatus.value.set(connectionId, false);
-
-          // 根据错误类型决定是否重试
-          if (errorData.error === '404') {
-            console.log('CD日志SSE 404错误，任务可能不存在，不再重试');
-            is404Error = true; // 设置404错误标志
-            if (!cdLog.value) {
-              cdLog.value = '未找到日志信息';
-            }
-            rejectOnce(new Error(`任务不存在: ${errorData.error}`));
-          } else {
-            console.log('CD日志SSE其他错误，尝试重试');
-            if (retryCount < maxRetries) {
-              setTimeout(
-                () => {
-                  cleanupConnection(connectionId);
-                  fetchCdLogsStream(jobName, buildId, retryCount + 1)
-                    .then(resolveOnce)
-                    .catch(rejectOnce);
-                },
-                3000 * (retryCount + 1)
-              );
-            } else {
-              rejectOnce(
-                new Error(`CD日志获取失败: ${errorData.error || errorData.message || '未知错误'}`)
-              );
-            }
-          }
-        } catch (parseError) {
-          console.error('解析CD日志SSE错误事件失败:', parseError);
-          // 如果解析失败，按普通错误处理
-          clearTimeout(timeout);
-          cleanupHeartbeat();
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          rejectOnce(new Error('解析错误事件失败'));
-        }
-      });
-
-      // 监听连接关闭事件
-      eventSource.addEventListener('close', event => {
-        console.log('CD日志SSE连接关闭事件触发');
-        clearTimeout(timeout);
-        cleanupHeartbeat();
-        eventSourceMap.value.delete(connectionId);
-        streamingStatus.value.set(connectionId, false);
-        // 如果收到过数据，认为日志已完成
-        if (hasReceivedData) {
-          console.log('CD日志SSE连接关闭且收到过数据，认为日志已完成');
+          cdLogLoading.value = false;
           resolveOnce();
         }
       });
-
-      // 添加心跳检测机制，在日志流暂停期间保持连接
-      let heartbeatCount = 0;
-      const heartbeatInterval = setInterval(() => {
-        heartbeatCount++;
-        console.log(`CD日志SSE心跳检测 #${heartbeatCount} - 连接状态: ${eventSource.readyState}`);
-
-        // 如果连接已关闭，清理心跳定时器
-        if (eventSource.readyState === EventSource.CLOSED) {
-          console.log('CD日志SSE连接已关闭，停止心跳检测');
-          clearInterval(heartbeatInterval);
-          return;
-        }
-
-        // 如果长时间没有收到数据，可能是连接问题
-        if (heartbeatCount > 60) {
-          // 60秒没有数据
-          console.log('CD日志SSE心跳检测超时，连接可能有问题');
-          clearInterval(heartbeatInterval);
-          // 不主动关闭连接，让错误处理逻辑处理
-        }
-      }, 1000); // 每秒检测一次
-
-      // 在连接关闭时清理心跳定时器
-      const cleanupHeartbeat = () => {
-        clearInterval(heartbeatInterval);
-      };
     });
   };
 
@@ -1251,30 +709,16 @@ export function useLog() {
 
   // 日志对话框关闭处理
   const handleLogDialogClose = () => {
-    console.log('日志对话框关闭，暂停SSE连接但不清理数据');
-    // 不清空日志内容，保持数据
-    // 不清空连接，只是暂停状态更新
-    // 这样可以避免重新打开时的白屏问题
-
-    // 暂停批量更新定时器，但保留队列中的数据
+    // 标准做法：关闭连接避免泄漏（浏览器会在重连时自动用 Last-Event-ID 续传）
     if (updateTimer.value) {
       clearTimeout(updateTimer.value);
       updateTimer.value = null;
-      console.log('暂停批量更新定时器，队列中还有数据:', updateQueue.value.length);
     }
-
-    // 暂停loading状态
+    batchUpdateLogs();
+    cleanupAllConnections();
     ciLogLoading.value = false;
     cdLogLoading.value = false;
-
-    // 停止定期检查，但不清理连接状态
     stopConnectionCheck();
-
-    // 不清空streamingStatus，保持连接状态
-    console.log('当前活跃连接状态:', Array.from(streamingStatus.value.entries()));
-    console.log('当前EventSource连接:', Array.from(eventSourceMap.value.keys()));
-
-    console.log('日志对话框关闭完成，保持连接和数据');
   };
 
   // 检测SSE连接是否真的还在工作
