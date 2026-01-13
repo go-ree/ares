@@ -91,8 +91,8 @@ CREATE TABLE ares.task_record_images (
     task_id INT(11) NOT NULL,
     img_type VARCHAR(32) NOT NULL,
     url VARCHAR(1024) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_task_id_img_type (task_id, img_type),
     INDEX idx_task_id (task_id)
 );

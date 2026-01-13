@@ -85,6 +85,128 @@ definitions:
       total_count:
         type: integer
     type: object
+  app.DomainItem:
+    properties:
+      host:
+        type: string
+      path:
+        type: string
+    type: object
+  app.PatchDomainRequest:
+    properties:
+      host:
+        type: string
+      path:
+        type: string
+    type: object
+  app.UpdateAppConfigRequest:
+    properties:
+      base_image:
+        type: string
+      code_package_name:
+        type: string
+      code_package_path:
+        type: string
+      code_package_type:
+        type: string
+      domain:
+        type: string
+      domain_path:
+        type: string
+      gpu_count:
+        type: integer
+      limits_memory:
+        type: integer
+      pod_count:
+        type: integer
+      pre_stop_check_path:
+        type: string
+      pre_stop_command:
+        type: string
+      pre_stop_type:
+        type: string
+      probe_check_path:
+        type: string
+      probe_type:
+        type: string
+    type: object
+  app.UpsertDomainsRequest:
+    properties:
+      domains:
+        items:
+          $ref: '#/definitions/app.DomainItem'
+        type: array
+    type: object
+  entity.AppConfigDomain:
+    properties:
+      config_id:
+        type: integer
+      created_at:
+        type: string
+      deleted_at:
+        type: string
+      host:
+        type: string
+      id:
+        type: integer
+      path:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  entity.AppConfigs:
+    properties:
+      app_id:
+        type: integer
+      base_image:
+        type: string
+      code_package_name:
+        type: string
+      code_package_path:
+        type: string
+      code_package_type:
+        type: string
+      config_id:
+        type: integer
+      created_at:
+        format: date-time
+        type: string
+      deleted_at:
+        format: date-time
+        type: string
+      domain:
+        type: string
+      domain_path:
+        type: string
+      env:
+        type: string
+      gpu_count:
+        type: integer
+      limits_memory:
+        type: integer
+      pod_count:
+        type: integer
+      pre_stop_check_path:
+        type: string
+      pre_stop_command:
+        type: string
+      pre_stop_type:
+        type: string
+      probe_check_path:
+        type: string
+      probe_type:
+        type: string
+      updated_at:
+        format: date-time
+        type: string
+    type: object
+  entity.AppletImage:
+    properties:
+      type:
+        type: string
+      url:
+        type: string
+    type: object
   entity.Apps:
     properties:
       app_id:
@@ -119,6 +241,11 @@ definitions:
     properties:
       app_name:
         type: string
+      applet_images:
+        description: 新增：任务图片（仅对外返回）
+        items:
+          $ref: '#/definitions/entity.AppletImage'
+        type: array
       auto_deploy:
         type: integer
       branch:
@@ -254,6 +381,8 @@ definitions:
         type: string
       env:
         type: string
+      extra_data:
+        description: 新增：接口类型
       is_rundeck:
         type: boolean
       publisher:
@@ -291,6 +420,8 @@ definitions:
       start_time:
         description: 开始时间（字符串格式）
         type: string
+      status:
+        type: string
     type: object
   publish.PublishQueryResult:
     properties:
@@ -311,6 +442,13 @@ definitions:
       total_pages:
         description: 总页数
         type: integer
+    type: object
+  publish.UpsertTaskAppletImagesRequest:
+    properties:
+      applet_images:
+        items:
+          $ref: '#/definitions/entity.AppletImage'
+        type: array
     type: object
   util.ResponseTemplate:
     properties:
@@ -340,6 +478,319 @@ definitions:
 info:
   contact: {}
 paths:
+  /api/v1/app-configs/{config_id}:
+    get:
+      parameters:
+      - description: 配置ID
+        in: path
+        name: config_id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/entity.AppConfigs'
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 按 config_id 获取配置
+      tags:
+      - AppConfig
+    patch:
+      parameters:
+      - description: 配置ID
+        in: path
+        name: config_id
+        required: true
+        type: integer
+      - description: 更新字段（指针语义）
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/app.UpdateAppConfigRequest'
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 按 config_id 更新配置（PATCH：只更新传入字段）
+      tags:
+      - AppConfig
+  /api/v1/app-configs/{config_id}/domains:
+    get:
+      parameters:
+      - description: 配置ID
+        in: path
+        name: config_id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  items:
+                    $ref: '#/definitions/entity.AppConfigDomain'
+                  type: array
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 获取指定 config_id 的多域名列表
+      tags:
+      - AppConfig
+    post:
+      parameters:
+      - description: 配置ID
+        in: path
+        name: config_id
+        required: true
+        type: integer
+      - description: 单条域名配置
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/app.DomainItem'
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/entity.AppConfigDomain'
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 新增单条多域名配置
+      tags:
+      - AppConfig
+    put:
+      parameters:
+      - description: 配置ID
+        in: path
+        name: config_id
+        required: true
+        type: integer
+      - description: domains 列表
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/app.UpsertDomainsRequest'
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 覆盖写入指定 config_id 的多域名
+      tags:
+      - AppConfig
+  /api/v1/app-configs/{config_id}/domains/{domain_id}:
+    delete:
+      parameters:
+      - description: 配置ID
+        in: path
+        name: config_id
+        required: true
+        type: integer
+      - description: 域名记录ID
+        in: path
+        name: domain_id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 删除单条多域名配置
+      tags:
+      - AppConfig
+    patch:
+      parameters:
+      - description: 配置ID
+        in: path
+        name: config_id
+        required: true
+        type: integer
+      - description: 域名记录ID
+        in: path
+        name: domain_id
+        required: true
+        type: integer
+      - description: 更新字段（指针语义）
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/app.PatchDomainRequest'
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/entity.AppConfigDomain'
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 修改单条多域名配置（PATCH：只更新传入字段）
+      tags:
+      - AppConfig
   /api/v1/apps:
     post:
       parameters:
@@ -437,6 +888,144 @@ paths:
       summary: 根据ID获取应用详情
       tags:
       - App
+  /api/v1/apps/{app_id}/configs:
+    get:
+      parameters:
+      - description: 应用ID
+        in: path
+        name: app_id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  items:
+                    $ref: '#/definitions/entity.AppConfigs'
+                  type: array
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 获取应用的所有环境配置
+      tags:
+      - AppConfig
+  /api/v1/apps/{app_id}/configs/{env}:
+    get:
+      parameters:
+      - description: 应用ID
+        in: path
+        name: app_id
+        required: true
+        type: integer
+      - description: 环境（dev/test/moni...）
+        in: path
+        name: env
+        required: true
+        type: string
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/entity.AppConfigs'
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 获取应用指定环境配置
+      tags:
+      - AppConfig
+    patch:
+      parameters:
+      - description: 应用ID
+        in: path
+        name: app_id
+        required: true
+        type: integer
+      - description: 环境（dev/test/moni...）
+        in: path
+        name: env
+        required: true
+        type: string
+      - description: 更新字段（指针语义）
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/app.UpdateAppConfigRequest'
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 更新应用指定环境配置（PATCH：只更新传入字段）
+      tags:
+      - AppConfig
   /api/v1/apps/batch:
     post:
       parameters:
@@ -706,6 +1295,52 @@ paths:
                   type: integer
               type: object
       summary: 应用进行批量发布动作
+      tags:
+      - Publish
+  /api/v1/deploy/publish/images/{task_id}:
+    post:
+      description: 覆盖写入指定 task_id 的图片列表（按 type 维度去重，后者覆盖前者）
+      parameters:
+      - description: 构建任务ID
+        in: path
+        name: task_id
+        required: true
+        type: integer
+      - description: 图片列表
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/publish.UpsertTaskAppletImagesRequest'
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 覆盖写入任务的小程序图片
       tags:
       - Publish
   /api/v1/deploy/publish/query:

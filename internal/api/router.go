@@ -13,6 +13,7 @@ import (
 
 func Router(r gin.IRouter) {
 	appsController := controller.NewAppsController()
+	appConfigsController := controller.NewAppConfigsController()
 	publishController := controller.NewPublishController()
 	podController := controller.NewPodController()
 	// Swagger 路由
@@ -72,10 +73,28 @@ func Router(r gin.IRouter) {
 			// 根据APPID获取应用详情
 			apps.GET(":app_id", appsController.GetAppByID)
 
+			// 应用环境配置（app_id + env）
+			apps.GET("/:app_id/configs", appConfigsController.ListAppConfigs)
+			apps.GET("/:app_id/configs/:env", appConfigsController.GetAppConfigByEnv)
+			apps.PATCH("/:app_id/configs/:env", appConfigsController.PatchAppConfigByEnv)
+
 			// 下线单个应用
 			//apps.DELETE("")
 			// 批量下线应用
 			//apps.DELETE("")
+		}
+
+		// 应用配置（config_id）
+		appConfigs := apiRouter.Group("/app-configs")
+		{
+			appConfigs.GET("/:config_id", appConfigsController.GetAppConfigByID)
+			appConfigs.PATCH("/:config_id", appConfigsController.PatchAppConfigByID)
+			appConfigs.GET("/:config_id/domains", appConfigsController.ListDomainsByConfigID)
+			appConfigs.PUT("/:config_id/domains", appConfigsController.OverwriteDomainsByConfigID)
+			// 多域名单条增删改
+			appConfigs.POST("/:config_id/domains", appConfigsController.CreateDomain)
+			appConfigs.DELETE("/:config_id/domains/:domain_id", appConfigsController.DeleteDomain)
+			appConfigs.PATCH("/:config_id/domains/:domain_id", appConfigsController.PatchDomain)
 		}
 		// k8s相关接口
 		k8s := apiRouter.Group("/k8s")
