@@ -15,9 +15,6 @@
 - **`code_package_name`**：`DEFAULT 'NULL'`
 - **`base_image`**：`DEFAULT 'NULL'`
 - **`pre_stop_command`**：`DEFAULT 'NULL'`
-- **`domain`**：`DEFAULT 'NULL'`
-
-> 说明：`domain_path` 当前是 `DEFAULT '/'`，不是 `"NULL"`，但它与 `domain` 往往配套治理（空语义建议统一清晰化）。
 
 ### ares.task_record
 - **`message`**：`DEFAULT 'NULL'`
@@ -35,7 +32,6 @@
 - `AppConfigs.CodePackageName`
 - `AppConfigs.BaseImage`
 - `AppConfigs.PreStopCommand`
-- `AppConfigs.Domain`
 
 ### `internal/entity/publish.go`
 - `TaskRecord.Message`

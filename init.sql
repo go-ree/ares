@@ -34,8 +34,6 @@ CREATE TABLE ares.app_configs (
     pre_stop_type VARCHAR(100) DEFAULT 'TCP',
     pre_stop_check_path VARCHAR(100) DEFAULT '/ttpai/inside/prestop',
     pre_stop_command VARCHAR(255) DEFAULT 'NULL',
-    domain VARCHAR(255) DEFAULT 'NULL',
-    domain_path VARCHAR(255) DEFAULT '/',
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

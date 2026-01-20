@@ -2250,12 +2250,6 @@ const docTemplate = `{
                 "code_package_type": {
                     "type": "string"
                 },
-                "domain": {
-                    "type": "string"
-                },
-                "domain_path": {
-                    "type": "string"
-                },
                 "gpu_count": {
                     "type": "integer"
                 },
@@ -2347,12 +2341,6 @@ const docTemplate = `{
                 "deleted_at": {
                     "type": "string",
                     "format": "date-time"
-                },
-                "domain": {
-                    "type": "string"
-                },
-                "domain_path": {
-                    "type": "string"
                 },
                 "env": {
                     "type": "string"

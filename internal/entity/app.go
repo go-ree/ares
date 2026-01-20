@@ -39,8 +39,6 @@ type AppConfigs struct {
 	PreStopType      string `xorm:"varchar(100) default 'TCP' 'pre_stop_type'" json:"pre_stop_type"`
 	PreStopCheckPath string `xorm:"varchar(100) default '/ttpai/inside/prestop' 'pre_stop_check_path' " json:"pre_stop_check_path"`
 	PreStopCommand   string `xorm:"varchar(255) default 'NULL' 'pre_stop_command'" json:"pre_stop_command"`
-	Domain           string `xorm:"varchar(255) default 'NULL' 'domain'" json:"domain"`
-	DomainPath       string `xorm:"varchar(255) default '/' 'domain_path'" json:"domain_path"`
 
 	CreatedTime time.Time  `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at" swaggertype:"string" format:"date-time"`
 	UpdatedTime time.Time  `xorm:"timestamp updated notnull DEFAULT CURRENT_TIMESTAMP 'updated_at'" json:"updated_at" swaggertype:"string" format:"date-time"`

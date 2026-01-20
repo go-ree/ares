@@ -195,8 +195,6 @@ func (am *AppManager) createDefaultConfig(app *entity.Apps) {
 			PreStopType:      "HTTP",
 			PreStopCheckPath: "/ttpai/inside/prestop",
 			PreStopCommand:   "NULL",
-			Domain:           "NULL",
-			DomainPath:       "/",
 		}
 
 		session := db.Engine.NewSession()

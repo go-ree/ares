@@ -23,8 +23,6 @@ type UpdateAppConfigRequest struct {
 	PreStopType      *string `json:"pre_stop_type"`
 	PreStopCheckPath *string `json:"pre_stop_check_path"`
 	PreStopCommand   *string `json:"pre_stop_command"`
-	Domain           *string `json:"domain"`
-	DomainPath       *string `json:"domain_path"`
 }
 
 // DomainItem 多域名配置项
@@ -109,20 +107,6 @@ func buildUpdateMap(req UpdateAppConfigRequest) (map[string]any, error) {
 	setStr("pre_stop_type", req.PreStopType)
 	setStr("pre_stop_check_path", req.PreStopCheckPath)
 	setStr("pre_stop_command", req.PreStopCommand)
-	setStr("domain", req.Domain)
-	setStr("domain_path", req.DomainPath)
-
-	// 轻量校验：domain_path 规范化
-	if req.DomainPath != nil {
-		p := strings.TrimSpace(*req.DomainPath)
-		if p == "" {
-			p = "/"
-		}
-		if !strings.HasPrefix(p, "/") {
-			return nil, fmt.Errorf("domain_path 必须以 / 开头")
-		}
-		m["domain_path"] = p
-	}
 
 	if len(m) == 0 {
 		return nil, fmt.Errorf("没有需要更新的字段")

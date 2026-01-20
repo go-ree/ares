@@ -74,8 +74,6 @@ curl -X GET '/api/v1/apps/10001/configs'
       "pre_stop_type": "HTTP",
       "pre_stop_check_path": "/ttpai/inside/prestop",
       "pre_stop_command": "NULL",
-      "domain": "a.example.com",
-      "domain_path": "/",
       "created_at": "2026-01-14T15:00:00+08:00",
       "updated_at": "2026-01-14T15:00:00+08:00",
       "deleted_at": null
@@ -105,9 +103,7 @@ curl -X GET '/api/v1/apps/10001/configs/dev'
   "result": {
     "config_id": 20001,
     "app_id": 10001,
-    "env": "dev",
-    "domain": "a.example.com",
-    "domain_path": "/"
+    "env": "dev"
   },
   "error": null,
   "help": "暂不提供帮助信息"
@@ -119,14 +115,14 @@ curl -X GET '/api/v1/apps/10001/configs/dev'
 - **PATCH** `/apps/{app_id}/configs/{env}`
 - **请求体**：`app.UpdateAppConfigRequest`（只更新传入字段）
 
-**示例：仅更新单域名（兼容字段）**
+**示例：更新探针配置**
 
 ```bash
 curl -X PATCH '/api/v1/apps/10001/configs/dev' \
   -H 'Content-Type: application/json' \
   -d '{
-    "domain": "a.example.com",
-    "domain_path": "/"
+    "probe_type": "HTTP",
+    "probe_check_path": "/healthz"
   }'
 ```
 
@@ -142,10 +138,7 @@ curl -X PATCH '/api/v1/apps/10001/configs/dev' \
 }
 ```
 
-**说明**
-
-- `domain/domain_path` 仍保留用于 **单域名兼容**。
-- 多域名请使用后文 `domains` 接口（基于 `config_id`）。
+**说明**：多域名请使用后文 `domains` 接口（基于 `config_id`）。
 
 ---
 
@@ -170,9 +163,7 @@ curl -X GET '/api/v1/app-configs/20001'
   "result": {
     "config_id": 20001,
     "app_id": 10001,
-    "env": "dev",
-    "domain": "a.example.com",
-    "domain_path": "/"
+    "env": "dev"
   },
   "error": null,
   "help": "暂不提供帮助信息"
@@ -211,7 +202,7 @@ curl -X PATCH '/api/v1/app-configs/20001' \
 
 ## 3) 多域名（Ingress host/path）配置：`app_config_domains`
 
-> 多域名以 `config_id` 绑定；发布时会额外下发 Jenkins 参数 `domains`（JSON 字符串），并保留 `domain/domain_path` 兼容字段。
+> 多域名以 `config_id` 绑定；发布时会额外下发 Jenkins 参数 `domains`（JSON 字符串）与 `domains_list`（按 host 聚合 paths 的 JSON 字符串）。
 
 ### 3.1 查询多域名列表
 

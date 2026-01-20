@@ -320,10 +320,10 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 	JenkinsParam["domain"] = "NULL"
 	JenkinsParam["domain_path"] = "/"
 
-	// domains_list（Jenkins 透传）：不再使用 app_config.domain/domain_path（计划废弃）
+	// domains_list（Jenkins 透传）：仅使用 app_config_domains（domain/domain_path 已废弃）
 	JenkinsParam["domains_list"] = "[]"
 
-	// 多域名支持：优先读取 app_config_domains，存在则额外下发 domains（JSON 字符串），不影响旧的 domain/domain_path
+	// 多域名支持：优先读取 app_config_domains，存在则额外下发 domains（JSON 字符串）+ domains_list（聚合结构）
 	if appConfig.ConfigID > 0 {
 		rows, err := fetchAppConfigDomains(appConfig.ConfigID)
 		if err != nil {
