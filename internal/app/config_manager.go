@@ -165,11 +165,29 @@ func normalizeDomainHostPath(hostRaw, pathRaw string) (host string, path string,
 		return "", "", fmt.Errorf("host 不能为 NULL")
 	}
 
+	// 严格 host 校验：
+	// - 允许：普通域名（a.example.com）
+	// - 禁止：通配符（*.example.com）、IPv4/IPv6、带协议/端口/路径/空白/非法字符
+	// - 禁止：带协议/端口/路径/空白/非法字符
+	if err := validateIngressHost(host); err != nil {
+		return "", "", err
+	}
+
 	if path == "" {
 		path = "/"
 	}
 	if !strings.HasPrefix(path, "/") {
 		return "", "", fmt.Errorf("path 必须以 / 开头：%s", path)
+	}
+	// 严格 path 校验：禁止空白、?、#；禁止 /./ 与 /../ 段
+	if strings.ContainsAny(path, " \t\r\n?#") {
+		return "", "", fmt.Errorf("path 不能包含空白或 ? #：%s", path)
+	}
+	// 禁止 "." 与 ".." 段（避免异常/歧义）
+	for _, seg := range strings.Split(path, "/") {
+		if seg == "." || seg == ".." {
+			return "", "", fmt.Errorf("path 不能包含 . 或 .. 段：%s", path)
+		}
 	}
 	// 压缩重复斜杠：/a//b -> /a/b
 	for strings.Contains(path, "//") {
@@ -183,6 +201,93 @@ func normalizeDomainHostPath(hostRaw, pathRaw string) (host string, path string,
 		}
 	}
 	return host, path, nil
+}
+
+func validateIngressHost(host string) error {
+	// quick reject
+	if strings.ContainsAny(host, " \t\r\n/") {
+		return fmt.Errorf("host 不能包含空白或 /：%s", host)
+	}
+	if strings.Contains(host, "://") {
+		return fmt.Errorf("host 不能包含协议：%s", host)
+	}
+	// 禁止端口（也自然禁止 IPv6 形式）
+	if strings.Contains(host, ":") {
+		return fmt.Errorf("host 不能包含端口或 IPv6：%s", host)
+	}
+	// 禁止通配符
+	if strings.Contains(host, "*") {
+		return fmt.Errorf("host 不允许通配符：%s", host)
+	}
+	// 禁止 IPv4
+	isIPv4 := true
+	for _, ch := range host {
+		if (ch >= '0' && ch <= '9') || ch == '.' {
+			continue
+		}
+		isIPv4 = false
+		break
+	}
+	if isIPv4 {
+		parts := strings.Split(host, ".")
+		if len(parts) == 4 {
+			allNum := true
+			for _, p := range parts {
+				if p == "" {
+					allNum = false
+					break
+				}
+				for _, c := range p {
+					if c < '0' || c > '9' {
+						allNum = false
+						break
+					}
+				}
+				if !allNum {
+					break
+				}
+			}
+			if allNum {
+				return fmt.Errorf("host 不允许使用 IP：%s", host)
+			}
+		}
+	}
+
+	return validateDNSName(host, true)
+}
+
+func validateDNSName(name string, noSingleLabel bool) error {
+	if name == "" {
+		return fmt.Errorf("host 不能为空")
+	}
+	if len(name) > 253 {
+		return fmt.Errorf("host 长度不能超过 253：%s", name)
+	}
+	if strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".") || strings.Contains(name, "..") {
+		return fmt.Errorf("host 格式错误：%s", name)
+	}
+	labels := strings.Split(name, ".")
+	if noSingleLabel && len(labels) < 2 {
+		return fmt.Errorf("host 必须是完整域名（至少包含一个点）：%s", name)
+	}
+	for _, lab := range labels {
+		if lab == "" {
+			return fmt.Errorf("host 格式错误：%s", name)
+		}
+		if len(lab) > 63 {
+			return fmt.Errorf("host 标签长度不能超过 63：%s", name)
+		}
+		if strings.HasPrefix(lab, "-") || strings.HasSuffix(lab, "-") {
+			return fmt.Errorf("host 标签不能以 - 开头或结尾：%s", name)
+		}
+		for _, ch := range lab {
+			if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' {
+				continue
+			}
+			return fmt.Errorf("host 包含非法字符：%s", name)
+		}
+	}
+	return nil
 }
 
 // OverwriteDomainsByConfigID 覆盖写入 domains（硬删除旧数据，避免 unique(config_id,host,path) 与软删除冲突）
