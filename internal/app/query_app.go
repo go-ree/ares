@@ -186,7 +186,7 @@ func (am *AppManager) GetAppByName(ctx context.Context, appName string) (*entity
 		Where("app_name = ? AND deleted_at IS NULL", appName).
 		Get(&app)
 
-	slog.Info("", exists, err)
+	slog.Info("GetAppByName query finished", "exists", exists, "error", err)
 
 	if err != nil {
 		return nil, err

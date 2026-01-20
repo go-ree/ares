@@ -317,14 +317,26 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 	JenkinsParam["pre_stop_type"] = appConfig.PreStopType
 	JenkinsParam["pre_stop_check_path"] = appConfig.PreStopCheckPath
 	JenkinsParam["pre_stop_command"] = appConfig.PreStopCommand
-	JenkinsParam["domain"] = appConfig.Domain
-	JenkinsParam["domain_path"] = appConfig.DomainPath
+	JenkinsParam["domain"] = "NULL"
+	JenkinsParam["domain_path"] = "/"
+
+	// domains_list（Jenkins 透传）：不再使用 app_config.domain/domain_path（计划废弃）
+	JenkinsParam["domains_list"] = "[]"
 
 	// 多域名支持：优先读取 app_config_domains，存在则额外下发 domains（JSON 字符串），不影响旧的 domain/domain_path
 	if appConfig.ConfigID > 0 {
 		rows, err := fetchAppConfigDomains(appConfig.ConfigID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("查询多域名配置失败：%s", err)
+		}
+		// 从 app_config_domains 读取并聚合为 domains_list（同 host 合并 paths）
+		{
+			list := groupDomainsListFromRows(rows)
+			b, err := json.Marshal(list)
+			if err != nil {
+				return nil, nil, fmt.Errorf("序列化 domains_list 失败：%s", err)
+			}
+			JenkinsParam["domains_list"] = string(b)
 		}
 		domains := normalizeIngressDomains(rows)
 		if len(domains) > 0 {
