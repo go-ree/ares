@@ -1,7 +1,12 @@
 <!-- 应用高级搜索组件 -->
 <template>
   <div class="app-advanced-search">
-    <el-form :model="searchForm" label-width="100px" class="search-form">
+    <el-form
+      :model="searchForm"
+      label-width="100px"
+      class="search-form"
+      @keyup.enter.prevent="handleSearch"
+    >
       <el-row :gutter="20">
         <el-col :span="8">
           <el-form-item label="APPID:">
@@ -27,9 +32,9 @@
         </el-col>
         <el-col :span="8">
           <el-form-item label="开发语言:">
-            <el-select 
-              v-model="searchForm.dev_language" 
-              placeholder="请选择开发语言" 
+            <el-select
+              v-model="searchForm.dev_language"
+              placeholder="请选择开发语言"
               style="width: 100%"
               clearable
             >
@@ -59,9 +64,9 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
-import type { AppQueryParams } from '@/models/application'
-import { DevLanguage, AppStatus } from '@/models/application'
+import { reactive } from 'vue';
+import type { AppQueryParams } from '@/models/application';
+import { DevLanguage, AppStatus } from '@/models/application';
 
 // 定义搜索表单数据
 const searchForm = reactive<Partial<AppQueryParams & { app_id?: number }>>({
@@ -73,45 +78,45 @@ const searchForm = reactive<Partial<AppQueryParams & { app_id?: number }>>({
   git_url: '',
   status: undefined,
   page_num: 1,
-  page_size: 10
-})
+  page_size: 10,
+});
 
 // 定义事件
 const emit = defineEmits<{
-  (e: 'search', params: Partial<AppQueryParams & { app_id?: number }>): void
-}>()
+  (e: 'search', params: Partial<AppQueryParams & { app_id?: number }>): void;
+}>();
 
 // 搜索处理函数
 const handleSearch = () => {
   // 过滤掉空值，但保留分页参数
   const params = Object.fromEntries(
     Object.entries(searchForm).filter(([key, value]) => {
-      if (key === 'page_num' || key === 'page_size') return true
-      if (typeof value === 'string') return value.trim() !== ''
-      return value !== undefined
+      if (key === 'page_num' || key === 'page_size') return true;
+      if (typeof value === 'string') return value.trim() !== '';
+      return value !== undefined;
     })
-  )
-  emit('search', params)
-}
+  );
+  emit('search', params);
+};
 
 // 重置处理函数
 const handleReset = () => {
   Object.keys(searchForm).forEach(key => {
-    const typedKey = key as keyof typeof searchForm
+    const typedKey = key as keyof typeof searchForm;
     if (key === 'page_num') {
-      (searchForm[typedKey] as number) = 1
+      (searchForm[typedKey] as number) = 1;
     } else if (key === 'page_size') {
-      (searchForm[typedKey] as number) = 10
+      (searchForm[typedKey] as number) = 10;
     } else if (typeof searchForm[typedKey] === 'string') {
-      (searchForm[typedKey] as string) = ''
+      (searchForm[typedKey] as string) = '';
     } else if (typeof searchForm[typedKey] === 'number') {
-      (searchForm[typedKey] as number | undefined) = undefined
+      (searchForm[typedKey] as number | undefined) = undefined;
     } else {
-      searchForm[typedKey] = undefined
+      searchForm[typedKey] = undefined;
     }
-  })
-  emit('search', { page_num: 1, page_size: 10 })
-}
+  });
+  emit('search', { page_num: 1, page_size: 10 });
+};
 </script>
 
 <style scoped>
@@ -147,4 +152,4 @@ const handleReset = () => {
 :deep(.el-button:focus-visible) {
   outline: none !important;
 }
-</style> 
+</style>

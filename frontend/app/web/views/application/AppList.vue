@@ -65,18 +65,23 @@ const fetchAppList = async (params: Partial<AppQueryParams> = {}) => {
     const response = await queryApps(queryParams);
     if (response.data.code === 1) {
       // 检查响应状态码
-      appList.value = response.data.result.apps;
-      total.value = response.data.result.total;
+      const apps = response.data.result?.apps;
+      appList.value = Array.isArray(apps) ? apps : [];
+      total.value = response.data.result?.total ?? 0;
 
       // 更新本地分页状态
-      pageNum.value = response.data.result.page_num;
-      pageSize.value = response.data.result.page_size;
+      pageNum.value = response.data.result?.page_num ?? queryParams.page_num;
+      pageSize.value = response.data.result?.page_size ?? queryParams.page_size;
     } else {
       ElMessage.error(response.data.message || '获取应用列表失败');
     }
   } catch (error) {
     console.error('获取应用列表失败:', error);
     ElMessage.error('获取应用列表失败');
+    // 兜底：避免 AppTable 收到 null
+    if (!Array.isArray(appList.value)) {
+      appList.value = [];
+    }
   } finally {
     loading.value = false;
   }

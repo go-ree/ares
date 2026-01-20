@@ -67,3 +67,81 @@ export interface AppQueryParams {
   git_url?: string;
   status?: AppStatus;
 }
+
+// =========================
+// AppConfig（应用环境配置）
+// =========================
+
+export type AppEnv = 'dev' | 'test' | 'moni';
+
+// 应用环境配置（与后端 AppConfigs 对齐）
+export interface AppConfig {
+  config_id: number;
+  app_id: number;
+  env: AppEnv;
+
+  code_package_type?: string;
+  code_package_path?: string;
+  code_package_name?: string;
+  base_image?: string;
+
+  pod_count?: number;
+  limits_memory?: number;
+  gpu_count?: number;
+
+  probe_type?: string;
+  probe_check_path?: string;
+  probe_check_port?: number;
+
+  pre_stop_type?: string;
+  pre_stop_check_path?: string;
+  pre_stop_check_port?: number;
+  pre_stop_command?: string;
+
+  created_at?: string;
+  updated_at?: string;
+  deleted_at?: string | null;
+}
+
+// 更新应用环境配置（PATCH：仅更新传入字段）
+export interface UpdateAppConfigRequest {
+  code_package_type?: string;
+  code_package_path?: string;
+  code_package_name?: string;
+  base_image?: string;
+  pod_count?: number;
+  limits_memory?: number;
+  gpu_count?: number;
+  probe_type?: string;
+  probe_check_path?: string;
+  probe_check_port?: number;
+  pre_stop_type?: string;
+  pre_stop_check_path?: string;
+  pre_stop_check_port?: number;
+  pre_stop_command?: string;
+}
+
+// 多域名（Ingress host/path）
+export interface AppConfigDomain {
+  id: number;
+  config_id: number;
+  host: string;
+  path: string;
+  created_at?: string;
+  updated_at?: string;
+  deleted_at?: string | null;
+}
+
+export interface DomainItem {
+  host: string;
+  path?: string;
+}
+
+export interface UpsertDomainsRequest {
+  domains: DomainItem[];
+}
+
+export interface PatchDomainRequest {
+  host?: string;
+  path?: string;
+}
