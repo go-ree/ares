@@ -76,6 +76,7 @@ func Router(r gin.IRouter) {
 			apps.PATCH("/:app_id", appsController.PatchAppByID)
 
 			// 应用环境配置（app_id + env）
+			apps.POST("/:app_id/configs", appConfigsController.CreateAppConfig)
 			apps.GET("/:app_id/configs", appConfigsController.ListAppConfigs)
 			apps.GET("/:app_id/configs/:env", appConfigsController.GetAppConfigByEnv)
 			apps.PATCH("/:app_id/configs/:env", appConfigsController.PatchAppConfigByEnv)

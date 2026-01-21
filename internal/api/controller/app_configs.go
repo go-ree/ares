@@ -18,6 +18,38 @@ func NewAppConfigsController() *AppConfigsController {
 	}
 }
 
+// CreateAppConfig
+// @Tags AppConfig
+// @Summary 创建应用环境配置（app_id + env）
+// @Param app_id path int true "应用ID"
+// @Param request body app.CreateAppConfigRequest true "创建参数"
+// @Success 200 {object} util.ResponseTemplate{code=int,result=entity.AppConfigs} "成功"
+// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
+// @Router /api/v1/apps/{app_id}/configs [post]
+func (cc *AppConfigsController) CreateAppConfig(c *gin.Context) {
+	ctx := c.Request.Context()
+	appIDStr := c.Param("app_id")
+	appID, err := strconv.Atoi(appIDStr)
+	if err != nil || appID <= 0 {
+		c.JSON(400, util.ResponseFailure("无效的应用ID", appIDStr))
+		return
+	}
+
+	var req app.CreateAppConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+		return
+	}
+
+	row, err := cc.cfgManager.CreateAppConfigByAppEnv(ctx, appID, req)
+	if err != nil {
+		c.JSON(500, util.ResponseFailure("创建失败", err.Error()))
+		return
+	}
+	c.JSON(200, util.ResponseSuccessful("创建成功", row))
+}
+
 // ListAppConfigs
 // @Tags AppConfig
 // @Summary 获取应用的所有环境配置

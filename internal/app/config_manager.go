@@ -8,6 +8,26 @@ import (
 	"strings"
 )
 
+// CreateAppConfigRequest 创建应用环境配置（app_id + env）
+// 说明：不包含 domain/domain_path（已废弃），多域名请用 app_config_domains。
+type CreateAppConfigRequest struct {
+	Env string `json:"env"`
+
+	CodePackageType *string `json:"code_package_type"`
+	CodePackagePath *string `json:"code_package_path"`
+	CodePackageName *string `json:"code_package_name"`
+	BaseImage       *string `json:"base_image"`
+
+	PodCount         *int    `json:"pod_count"`
+	LimitsMemory     *int    `json:"limits_memory"`
+	GpuCount         *int    `json:"gpu_count"`
+	ProbeType        *string `json:"probe_type"`
+	ProbeCheckPath   *string `json:"probe_check_path"`
+	PreStopType      *string `json:"pre_stop_type"`
+	PreStopCheckPath *string `json:"pre_stop_check_path"`
+	PreStopCommand   *string `json:"pre_stop_command"`
+}
+
 // UpdateAppConfigRequest 允许更新的应用环境配置字段（指针用于 PATCH 语义）
 type UpdateAppConfigRequest struct {
 	CodePackageType *string `json:"code_package_type"`
@@ -52,6 +72,124 @@ func (cm *ConfigManager) ListAppConfigs(ctx context.Context, appID int) ([]entit
 		return nil, err
 	}
 	return rows, nil
+}
+
+func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int, req CreateAppConfigRequest) (*entity.AppConfigs, error) {
+	if appID <= 0 {
+		return nil, fmt.Errorf("无效的 app_id")
+	}
+	env := strings.TrimSpace(req.Env)
+	if env == "" {
+		return nil, fmt.Errorf("env 不能为空")
+	}
+	env = strings.ToLower(env)
+
+	// 校验 app 是否存在
+	var appRow entity.Apps
+	has, err := db.Engine.Context(ctx).
+		Where("app_id = ? AND deleted_at IS NULL", appID).
+		Get(&appRow)
+	if err != nil {
+		return nil, err
+	}
+	if !has {
+		return nil, fmt.Errorf("未找到应用，app_id=%d", appID)
+	}
+
+	// 校验 env 是否存在（避免写入未知环境）
+	cntEnv, err := db.Engine.Context(ctx).
+		Where("env = ? AND deleted_at IS NULL", env).
+		Count(&entity.EnvConfigs{})
+	if err != nil {
+		return nil, err
+	}
+	if cntEnv == 0 {
+		return nil, fmt.Errorf("环境不存在：%s", env)
+	}
+
+	// 判重：同 app_id + env 只能一条
+	cnt, err := db.Engine.Context(ctx).
+		Where("app_id = ? AND env = ? AND deleted_at IS NULL", appID, env).
+		Count(&entity.AppConfigs{})
+	if err != nil {
+		return nil, err
+	}
+	if cnt > 0 {
+		return nil, fmt.Errorf("配置已存在：app_id=%d env=%s", appID, env)
+	}
+
+	// 默认值：对齐 createDefaultConfig
+	row := &entity.AppConfigs{
+		AppID:            appID,
+		Env:              env,
+		CodePackageType:  getDefaultPackageType(strings.ToLower(appRow.DevLanguage)),
+		CodePackageName:  "NULL",
+		CodePackagePath:  "NULL",
+		BaseImage:        "NULL",
+		PodCount:         1,
+		LimitsMemory:     2,
+		GpuCount:         0,
+		ProbeType:        "HTTP",
+		ProbeCheckPath:   "/ttpai/inside/checkup",
+		PreStopType:      "HTTP",
+		PreStopCheckPath: "/ttpai/inside/prestop",
+		PreStopCommand:   "NULL",
+	}
+
+	// 覆盖写入（如有传值）
+	if req.CodePackageType != nil {
+		row.CodePackageType = strings.TrimSpace(*req.CodePackageType)
+	}
+	if req.CodePackagePath != nil {
+		row.CodePackagePath = strings.TrimSpace(*req.CodePackagePath)
+	}
+	if req.CodePackageName != nil {
+		row.CodePackageName = strings.TrimSpace(*req.CodePackageName)
+	}
+	if req.BaseImage != nil {
+		row.BaseImage = strings.TrimSpace(*req.BaseImage)
+	}
+	if req.PodCount != nil {
+		row.PodCount = *req.PodCount
+	}
+	if req.LimitsMemory != nil {
+		row.LimitsMemory = *req.LimitsMemory
+	}
+	if req.GpuCount != nil {
+		row.GpuCount = *req.GpuCount
+	}
+	if req.ProbeType != nil {
+		row.ProbeType = strings.TrimSpace(*req.ProbeType)
+	}
+	if req.ProbeCheckPath != nil {
+		p := strings.TrimSpace(*req.ProbeCheckPath)
+		if p != "" && !strings.HasPrefix(p, "/") {
+			return nil, fmt.Errorf("probe_check_path 必须以 / 开头")
+		}
+		if p != "" {
+			row.ProbeCheckPath = p
+		}
+	}
+	if req.PreStopType != nil {
+		row.PreStopType = strings.TrimSpace(*req.PreStopType)
+	}
+	if req.PreStopCheckPath != nil {
+		p := strings.TrimSpace(*req.PreStopCheckPath)
+		if p != "" && !strings.HasPrefix(p, "/") {
+			return nil, fmt.Errorf("pre_stop_check_path 必须以 / 开头")
+		}
+		if p != "" {
+			row.PreStopCheckPath = p
+		}
+	}
+	if req.PreStopCommand != nil {
+		row.PreStopCommand = strings.TrimSpace(*req.PreStopCommand)
+	}
+
+	if _, err := db.Engine.Context(ctx).Insert(row); err != nil {
+		return nil, err
+	}
+	return row, nil
 }
 
 func (cm *ConfigManager) GetAppConfigByAppEnv(ctx context.Context, appID int, env string) (*entity.AppConfigs, error) {
