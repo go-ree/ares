@@ -4,9 +4,86 @@ import (
 	"ares/internal/db"
 	"ares/internal/entity"
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
+
+type devLanguageRulesJSON struct {
+	Allowed []string `json:"allowed"`
+	Default string   `json:"default"`
+}
+
+func loadDevLanguageRules(ctx context.Context, devLanguage string) (*devLanguageRulesJSON, error) {
+	lang := strings.ToLower(strings.TrimSpace(devLanguage))
+	if lang == "" {
+		return nil, fmt.Errorf("dev_language 不能为空")
+	}
+	var row entity.DevLanguageRule
+	has, err := db.Engine.Context(ctx).
+		Where("dev_language = ? AND deleted_at IS NULL", lang).
+		Get(&row)
+	if err != nil {
+		return nil, err
+	}
+	if !has {
+		return nil, fmt.Errorf("未配置 dev_language 规则：%s", lang)
+	}
+	var rules devLanguageRulesJSON
+	if err := json.Unmarshal(row.Rules, &rules); err != nil {
+		return nil, fmt.Errorf("dev_language 规则解析失败：%s", err)
+	}
+	if len(rules.Allowed) == 0 || strings.TrimSpace(rules.Default) == "" {
+		return nil, fmt.Errorf("dev_language 规则不完整：%s", lang)
+	}
+	// normalize allowed/default
+	seen := make(map[string]struct{}, len(rules.Allowed))
+	allowed := make([]string, 0, len(rules.Allowed))
+	for _, a := range rules.Allowed {
+		v := strings.TrimSpace(a)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		allowed = append(allowed, v)
+	}
+	rules.Allowed = allowed
+	rules.Default = strings.TrimSpace(rules.Default)
+	if _, ok := seen[rules.Default]; !ok {
+		return nil, fmt.Errorf("dev_language 规则 default 不在 allowed 中：%s default=%s", lang, rules.Default)
+	}
+	return &rules, nil
+}
+
+func validateCodePackageTypeForApp(ctx context.Context, appID int, codePackageType string) error {
+	var appRow entity.Apps
+	has, err := db.Engine.Context(ctx).
+		Where("app_id = ? AND deleted_at IS NULL", appID).
+		Get(&appRow)
+	if err != nil {
+		return err
+	}
+	if !has {
+		return fmt.Errorf("未找到应用，app_id=%d", appID)
+	}
+	rules, err := loadDevLanguageRules(ctx, appRow.DevLanguage)
+	if err != nil {
+		return err
+	}
+	cpt := strings.TrimSpace(codePackageType)
+	if cpt == "" || strings.EqualFold(cpt, "NULL") {
+		return fmt.Errorf("code_package_type 不能为空")
+	}
+	for _, a := range rules.Allowed {
+		if a == cpt {
+			return nil
+		}
+	}
+	return fmt.Errorf("code_package_type=%s 不允许用于 dev_language=%s（允许：%s）", cpt, strings.ToLower(appRow.DevLanguage), strings.Join(rules.Allowed, ","))
+}
 
 // CreateAppConfigRequest 创建应用环境配置（app_id + env）
 // 说明：不包含 domain/domain_path（已废弃），多域名请用 app_config_domains。
@@ -96,6 +173,12 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 		return nil, fmt.Errorf("未找到应用，app_id=%d", appID)
 	}
 
+	// 读取语言规则（用于 default 与 code_package_type 校验）
+	rules, err := loadDevLanguageRules(ctx, appRow.DevLanguage)
+	if err != nil {
+		return nil, err
+	}
+
 	// 校验 env 是否存在（避免写入未知环境）
 	cntEnv, err := db.Engine.Context(ctx).
 		Where("env = ? AND deleted_at IS NULL", env).
@@ -122,7 +205,7 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 	row := &entity.AppConfigs{
 		AppID:            appID,
 		Env:              env,
-		CodePackageType:  getDefaultPackageType(strings.ToLower(appRow.DevLanguage)),
+		CodePackageType:  rules.Default,
 		CodePackageName:  "NULL",
 		CodePackagePath:  "NULL",
 		BaseImage:        "NULL",
@@ -138,7 +221,18 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 
 	// 覆盖写入（如有传值）
 	if req.CodePackageType != nil {
-		row.CodePackageType = strings.TrimSpace(*req.CodePackageType)
+		cpt := strings.TrimSpace(*req.CodePackageType)
+		ok := false
+		for _, a := range rules.Allowed {
+			if a == cpt {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return nil, fmt.Errorf("code_package_type=%s 不允许用于 dev_language=%s（允许：%s）", cpt, strings.ToLower(appRow.DevLanguage), strings.Join(rules.Allowed, ","))
+		}
+		row.CodePackageType = cpt
 	}
 	if req.CodePackagePath != nil {
 		row.CodePackagePath = strings.TrimSpace(*req.CodePackagePath)
@@ -253,6 +347,23 @@ func buildUpdateMap(req UpdateAppConfigRequest) (map[string]any, error) {
 }
 
 func (cm *ConfigManager) PatchAppConfigByID(ctx context.Context, configID int, req UpdateAppConfigRequest) error {
+	// 若更新 code_package_type，则需要按 app.dev_language 规则校验
+	if req.CodePackageType != nil {
+		// 先取 config 获取 app_id
+		var cur entity.AppConfigs
+		has, err := db.Engine.Context(ctx).
+			Where("config_id = ? AND deleted_at IS NULL", configID).
+			Get(&cur)
+		if err != nil {
+			return err
+		}
+		if !has {
+			return fmt.Errorf("未找到配置，config_id=%d", configID)
+		}
+		if err := validateCodePackageTypeForApp(ctx, cur.AppID, strings.TrimSpace(*req.CodePackageType)); err != nil {
+			return err
+		}
+	}
 	updates, err := buildUpdateMap(req)
 	if err != nil {
 		return err
@@ -268,6 +379,12 @@ func (cm *ConfigManager) PatchAppConfigByID(ctx context.Context, configID int, r
 }
 
 func (cm *ConfigManager) PatchAppConfigByAppEnv(ctx context.Context, appID int, env string, req UpdateAppConfigRequest) error {
+	// 若更新 code_package_type，则需要按 app.dev_language 规则校验
+	if req.CodePackageType != nil {
+		if err := validateCodePackageTypeForApp(ctx, appID, strings.TrimSpace(*req.CodePackageType)); err != nil {
+			return err
+		}
+	}
 	updates, err := buildUpdateMap(req)
 	if err != nil {
 		return err

@@ -2,11 +2,12 @@ package entity
 
 // TableNames 定义所有表名常量
 const (
-	TableApps       = "apps"
-	TableAppConfigs = "app_configs"
-	TableTaskRecord = "task_record"
-	TablePipelines  = "pipelines"
-	TableEnvConfigs = "env_configs"
+	TableApps             = "apps"
+	TableAppConfigs       = "app_configs"
+	TableTaskRecord       = "task_record"
+	TablePipelines        = "pipelines"
+	TableEnvConfigs       = "env_configs"
+	TableDevLanguageRules = "dev_language_rules"
 )
 
 func (a *Apps) TableName() string {

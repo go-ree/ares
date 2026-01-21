@@ -155,4 +155,21 @@ CREATE TABLE ares.env_configs (
     deleted_at TIMESTAMP NULL DEFAULT NULL
 );
 
+-- dev_language 与 code_package_type 规则（单表 JSON）
+-- rules 示例：{"allowed":["jar","war"],"default":"jar"}
+CREATE TABLE ares.dev_language_rules (
+    dev_language VARCHAR(100) PRIMARY KEY COMMENT '与 apps.dev_language 一致',
+    rules JSON NOT NULL COMMENT '{"allowed":[...],"default":"..."}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL DEFAULT NULL,
+    CHECK (JSON_VALID(rules))
+);
+
+INSERT INTO ares.dev_language_rules (dev_language, rules) VALUES
+('java',    JSON_OBJECT('allowed', JSON_ARRAY('jar','war'),                  'default','jar')),
+('python',  JSON_OBJECT('allowed', JSON_ARRAY('python','ai'),                'default','python')),
+('node.js', JSON_OBJECT('allowed', JSON_ARRAY('static','miniapp','node.js'), 'default','node.js')),
+('golang',  JSON_OBJECT('allowed', JSON_ARRAY('golang'),                     'default','golang'));
+
 #######################################以上均为预投产版##########################################################

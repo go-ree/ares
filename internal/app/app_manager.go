@@ -177,13 +177,19 @@ func (am *AppManager) createDefaultConfig(app *entity.Apps) {
 	// 实现创建默认配置的逻辑
 	environments := []string{"dev", "test", "moni"}
 
+	// 优先使用 DB 规则表的 default；若缺失则回退老逻辑
+	defaultCodePackageType := getDefaultPackageType(app.DevLanguage)
+	if rules, err := loadDevLanguageRules(context.Background(), app.DevLanguage); err == nil && rules != nil {
+		defaultCodePackageType = rules.Default
+	}
+
 	// 为每个环境创建默认配置
 	for _, env := range environments {
 		// 创建应用环境配置
 		appConfig := &entity.AppConfigs{
 			AppID:            app.AppId,
 			Env:              env,
-			CodePackageType:  getDefaultPackageType(app.DevLanguage),
+			CodePackageType:  defaultCodePackageType,
 			CodePackageName:  "NULL",
 			CodePackagePath:  "NULL",
 			BaseImage:        "NULL",

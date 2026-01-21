@@ -75,6 +75,39 @@ func (am *AppManager) PatchAppByID(ctx context.Context, appID int64, req PatchAp
 		return nil, NewValidationError("业务规则校验失败" + err.Error())
 	}
 
+	// 若更新 dev_language，需要保证现存各环境配置的 code_package_type 仍匹配新规则
+	if req.DevLanguage != nil {
+		newLang := strings.ToLower(strings.TrimSpace(*req.DevLanguage))
+		rules, err := loadDevLanguageRules(ctx, newLang)
+		if err != nil {
+			return nil, NewValidationError(err.Error())
+		}
+		var cfgs []entity.AppConfigs
+		if err := db.Engine.Context(ctx).
+			Where("app_id = ? AND deleted_at IS NULL", appID).
+			Find(&cfgs); err != nil {
+			return nil, err
+		}
+		allowed := make(map[string]struct{}, len(rules.Allowed))
+		for _, a := range rules.Allowed {
+			allowed[a] = struct{}{}
+		}
+		conflicts := make([]string, 0, len(cfgs))
+		for _, c := range cfgs {
+			cpt := strings.TrimSpace(c.CodePackageType)
+			if cpt == "" || strings.EqualFold(cpt, "NULL") {
+				conflicts = append(conflicts, fmt.Sprintf("env=%s code_package_type=%s", c.Env, c.CodePackageType))
+				continue
+			}
+			if _, ok := allowed[cpt]; !ok {
+				conflicts = append(conflicts, fmt.Sprintf("env=%s code_package_type=%s", c.Env, c.CodePackageType))
+			}
+		}
+		if len(conflicts) > 0 {
+			return nil, NewValidationError(fmt.Sprintf("dev_language=%s 与现有环境配置不匹配，请先调整配置：%s", newLang, strings.Join(conflicts, "; ")))
+		}
+	}
+
 	updates, err := buildPatchAppMap(req)
 	if err != nil {
 		return nil, NewValidationError(err.Error())

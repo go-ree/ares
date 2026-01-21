@@ -72,6 +72,8 @@ func Router(r gin.IRouter) {
 			apps.GET("/query/appname", appsController.GetAppNameList)
 			// 根据APPID获取应用详情
 			apps.GET(":app_id", appsController.GetAppByID)
+			// 环境配置可选项（dev_language -> code_package_type）
+			apps.GET("/:app_id/config-options", appsController.GetAppConfigOptions)
 			// 应用基本信息变更（PATCH 指针语义）
 			apps.PATCH("/:app_id", appsController.PatchAppByID)
 

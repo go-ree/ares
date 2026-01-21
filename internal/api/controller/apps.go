@@ -205,6 +205,35 @@ func (ac *AppsController) GetAppNameList(c *gin.Context) {
 	c.JSON(200, util.ResponseSuccessful("", appNames))
 }
 
+// GetAppConfigOptions
+// @Tags AppConfig
+// @Summary 获取应用环境配置可选项（按 dev_language 规则）
+// @Description 用于前端下拉框：返回该应用 dev_language 下允许的 code_package_type 列表与默认值
+// @Accept json
+// @Produce json
+// @Param app_id path int true "应用ID"
+// @Success 200 {object} util.ResponseTemplate{code=int,result=app.AppConfigOptions} "成功"
+// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
+// @Router /api/v1/apps/{app_id}/config-options [get]
+func (ac *AppsController) GetAppConfigOptions(c *gin.Context) {
+	ctx := c.Request.Context()
+	appIDStr := c.Param("app_id")
+	appID, err := strconv.ParseInt(appIDStr, 10, 64)
+	if err != nil {
+		c.JSON(400, util.ResponseFailure("无效的应用ID", err.Error()))
+		return
+	}
+	opts, err := ac.appManager.GetAppConfigOptions(ctx, appID)
+	if err != nil {
+		ac.handleAppError(c, err, map[string]interface{}{
+			"app_id": appID,
+		})
+		return
+	}
+	c.JSON(200, util.ResponseSuccessful("查询成功", opts))
+}
+
 // PatchAppByID
 // @Tags App
 // @Summary 应用基本信息变更（仅更新传入字段）
