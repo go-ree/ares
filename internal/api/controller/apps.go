@@ -205,6 +205,45 @@ func (ac *AppsController) GetAppNameList(c *gin.Context) {
 	c.JSON(200, util.ResponseSuccessful("", appNames))
 }
 
+// PatchAppByID
+// @Tags App
+// @Summary 应用基本信息变更（仅更新传入字段）
+// @Description 根据应用ID更新应用基本信息（PATCH 指针语义），不允许修改 app_name/app_id
+// @Accept json
+// @Produce json
+// @Param app_id path int true "应用ID"
+// @Param request body app.PatchAppRequest true "更新字段（指针语义）"
+// @Success 200 {object} util.ResponseTemplate{code=int,result=entity.Apps} "成功"
+// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 404 {object} util.ResponseTemplate{code=int} "应用不存在"
+// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
+// @Router /api/v1/apps/{app_id} [patch]
+func (ac *AppsController) PatchAppByID(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	appIDStr := c.Param("app_id")
+	appID, err := strconv.ParseInt(appIDStr, 10, 64)
+	if err != nil {
+		c.JSON(400, util.ResponseFailure("无效的应用ID", err.Error()))
+		return
+	}
+
+	var req app.PatchAppRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+		return
+	}
+
+	row, err := ac.appManager.PatchAppByID(ctx, appID, req)
+	if err != nil {
+		ac.handleAppError(c, err, map[string]interface{}{
+			"app_id": appID,
+		})
+		return
+	}
+	c.JSON(200, util.ResponseSuccessful("更新成功", row))
+}
+
 // handleAppError 统一处理应用相关错误
 func (ac *AppsController) handleAppError(c *gin.Context, err error, context map[string]interface{}) {
 	var validationError *app.ValidationError

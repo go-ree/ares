@@ -65,6 +65,69 @@ func (v *AppValidator) ValidateCreateApp(req *CreateAppRequest) error {
 	return nil
 }
 
+// ValidatePatchApp 验证应用基本信息变更（只校验传入字段）
+func (v *AppValidator) ValidatePatchApp(req *PatchAppRequest) error {
+	if req == nil {
+		return errors.New("请求不能为空")
+	}
+	// 必须至少更新一个字段
+	if req.AppNameCN == nil &&
+		req.Owner == nil &&
+		req.OwnerCN == nil &&
+		req.DevLanguage == nil &&
+		req.DescriptionCN == nil &&
+		req.GitUrl == nil &&
+		req.RundeckAppName == nil {
+		return errors.New("没有需要更新的字段")
+	}
+
+	namePattern := regexp.MustCompile(`^[a-z][a-z0-9\-]{2,24}$`)
+	ownerPattern := regexp.MustCompile(`^[a-z]+\.[a-z]+$`)
+
+	if req.RundeckAppName != nil {
+		s := strings.TrimSpace(*req.RundeckAppName)
+		if s != "" && !namePattern.MatchString(s) {
+			return errors.New("rundeck_app_name 格式不正确：必须以小写字母开头，只能包含小写字母、数字和连字符，长度3-25")
+		}
+	}
+	if req.Owner != nil {
+		s := strings.TrimSpace(*req.Owner)
+		if s == "" || !ownerPattern.MatchString(s) {
+			return errors.New("负责人格式不正确，必须为 'san.zhang' 或 'si.li' 形式")
+		}
+	}
+	if req.GitUrl != nil {
+		s := strings.TrimSpace(*req.GitUrl)
+		if s == "" || !isValidGitURL(s) {
+			return errors.New("git地址必须使用SSH协议，且以.git结尾。示例：git@gitlab.ttpai.work:group/repo.git")
+		}
+	}
+	if req.DevLanguage != nil {
+		s := strings.TrimSpace(*req.DevLanguage)
+		if s == "" {
+			return errors.New("dev_language 不能为空")
+		}
+		validLanguages := map[string]bool{
+			"java":    true,
+			"golang":  true,
+			"python":  true,
+			"node.js": true,
+		}
+		if _, ok := validLanguages[strings.ToLower(s)]; !ok {
+			validLangs := getMapKeys(validLanguages)
+			return fmt.Errorf("不支持的开发语言: %s，支持的语言包括: %s。 ps.如需新增开发语言，请联系基础运维同学", s, strings.Join(validLangs, ", "))
+		}
+	}
+	// 其它字段仅做“传了但全空白”阻断（更细的长度限制按需再加）
+	if req.AppNameCN != nil && strings.TrimSpace(*req.AppNameCN) == "" {
+		return errors.New("app_name_cn 不能为空")
+	}
+	if req.OwnerCN != nil && strings.TrimSpace(*req.OwnerCN) == "" {
+		return errors.New("owner_cn 不能为空")
+	}
+	return nil
+}
+
 // 辅助函数：获取map的所有key
 func getMapKeys(m map[string]bool) []string {
 	keys := make([]string, 0, len(m))
