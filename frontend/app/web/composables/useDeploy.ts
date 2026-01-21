@@ -228,13 +228,13 @@ export function useDeploy() {
         const taskId = taskRecord?.task_record?.task_id;
         if (!taskId) {
           throw new Error(
-            taskRecord?.error || response.data.msg || (response.data as any).message || '发布失败'
+            taskRecord?.error || response.data.message || (response.data as any).msg || '发布失败'
           );
         }
         service.taskId = taskId;
         ElMessage.success(`${service.serviceName} 发布任务已提交`);
       } else {
-        throw new Error(response.data.msg || (response.data as any).message || '发布失败');
+        throw new Error(response.data.message || (response.data as any).msg || '发布失败');
       }
     } catch (error) {
       service.status = '发布失败';
@@ -270,13 +270,13 @@ export function useDeploy() {
         const taskId = taskRecord?.task_record?.task_id;
         if (!taskId) {
           throw new Error(
-            taskRecord?.error || response.data.msg || (response.data as any).message || '重发失败'
+            taskRecord?.error || response.data.message || (response.data as any).msg || '重发失败'
           );
         }
         service.taskId = taskId;
         ElMessage.success(`${service.serviceName} 重发任务已提交`);
       } else {
-        throw new Error(response.data.msg || (response.data as any).message || '重发失败');
+        throw new Error(response.data.message || (response.data as any).msg || '重发失败');
       }
     } catch (error) {
       service.status = '发布失败';
@@ -345,7 +345,7 @@ export function useDeploy() {
           }
         }
       } else {
-        throw new Error(response.data.msg || '批量发布失败');
+        throw new Error(response.data.message || (response.data as any).msg || '批量发布失败');
       }
     } catch (error) {
       console.error('批量发布失败:', error);
@@ -420,7 +420,7 @@ export function useDeploy() {
           }
         }
       } else {
-        throw new Error(response.data.msg || '批量重发失败');
+        throw new Error(response.data.message || (response.data as any).msg || '批量重发失败');
       }
     } catch (error) {
       console.error('批量重发失败:', error);

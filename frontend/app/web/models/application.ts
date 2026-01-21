@@ -41,9 +41,11 @@ export interface AppInfo {
   app_name_cn: string;
   owner: string;
   owner_cn: string;
-  dev_language: DevLanguage;
+  // 后端可能返回枚举或字符串（如 "GOLANG"/"golang"）
+  dev_language: DevLanguage | string;
   description_cn: string;
   git_url: string;
+  rundeck_app_name?: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -63,9 +65,20 @@ export interface AppQueryParams {
   app_name_cn?: string;
   owner?: string;
   owner_cn?: string;
-  dev_language?: DevLanguage;
+  dev_language?: DevLanguage | string;
   git_url?: string;
   status?: AppStatus;
+}
+
+// PATCH /apps/{app_id}：只传要改的字段
+export interface PatchAppRequest {
+  app_name_cn?: string;
+  owner?: string;
+  owner_cn?: string;
+  dev_language?: string;
+  description_cn?: string;
+  git_url?: string;
+  rundeck_app_name?: string;
 }
 
 // =========================
@@ -119,6 +132,11 @@ export interface UpdateAppConfigRequest {
   pre_stop_check_path?: string;
   pre_stop_check_port?: number;
   pre_stop_command?: string;
+}
+
+// 创建应用环境配置（POST：未传字段按默认值落库）
+export interface CreateAppConfigRequest extends UpdateAppConfigRequest {
+  env: AppEnv;
 }
 
 // 多域名（Ingress host/path）

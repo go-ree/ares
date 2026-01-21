@@ -24,8 +24,36 @@ const router = createRouter({
           component: () => import('../views/application/AppApply.vue'),
         },
         {
+          // 旧版应用配置页已下线：保留路径做跳转，避免外链/书签 404
           path: '/application/config',
-          component: () => import('../views/application/AppConfig.vue'),
+          redirect: '/application/list',
+        },
+        {
+          path: '/application/:appId',
+          component: () => import('../views/application/AppDetail.vue'),
+          props: true,
+          children: [
+            {
+              path: '',
+              redirect: to => `/application/${to.params.appId}/info`,
+            },
+            {
+              path: 'info',
+              component: () => import('../views/application/detail/AppInfo.vue'),
+            },
+            {
+              path: 'config',
+              component: () => import('../views/application/detail/AppConfigDetail.vue'),
+            },
+            {
+              path: 'domains',
+              component: () => import('../views/application/detail/AppDomains.vue'),
+            },
+            {
+              path: 'pods',
+              component: () => import('../views/application/detail/AppPods.vue'),
+            },
+          ],
         },
         {
           path: '/publish/deploy',

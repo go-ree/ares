@@ -11,26 +11,23 @@
       :app-list="appList"
       :loading="loading"
       :total="total"
-      @edit="handleEdit"
-      @delete="handleDelete"
-      @detail="handleDetail"
+      @config="handleConfig"
       @page-change="handlePageChange"
       @size-change="handleSizeChange"
     />
-
-    <!-- 详情对话框 -->
-    <AppDetailDialog v-model:visible="detailDialogVisible" :app-id="currentAppId" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { useRouter } from 'vue-router';
+import { ElMessage } from 'element-plus';
 import AppTable from '@/components/application/AppTable.vue';
 import AppAdvancedSearch from '@/components/application/AppAdvancedSearch.vue';
-import AppDetailDialog from '@/components/application/AppDetailDialog.vue';
 import { queryApps } from '@/services/application';
 import type { AppInfo, AppQueryParams, PageResponse } from '@/models/application';
+
+const router = useRouter();
 
 // 分页参数
 const pageNum = ref(1);
@@ -45,10 +42,6 @@ const loading = ref(false);
 
 // 保存当前的搜索条件
 const currentSearchParams = ref<Partial<AppQueryParams>>({});
-
-// 详情对话框状态
-const detailDialogVisible = ref(false);
-const currentAppId = ref<number>();
 
 // 获取应用列表数据
 const fetchAppList = async (params: Partial<AppQueryParams> = {}) => {
@@ -110,38 +103,10 @@ const handleSizeChange = (newSize: number) => {
   fetchAppList({ page_size: newSize, page_num: 1 });
 };
 
-// 搜索处理函数
-const handleSearch = (keyword: string) => {
-  console.log('搜索关键词:', keyword);
-  // 这里实现简单搜索逻辑
-};
-
-// 编辑处理函数
-const handleEdit = (row: any) => {
-  console.log('编辑应用:', row);
-  // 这里可以实现编辑逻辑
-};
-
-// 删除处理函数
-const handleDelete = (row: any) => {
-  ElMessageBox.confirm(`确定要删除应用 ${row.app_name} 吗？`, '警告', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning',
-  })
-    .then(() => {
-      // 这里实现删除逻辑
-      ElMessage.success('删除成功');
-    })
-    .catch(() => {
-      ElMessage.info('已取消删除');
-    });
-};
-
-// 处理详情按钮点击
-const handleDetail = (row: AppInfo) => {
-  currentAppId.value = row.app_id;
-  detailDialogVisible.value = true;
+// 跳转到“单应用配置”详情页
+const handleConfig = (row: AppInfo) => {
+  // 带上名称，保证配置页顶部可立即展示应用名（后续仍会拉详情校准）
+  router.push({ path: `/application/${row.app_id}/config`, query: { name: row.app_name } });
 };
 
 // 页面加载时获取数据

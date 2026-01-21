@@ -8,6 +8,8 @@ import type {
   AppEnv,
   PageResponse,
   PatchDomainRequest,
+  PatchAppRequest,
+  CreateAppConfigRequest,
   UpdateAppConfigRequest,
   UpsertDomainsRequest,
   DomainItem,
@@ -33,7 +35,7 @@ export const getAppList = (params: AppQueryParams) => {
 
 // 获取应用详情
 export const getAppDetail = (id: number) => {
-  return api.get<ApiResponse<AppInfo>>(`${BASE_URL}/${id}`);
+  return api.get<ApiResponse<AppInfo>>(`${BASE_URL}/apps/${id}`);
 };
 
 // 创建应用
@@ -43,12 +45,12 @@ export const createApp = (data: Partial<AppInfo>) => {
 
 // 更新应用
 export const updateApp = (id: number, data: Partial<AppInfo>) => {
-  return api.put<ApiResponse<AppInfo>>(`${BASE_URL}/${id}`, data);
+  return api.put<ApiResponse<AppInfo>>(`${BASE_URL}/apps/${id}`, data);
 };
 
-// 删除应用
-export const deleteApp = (id: number) => {
-  return api.delete<ApiResponse<void>>(`${BASE_URL}/${id}`);
+// 更新应用（部分更新，仅提交变动字段）
+export const patchApp = (id: number, data: PatchAppRequest) => {
+  return api.patch<ApiResponse<AppInfo | null>>(`${BASE_URL}/apps/${id}`, data);
 };
 
 // 审核应用
@@ -63,6 +65,11 @@ export const reviewApp = (id: number, approved: boolean, comment?: string) => {
 // 1.1 获取应用所有环境配置
 export const getAppConfigs = (appId: number) => {
   return api.get<ApiResponse<AppConfig[]>>(`${BASE_URL}/apps/${appId}/configs`);
+};
+
+// 1.0 创建应用某环境配置（未传字段按默认值落库）
+export const createAppConfig = (appId: number, data: CreateAppConfigRequest) => {
+  return api.post<ApiResponse<AppConfig | null>>(`${BASE_URL}/apps/${appId}/configs`, data);
 };
 
 // 1.2 获取应用指定环境配置

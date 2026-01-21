@@ -47,11 +47,7 @@
               </template>
               <el-menu-item index="/application/list">
                 <el-icon><List /></el-icon>
-                <span class="menu-text">应用信息查询</span>
-              </el-menu-item>
-              <el-menu-item index="/application/config">
-                <el-icon><Setting /></el-icon>
-                <span class="menu-text">应用配置</span>
+                <span class="menu-text">应用列表</span>
               </el-menu-item>
               <el-menu-item index="/application/apply">
                 <el-icon><Edit /></el-icon>

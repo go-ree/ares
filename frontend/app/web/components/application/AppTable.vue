@@ -1,16 +1,16 @@
 <!-- 应用列表表格组件 -->
 <template>
   <div class="app-table">
-    <el-table 
-      :data="appList" 
-      style="width: 100%" 
-      v-loading="loading"
-      :max-height="tableHeight"
-    >
+    <el-table :data="appList" style="width: 100%" v-loading="loading" :max-height="tableHeight">
       <el-table-column prop="app_id" label="APPID" width="100" />
       <el-table-column prop="app_name" label="应用名称" min-width="150" />
       <el-table-column prop="app_name_cn" label="应用中文名称" min-width="150" />
-      <el-table-column prop="description_cn" label="应用描述信息" min-width="200" show-overflow-tooltip />
+      <el-table-column
+        prop="description_cn"
+        label="应用描述信息"
+        min-width="200"
+        show-overflow-tooltip
+      />
       <el-table-column prop="owner_cn" label="负责人" width="120" />
       <el-table-column prop="dev_language" label="开发语言" width="100">
         <template #default="{ row }">
@@ -23,33 +23,13 @@
           {{ new Date(row.created_at).toLocaleString() }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" width="120" fixed="right">
         <template #default="{ row }">
-          <el-button
-            type="primary"
-            link
-            @click="$emit('detail', row)"
-          >
-            详情
-          </el-button>
-          <!-- <el-button
-            type="primary"
-            link
-            @click="$emit('edit', row)"
-          >
-            编辑
-          </el-button> -->
-          <el-button
-            type="danger"
-            link
-            @click="$emit('delete', row)"
-          >
-            删除
-          </el-button>
+          <el-button type="primary" link @click="$emit('config', row)">配置</el-button>
         </template>
       </el-table-column>
     </el-table>
-    
+
     <!-- 分页组件 -->
     <div class="pagination-container">
       <el-pagination
@@ -66,51 +46,39 @@
 </template>
 
 <script setup lang="ts">
-import type { AppInfo } from '@/models/application'
-import { ref, onMounted, onUnmounted } from 'vue'
+import type { AppInfo } from '@/models/application';
+import { ref, onMounted, onUnmounted } from 'vue';
 
 // 定义props
 const props = defineProps<{
-  appList: AppInfo[]
-  loading?: boolean
-  total: number
-}>()
+  appList: AppInfo[];
+  loading?: boolean;
+  total: number;
+}>();
 
 // 定义事件
 const emit = defineEmits<{
-  (e: 'edit', row: AppInfo): void
-  (e: 'delete', row: AppInfo): void
-  (e: 'detail', row: AppInfo): void
-  (e: 'page-change', page: number): void
-  (e: 'size-change', size: number): void
-}>()
+  (e: 'config', row: AppInfo): void;
+  (e: 'page-change', page: number): void;
+  (e: 'size-change', size: number): void;
+}>();
 
 // 分页相关
-const currentPage = ref(1)
-const pageSize = ref(10)
+const currentPage = ref(1);
+const pageSize = ref(10);
 
 // 表格高度计算
-const tableHeight = ref(undefined)
-
-// 编辑处理函数
-const handleEdit = (row: AppInfo) => {
-  emit('edit', row)
-}
-
-// 删除处理函数
-const handleDelete = (row: AppInfo) => {
-  emit('delete', row)
-}
+const tableHeight = ref(undefined);
 
 // 处理页码变化
 const handleCurrentChange = (page: number) => {
-  emit('page-change', page)
-}
+  emit('page-change', page);
+};
 
 // 处理每页条数变化
 const handleSizeChange = (size: number) => {
-  emit('size-change', size)
-}
+  emit('size-change', size);
+};
 </script>
 
 <style scoped>
@@ -166,4 +134,4 @@ const handleSizeChange = (size: number) => {
 :deep(.el-button:focus-visible) {
   outline: none !important;
 }
-</style> 
+</style>
