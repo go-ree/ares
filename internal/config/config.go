@@ -59,6 +59,7 @@ var Main = &Config{}
 func Init() error {
 	// 先读取默认配置文件（兜底），再尝试从 Apollo 获取“配置文件名”并二次加载覆盖
 	bootstrapPath := cli.ConfigFilePath
+	slog.Info("config bootstrap start", "bootstrap_path", bootstrapPath)
 	yamlData, err := os.ReadFile(bootstrapPath)
 	if err != nil {
 		slog.Error("read config file error", "path", bootstrapPath, slog.Any("error", err))
@@ -72,12 +73,43 @@ func Init() error {
 	}
 
 	loadedPath := bootstrapPath
+
+	// Apollo：只读取“配置文件名”，决定二次加载哪个 config/*.yaml
+	{
+		if Main == nil || !Main.Apollo.Enable {
+			slog.Info("apollo config disabled, skip")
+		} else {
+			base := strings.TrimRight(strings.TrimSpace(Main.Apollo.Address), "/")
+			appID := strings.TrimSpace(Main.Apollo.AppID)
+			cluster := strings.TrimSpace(Main.Apollo.Cluster)
+			namespace := strings.TrimSpace(Main.Apollo.Namespace)
+			key := strings.TrimSpace(Main.Apollo.Key)
+			timeoutMS := Main.Apollo.TimeoutMS
+			if timeoutMS <= 0 {
+				timeoutMS = 1200
+			}
+
+			slog.Info("apollo config resolve start",
+				"address", base,
+				"app_id", appID,
+				"cluster", cluster,
+				"namespace", namespace,
+				"key", key,
+				"timeout_ms", timeoutMS,
+			)
+		}
+	}
 	if p, ok, apolloErr := resolveConfigPathFromApollo(Main, bootstrapPath); apolloErr != nil {
 		slog.Warn("apollo config resolve failed, fallback to bootstrap config",
 			"bootstrap_path", bootstrapPath,
 			"error", apolloErr.Error(),
 		)
+	} else if !ok {
+		slog.Info("apollo config resolve skipped/no value, keep bootstrap config",
+			"bootstrap_path", bootstrapPath,
+		)
 	} else if ok && p != "" && p != bootstrapPath {
+		slog.Info("apollo selected config file", "selected_path", p)
 		if b, err := os.ReadFile(p); err != nil {
 			slog.Warn("read apollo-selected config file failed, fallback to bootstrap config",
 				"selected_path", p,
@@ -92,6 +124,7 @@ func Init() error {
 			)
 		} else {
 			loadedPath = p
+			slog.Info("apollo selected config loaded successfully", "path", loadedPath)
 		}
 	}
 
@@ -140,6 +173,11 @@ func resolveConfigPathFromApollo(cfg *Config, bootstrapPath string) (path string
 	// Apollo Config Service: GET /configs/{appId}/{cluster}/{namespace}
 	url := base + "/configs/" + appID + "/" + cluster + "/" + namespace
 
+	slog.Debug("apollo http request",
+		"url", url,
+		"key", key,
+		"timeout_ms", int(timeout.Milliseconds()),
+	)
 	client := &http.Client{Timeout: timeout}
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set("Accept", "application/json")
@@ -160,6 +198,10 @@ func resolveConfigPathFromApollo(cfg *Config, bootstrapPath string) (path string
 	}
 	name := strings.TrimSpace(r.Configurations[key])
 	if name == "" {
+		slog.Info("apollo key not found/empty, keep bootstrap config",
+			"key", key,
+			"bootstrap_path", bootstrapPath,
+		)
 		return "", false, nil
 	}
 
@@ -181,5 +223,10 @@ func resolveConfigPathFromApollo(cfg *Config, bootstrapPath string) (path string
 	selected := filepath.Join("config", clean)
 	// 与 bootstrap 同目录策略保持一致：如果 bootstrap 不是 config/xxx，则仍强制选 config/xxx
 	_ = bootstrapPath
+	slog.Info("apollo resolved config file name",
+		"key", key,
+		"value", name,
+		"selected_path", selected,
+	)
 	return selected, true, nil
 }
