@@ -1,15 +1,3 @@
-# 仅默认环境需要指定apollo相关信息，如果未识别到则使用默认配置生效，如果识别到则使用apollo中对应应用名称的配置下的文件生效
-# 注意：仅default.yaml中建议配置apollo相关内容，其他各环境禁止创建apollo配置
-apollo:
-  enable: true
-  address: "http://apollo-meta.ttpai.cn:8080"   # 你们实际的 Apollo Config Service 域名/地址
-  app_id: "ares"
-  cluster: "default"
-  namespace: "application"
-  key: "config_file_name"                        # Apollo 里这个 key 的 value 是 "test.yaml" / "moni.yaml" 等
-  timeout_ms: 1200
-
-
 db:
   conn_str: "sre_tool_wr_all:VNBpFpUSjdxFj6jfSpwN@(hc-business-mw01-mysql.ttpai.top:3306)/ares?charset=utf8mb4&loc=Asia%2FShanghai"
 
@@ -18,8 +6,8 @@ web:
 
 log:
   level: "info"
-  accessLogfile: "log/access.log"
-  runtimeLogfile: "log/runtime.log"
+  accessLogfile: "/opt/logs/app/access.log"
+  runtimeLogfile: "/opt/logs/app/runtime.log"
 
 # 精确到秒
 job:
