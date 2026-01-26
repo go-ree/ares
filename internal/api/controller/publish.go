@@ -69,7 +69,7 @@ func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
 // GetBuildTaskList
 // @Tags Publish
 // @Summary 获取发布中的任务列表
-// @Success 200 {object} util.ResponseTemplate{code=int,result=entity.TaskRecord} "成功"
+// @Success 200 {object} util.ResponseTemplate{code=int,result=[]entity.TaskRecord} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router	/api/v1/deploy/publish/status [get]
@@ -117,7 +117,7 @@ func (pc *PublishController) QueryBuildTaskList(c *gin.Context) {
 // @Summary 查询构建任务详情
 // @Description 根据任务的执行id，查询构建任务详情信息
 // @Param task_id path int true "构建任务ID"
-// @Success 200 {object} util.ResponseTemplate{code=int,result=publish.PublishQueryResult} "成功"
+// @Success 200 {object} util.ResponseTemplate{code=int,result=entity.TaskRecord} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router /api/v1/deploy/publish/query/{task_id} [get]
