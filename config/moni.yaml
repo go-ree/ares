@@ -1,5 +1,5 @@
 db:
-  conn_str: "sre_tool_wr_all:VNBpFpUSjdxFj6jfSpwN@(hc-business-mw01-mysql.ttpai.top:3306)/ares?charset=utf8mb4&loc=Asia%2FShanghai"
+  conn_str: "sre_tool_wr_all:SNMqT^Ym%W@(sq-moni-mw01-mysql.ttpai.fun:3306)/ares?charset=utf8mb4&loc=Asia%2FShanghai"
 
 web:
   address: ":8080"

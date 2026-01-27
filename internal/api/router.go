@@ -94,6 +94,7 @@ func Router(r gin.IRouter) {
 		{
 			appConfigs.GET("/:config_id", appConfigsController.GetAppConfigByID)
 			appConfigs.PATCH("/:config_id", appConfigsController.PatchAppConfigByID)
+			// 域名相关配置
 			appConfigs.GET("/:config_id/domains", appConfigsController.ListDomainsByConfigID)
 			appConfigs.PUT("/:config_id/domains", appConfigsController.OverwriteDomainsByConfigID)
 			// 多域名单条增删改
