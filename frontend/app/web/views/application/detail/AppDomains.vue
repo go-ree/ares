@@ -135,6 +135,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import axios from 'axios';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import type { AppConfig, AppEnv, DomainItem } from '@/models/application';
 import {
@@ -299,8 +300,15 @@ const save = async (env: AppEnv) => {
     isEditingByEnv[env] = false;
   } catch (e) {
     console.error(e);
-    ElMessage.error(e instanceof Error ? e.message : '保存多域名失败');
-    await ElMessageBox.alert(e instanceof Error ? e.message : '保存多域名失败', '保存结果', {
+    let message = '保存多域名失败';
+    if (axios.isAxiosError(e) && e.response?.data) {
+      const data: any = e.response.data;
+      message = data.error || message;
+    } else if (e instanceof Error) {
+      message = e.message || message;
+    }
+    ElMessage.error(message);
+    await ElMessageBox.alert(message, '保存结果', {
       type: 'error',
     });
   } finally {
