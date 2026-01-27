@@ -317,7 +317,10 @@ export default defineConfig(({ command, mode }) => {
       ],
       proxy: {
         '/api': {
-          target: env.VITE_API_BASE_URL || 'http://ares.ttpai.top',
+          // dev 默认走 ares.ttpai.top，模拟环境(moni)默认走 ares.ttpai.fun
+          target:
+            env.VITE_API_BASE_URL ||
+            (mode === 'moni' ? 'http://ares.ttpai.fun' : 'http://ares.ttpai.top'),
           changeOrigin: true,
           secure: false,
           rewrite: path => path,

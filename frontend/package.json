@@ -11,6 +11,7 @@
     "start:dev": "vite --mode development --port 8080 --host 0.0.0.0 --config config/vite.config.ts",
     "start:prod": "vite preview --port 8080 --host 0.0.0.0 --config config/vite.config.ts",
     "start:dev-simple": "vite --mode development --port 8080 --host 0.0.0.0",
+    "start:moni": "vite --mode moni --port 8080 --host 0.0.0.0 --config config/vite.config.ts",
     "start:prod-simple": "vite preview --port 8080 --host 0.0.0.0",
     "start": "npm run dev",
     "preview": "vite preview --config config/vite.config.ts",
