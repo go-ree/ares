@@ -57,9 +57,9 @@ func (pm *PublishManager) buildPublishQuery(ctx context.Context, params PublishQ
 	// 构建查询条件
 	if params.AppName != "" {
 		if params.IsRundeck {
-			session = session.Where("rundeck_app_name LIKE ?", "%"+params.AppName+"%")
+			session = session.Where("rundeck_app_name IS ?", "%"+params.AppName+"%")
 		} else {
-			session = session.Where("app_name LIKE ?", "%"+params.AppName+"%")
+			session = session.Where("app_name IS ?", "%"+params.AppName+"%")
 		}
 	}
 	if params.Env != "" {
