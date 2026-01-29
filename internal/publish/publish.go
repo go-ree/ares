@@ -315,6 +315,9 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 	JenkinsParam["probe_type"] = appConfig.ProbeType
 	JenkinsParam["probe_check_path"] = appConfig.ProbeCheckPath
 	JenkinsParam["probe_check_tcp_port"] = strconv.Itoa(appConfig.ProbeCheckTcpPort)
+	JenkinsParam["probe_check_http_port"] = strconv.Itoa(appConfig.ProbeCheckHttpPort)
+	JenkinsParam["probe_stop_check_http_port"] = strconv.Itoa(appConfig.ProbeStopCheckHttpPort)
+	JenkinsParam["container_port"] = strconv.Itoa(appConfig.ContainerPort)
 	JenkinsParam["pre_stop_type"] = appConfig.PreStopType
 	JenkinsParam["pre_stop_check_path"] = appConfig.PreStopCheckPath
 	JenkinsParam["pre_stop_command"] = appConfig.PreStopCommand
