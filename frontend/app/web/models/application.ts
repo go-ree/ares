@@ -104,6 +104,9 @@ export interface AppConfig {
 
   probe_type?: string;
   probe_check_path?: string;
+  // TCP 探针端口（后端字段）
+  probe_check_tcp_port?: number;
+  // 兼容字段：历史版本可能仍返回/使用 probe_check_port
   probe_check_port?: number;
 
   pre_stop_type?: string;
@@ -127,6 +130,9 @@ export interface UpdateAppConfigRequest {
   gpu_count?: number;
   probe_type?: string;
   probe_check_path?: string;
+  // TCP 探针端口（后端字段）
+  probe_check_tcp_port?: number;
+  // 兼容字段：历史版本可能仍使用 probe_check_port
   probe_check_port?: number;
   pre_stop_type?: string;
   pre_stop_check_path?: string;

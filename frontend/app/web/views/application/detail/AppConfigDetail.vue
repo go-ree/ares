@@ -147,7 +147,7 @@
                   </el-form-item>
                   <el-form-item v-else-if="formsByEnv[env.value].probe_type === 'TCP'" label="端口">
                     <el-input-number
-                      v-model="formsByEnv[env.value].probe_check_port"
+                      v-model="formsByEnv[env.value].probe_check_tcp_port"
                       :min="1"
                       :max="65535"
                       :step="1"
@@ -161,18 +161,20 @@
               <el-divider content-position="left">PreStop</el-divider>
               <el-row :gutter="16">
                 <el-col :span="8">
-                  <el-form-item label="开启">
-                    <el-switch
-                      v-model="preStopEnabledByEnv[env.value]"
-                      inline-prompt
-                      active-text="开"
-                      inactive-text="关"
+                  <el-form-item label="类型">
+                    <el-select
+                      v-model="formsByEnv[env.value].pre_stop_type"
+                      placeholder="选择 TCP 或 HTTP"
+                      clearable
                       :disabled="!isEditingByEnv[env.value]"
-                      @change="handlePreStopToggle(env.value)"
-                    />
+                      @change="handlePreStopTypeChange(env.value)"
+                    >
+                      <el-option label="HTTP" value="HTTP" />
+                      <el-option label="TCP" value="TCP" />
+                    </el-select>
                   </el-form-item>
                 </el-col>
-                <el-col v-if="preStopEnabledByEnv[env.value]" :span="8">
+                <el-col v-if="formsByEnv[env.value].pre_stop_type === 'HTTP'" :span="16">
                   <el-form-item label="URL">
                     <el-input
                       v-model="formsByEnv[env.value].pre_stop_check_path"
@@ -181,15 +183,15 @@
                     />
                   </el-form-item>
                 </el-col>
-                <el-col v-if="preStopEnabledByEnv[env.value]" :span="8">
+                <el-col v-if="formsByEnv[env.value].pre_stop_type === 'TCP'" :span="8">
                   <el-form-item label="端口">
                     <el-input-number
-                      v-model="formsByEnv[env.value].pre_stop_check_port"
+                      :model-value="formsByEnv[env.value].probe_check_tcp_port"
                       :min="1"
                       :max="65535"
                       :step="1"
                       placeholder="如 8080"
-                      :disabled="!isEditingByEnv[env.value]"
+                      disabled
                     />
                   </el-form-item>
                 </el-col>
@@ -258,19 +260,12 @@ const isEditingByEnv = reactive<Record<AppEnv, boolean>>({
   moni: false,
 });
 
-const preStopEnabledByEnv = reactive<Record<AppEnv, boolean>>({
-  dev: false,
-  test: false,
-  moni: false,
-});
-
 const reset = () => {
   envOptions.forEach(env => {
     configsByEnv[env.value] = null;
     formsByEnv[env.value] = {};
     originalFormsByEnv[env.value] = {};
     isEditingByEnv[env.value] = false;
-    preStopEnabledByEnv[env.value] = false;
   });
 };
 
@@ -278,20 +273,32 @@ const handleProbeTypeChange = (env: AppEnv) => {
   if (!isEditingByEnv[env]) return;
   const probeType = formsByEnv[env].probe_type;
   if (probeType === 'HTTP') {
+    formsByEnv[env].probe_check_tcp_port = undefined;
+    // 兼容清理
     formsByEnv[env].probe_check_port = undefined;
   } else if (probeType === 'TCP') {
     formsByEnv[env].probe_check_path = undefined;
+    // 兼容清理
+    formsByEnv[env].probe_check_port = undefined;
   } else {
     formsByEnv[env].probe_check_path = undefined;
+    formsByEnv[env].probe_check_tcp_port = undefined;
     formsByEnv[env].probe_check_port = undefined;
   }
 };
 
-const handlePreStopToggle = (env: AppEnv) => {
+const handlePreStopTypeChange = (env: AppEnv) => {
   if (!isEditingByEnv[env]) return;
-  if (preStopEnabledByEnv[env]) {
-    formsByEnv[env].pre_stop_type = 'HTTP';
+  const t = formsByEnv[env].pre_stop_type;
+  if (t === 'HTTP') {
+    // HTTP：需要 path，端口与 probe_check_tcp_port 共用（保存时写入）
+    formsByEnv[env].pre_stop_command = undefined;
+  } else if (t === 'TCP') {
+    // TCP：不需要 path
+    formsByEnv[env].pre_stop_check_path = undefined;
+    formsByEnv[env].pre_stop_command = undefined;
   } else {
+    // 清空
     formsByEnv[env].pre_stop_type = undefined;
     formsByEnv[env].pre_stop_check_path = undefined;
     formsByEnv[env].pre_stop_check_port = undefined;
@@ -320,7 +327,11 @@ const fetchConfigs = async () => {
           gpu_count: cfg.gpu_count ?? undefined,
           probe_type: cfg.probe_type || undefined,
           probe_check_path: cfg.probe_check_path || undefined,
-          probe_check_port: cfg.probe_check_port ?? undefined,
+          // TCP 探针端口：优先取 probe_check_tcp_port，其次兼容 probe_check_port
+          probe_check_tcp_port:
+            (cfg as any).probe_check_tcp_port ?? cfg.probe_check_port ?? undefined,
+          // 兼容字段保留（不主动回写）
+          probe_check_port: undefined,
           pre_stop_type: cfg.pre_stop_type || undefined,
           pre_stop_check_path: cfg.pre_stop_check_path || undefined,
           pre_stop_check_port: cfg.pre_stop_check_port ?? undefined,
@@ -329,11 +340,6 @@ const fetchConfigs = async () => {
         formsByEnv[cfg.env] = { ...form };
         originalFormsByEnv[cfg.env] = { ...form };
         isEditingByEnv[cfg.env] = false;
-        preStopEnabledByEnv[cfg.env] = Boolean(
-          formsByEnv[cfg.env].pre_stop_check_path ||
-            formsByEnv[cfg.env].pre_stop_check_port ||
-            formsByEnv[cfg.env].pre_stop_type
-        );
       }
     }
   } catch (e) {
@@ -392,11 +398,6 @@ const startEdit = (env: AppEnv) => {
 
 const cancelEdit = (env: AppEnv) => {
   formsByEnv[env] = { ...originalFormsByEnv[env] };
-  preStopEnabledByEnv[env] = Boolean(
-    formsByEnv[env].pre_stop_check_path ||
-      formsByEnv[env].pre_stop_check_port ||
-      formsByEnv[env].pre_stop_type
-  );
   isEditingByEnv[env] = false;
 };
 
@@ -406,6 +407,29 @@ const saveEnvConfig = async (env: AppEnv) => {
   saving.value = true;
   try {
     const payload: UpdateAppConfigRequest = { ...formsByEnv[env] };
+    // 兼容：避免把历史字段 probe_check_port 误提交；统一走 probe_check_tcp_port
+    if (payload.probe_type === 'TCP') {
+      payload.probe_check_path = undefined;
+    } else if (payload.probe_type === 'HTTP') {
+      payload.probe_check_tcp_port = undefined;
+    }
+
+    // PreStop
+    // - HTTP：只用 URL（pre_stop_check_path），不展示/不写入端口
+    // - TCP：端口只读，和 probe_check_tcp_port 共用
+    if (payload.pre_stop_type === 'HTTP') {
+      payload.pre_stop_check_port = undefined;
+    } else if (payload.pre_stop_type === 'TCP') {
+      payload.pre_stop_check_port = payload.probe_check_tcp_port ?? undefined;
+      payload.pre_stop_check_path = undefined;
+    } else {
+      payload.pre_stop_type = undefined;
+      payload.pre_stop_check_path = undefined;
+      payload.pre_stop_check_port = undefined;
+      payload.pre_stop_command = undefined;
+    }
+
+    delete (payload as any).probe_check_port;
     const resp = await patchAppConfigByEnv(appId.value, env, payload);
     if (resp.data.code !== 1) throw new Error(resp.data.message || '保存失败');
     ElMessage.success('保存成功');
