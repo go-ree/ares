@@ -26,6 +26,15 @@ type ServiceProjectMapItem struct {
 	ProjectType        string `json:"projectType"`
 }
 
+// LegacyServiceProjectMapResponse 兼容老接口响应结构（code 为字符串）
+// 形如：
+// {"code":"200","message":"","result":[...]}
+type LegacyServiceProjectMapResponse struct {
+	Code    string                  `json:"code"`
+	Message string                  `json:"message"`
+	Result  []ServiceProjectMapItem `json:"result"`
+}
+
 func (m *AppInfoManager) QueryServiceProjectMap(ctx context.Context, env string) ([]ServiceProjectMapItem, error) {
 	e := strings.ToLower(strings.TrimSpace(env))
 	if e == "" {
