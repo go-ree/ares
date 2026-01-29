@@ -314,6 +314,7 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 	JenkinsParam["gpu_count"] = strconv.Itoa(appConfig.GpuCount)
 	JenkinsParam["probe_type"] = appConfig.ProbeType
 	JenkinsParam["probe_check_path"] = appConfig.ProbeCheckPath
+	JenkinsParam["probe_check_tcp_port"] = strconv.Itoa(appConfig.ProbeCheckTcpPort)
 	JenkinsParam["pre_stop_type"] = appConfig.PreStopType
 	JenkinsParam["pre_stop_check_path"] = appConfig.PreStopCheckPath
 	JenkinsParam["pre_stop_command"] = appConfig.PreStopCommand

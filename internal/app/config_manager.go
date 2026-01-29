@@ -95,14 +95,15 @@ type CreateAppConfigRequest struct {
 	CodePackageName *string `json:"code_package_name"`
 	BaseImage       *string `json:"base_image"`
 
-	PodCount         *int    `json:"pod_count"`
-	LimitsMemory     *int    `json:"limits_memory"`
-	GpuCount         *int    `json:"gpu_count"`
-	ProbeType        *string `json:"probe_type"`
-	ProbeCheckPath   *string `json:"probe_check_path"`
-	PreStopType      *string `json:"pre_stop_type"`
-	PreStopCheckPath *string `json:"pre_stop_check_path"`
-	PreStopCommand   *string `json:"pre_stop_command"`
+	PodCount          *int    `json:"pod_count"`
+	LimitsMemory      *int    `json:"limits_memory"`
+	GpuCount          *int    `json:"gpu_count"`
+	ProbeType         *string `json:"probe_type"`
+	ProbeCheckPath    *string `json:"probe_check_path"`
+	ProbeCheckTcpPort *int    `json:"probe_check_tcp_port"`
+	PreStopType       *string `json:"pre_stop_type"`
+	PreStopCheckPath  *string `json:"pre_stop_check_path"`
+	PreStopCommand    *string `json:"pre_stop_command"`
 }
 
 // UpdateAppConfigRequest 允许更新的应用环境配置字段（指针用于 PATCH 语义）
@@ -112,14 +113,15 @@ type UpdateAppConfigRequest struct {
 	CodePackageName *string `json:"code_package_name"`
 	BaseImage       *string `json:"base_image"`
 
-	PodCount         *int    `json:"pod_count"`
-	LimitsMemory     *int    `json:"limits_memory"`
-	GpuCount         *int    `json:"gpu_count"`
-	ProbeType        *string `json:"probe_type"`
-	ProbeCheckPath   *string `json:"probe_check_path"`
-	PreStopType      *string `json:"pre_stop_type"`
-	PreStopCheckPath *string `json:"pre_stop_check_path"`
-	PreStopCommand   *string `json:"pre_stop_command"`
+	PodCount          *int    `json:"pod_count"`
+	LimitsMemory      *int    `json:"limits_memory"`
+	GpuCount          *int    `json:"gpu_count"`
+	ProbeType         *string `json:"probe_type"`
+	ProbeCheckPath    *string `json:"probe_check_path"`
+	ProbeCheckTcpPort *int    `json:"probe_check_tcp_port"`
+	PreStopType       *string `json:"pre_stop_type"`
+	PreStopCheckPath  *string `json:"pre_stop_check_path"`
+	PreStopCommand    *string `json:"pre_stop_command"`
 }
 
 // DomainItem 多域名配置项
@@ -203,20 +205,21 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 
 	// 默认值：对齐 createDefaultConfig
 	row := &entity.AppConfigs{
-		AppID:            appID,
-		Env:              env,
-		CodePackageType:  rules.Default,
-		CodePackageName:  "NULL",
-		CodePackagePath:  "NULL",
-		BaseImage:        "NULL",
-		PodCount:         1,
-		LimitsMemory:     2,
-		GpuCount:         0,
-		ProbeType:        "HTTP",
-		ProbeCheckPath:   "/ttpai/inside/checkup",
-		PreStopType:      "HTTP",
-		PreStopCheckPath: "/ttpai/inside/prestop",
-		PreStopCommand:   "NULL",
+		AppID:             appID,
+		Env:               env,
+		CodePackageType:   rules.Default,
+		CodePackageName:   "NULL",
+		CodePackagePath:   "NULL",
+		BaseImage:         "NULL",
+		PodCount:          1,
+		LimitsMemory:      2,
+		GpuCount:          0,
+		ProbeType:         "HTTP",
+		ProbeCheckPath:    "/ttpai/inside/checkup",
+		ProbeCheckTcpPort: 8080,
+		PreStopType:       "HTTP",
+		PreStopCheckPath:  "/ttpai/inside/prestop",
+		PreStopCommand:    "NULL",
 	}
 
 	// 覆盖写入（如有传值）
@@ -263,6 +266,13 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 		if p != "" {
 			row.ProbeCheckPath = p
 		}
+	}
+	if req.ProbeCheckTcpPort != nil {
+		port := *req.ProbeCheckTcpPort
+		if port <= 0 || port > 65535 {
+			return nil, fmt.Errorf("probe_check_tcp_port 必须在 1-65535 之间")
+		}
+		row.ProbeCheckTcpPort = port
 	}
 	if req.PreStopType != nil {
 		row.PreStopType = strings.TrimSpace(*req.PreStopType)
@@ -336,6 +346,13 @@ func buildUpdateMap(req UpdateAppConfigRequest) (map[string]any, error) {
 	setInt("gpu_count", req.GpuCount)
 	setStr("probe_type", req.ProbeType)
 	setStr("probe_check_path", req.ProbeCheckPath)
+	if req.ProbeCheckTcpPort != nil {
+		port := *req.ProbeCheckTcpPort
+		if port <= 0 || port > 65535 {
+			return nil, fmt.Errorf("probe_check_tcp_port 必须在 1-65535 之间")
+		}
+		setInt("probe_check_tcp_port", req.ProbeCheckTcpPort)
+	}
 	setStr("pre_stop_type", req.PreStopType)
 	setStr("pre_stop_check_path", req.PreStopCheckPath)
 	setStr("pre_stop_command", req.PreStopCommand)

@@ -187,20 +187,21 @@ func (am *AppManager) createDefaultConfig(app *entity.Apps) {
 	for _, env := range environments {
 		// 创建应用环境配置
 		appConfig := &entity.AppConfigs{
-			AppID:            app.AppId,
-			Env:              env,
-			CodePackageType:  defaultCodePackageType,
-			CodePackageName:  "NULL",
-			CodePackagePath:  "NULL",
-			BaseImage:        "NULL",
-			PodCount:         1,
-			LimitsMemory:     2,
-			GpuCount:         0,
-			ProbeType:        "HTTP",
-			ProbeCheckPath:   "/ttpai/inside/checkup",
-			PreStopType:      "HTTP",
-			PreStopCheckPath: "/ttpai/inside/prestop",
-			PreStopCommand:   "NULL",
+			AppID:             app.AppId,
+			Env:               env,
+			CodePackageType:   defaultCodePackageType,
+			CodePackageName:   "NULL",
+			CodePackagePath:   "NULL",
+			BaseImage:         "NULL",
+			PodCount:          1,
+			LimitsMemory:      2,
+			GpuCount:          0,
+			ProbeType:         "HTTP",
+			ProbeCheckPath:    "/ttpai/inside/checkup",
+			ProbeCheckTcpPort: 8080,
+			PreStopType:       "HTTP",
+			PreStopCheckPath:  "/ttpai/inside/prestop",
+			PreStopCommand:    "NULL",
 		}
 
 		session := db.Engine.NewSession()
