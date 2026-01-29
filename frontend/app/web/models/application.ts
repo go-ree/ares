@@ -101,11 +101,17 @@ export interface AppConfig {
   pod_count?: number;
   limits_memory?: number;
   gpu_count?: number;
+  // 应用端口号
+  container_port?: number;
 
   probe_type?: string;
   probe_check_path?: string;
   // TCP 探针端口（后端字段）
   probe_check_tcp_port?: number;
+  // HTTP 探针端口（后端字段）
+  probe_check_http_port?: number;
+  // PreStop HTTP 探针端口（后端字段）
+  probe_stop_check_http_port?: number;
   // 兼容字段：历史版本可能仍返回/使用 probe_check_port
   probe_check_port?: number;
 
@@ -128,10 +134,16 @@ export interface UpdateAppConfigRequest {
   pod_count?: number;
   limits_memory?: number;
   gpu_count?: number;
+  // 应用端口号
+  container_port?: number;
   probe_type?: string;
   probe_check_path?: string;
   // TCP 探针端口（后端字段）
   probe_check_tcp_port?: number;
+  // HTTP 探针端口（后端字段）
+  probe_check_http_port?: number;
+  // PreStop HTTP 探针端口（后端字段）
+  probe_stop_check_http_port?: number;
   // 兼容字段：历史版本可能仍使用 probe_check_port
   probe_check_port?: number;
   pre_stop_type?: string;

@@ -82,12 +82,24 @@
             >
               <el-divider content-position="left">基础</el-divider>
               <el-row :gutter="16">
-                <el-col :span="12">
+                <el-col :span="8">
                   <el-form-item label="应用实例数量">
                     <el-input-number
                       v-model="formsByEnv[env.value].pod_count"
                       :min="0"
                       :step="1"
+                      :disabled="!isEditingByEnv[env.value]"
+                    />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="8">
+                  <el-form-item label="应用端口号">
+                    <el-input-number
+                      v-model="formsByEnv[env.value].container_port"
+                      :min="1"
+                      :max="65535"
+                      :step="1"
+                      placeholder="如 8080"
                       :disabled="!isEditingByEnv[env.value]"
                     />
                   </el-form-item>
@@ -134,18 +146,29 @@
                     </el-select>
                   </el-form-item>
                 </el-col>
-                <el-col :span="16">
-                  <el-form-item
-                    v-if="formsByEnv[env.value].probe_type === 'HTTP'"
-                    label="健康监测探针路径"
-                  >
+                <el-col v-if="formsByEnv[env.value].probe_type === 'HTTP'" :span="8">
+                  <el-form-item label="健康监测探针路径">
                     <el-input
                       v-model="formsByEnv[env.value].probe_check_path"
                       placeholder="如 /ttpai/inside/checkup"
                       :disabled="!isEditingByEnv[env.value]"
                     />
                   </el-form-item>
-                  <el-form-item v-else-if="formsByEnv[env.value].probe_type === 'TCP'" label="端口">
+                </el-col>
+                <el-col v-if="formsByEnv[env.value].probe_type === 'HTTP'" :span="8">
+                  <el-form-item label="端口">
+                    <el-input-number
+                      v-model="formsByEnv[env.value].probe_check_http_port"
+                      :min="1"
+                      :max="65535"
+                      :step="1"
+                      placeholder="如 8080"
+                      :disabled="!isEditingByEnv[env.value]"
+                    />
+                  </el-form-item>
+                </el-col>
+                <el-col v-else-if="formsByEnv[env.value].probe_type === 'TCP'" :span="8">
+                  <el-form-item label="端口">
                     <el-input-number
                       v-model="formsByEnv[env.value].probe_check_tcp_port"
                       :min="1"
@@ -164,17 +187,17 @@
                   <el-form-item label="类型">
                     <el-select
                       v-model="formsByEnv[env.value].pre_stop_type"
-                      placeholder="选择 TCP 或 HTTP"
+                      placeholder="选择 TCP / HTTP / COMMAND"
                       clearable
                       :disabled="!isEditingByEnv[env.value]"
                       @change="handlePreStopTypeChange(env.value)"
                     >
                       <el-option label="HTTP" value="HTTP" />
-                      <el-option label="TCP" value="TCP" />
+                      <el-option label="COMMAND" value="command" />
                     </el-select>
                   </el-form-item>
                 </el-col>
-                <el-col v-if="formsByEnv[env.value].pre_stop_type === 'HTTP'" :span="16">
+                <el-col v-if="formsByEnv[env.value].pre_stop_type === 'HTTP'" :span="8">
                   <el-form-item label="URL">
                     <el-input
                       v-model="formsByEnv[env.value].pre_stop_check_path"
@@ -183,15 +206,26 @@
                     />
                   </el-form-item>
                 </el-col>
-                <el-col v-if="formsByEnv[env.value].pre_stop_type === 'TCP'" :span="8">
+                <el-col v-if="formsByEnv[env.value].pre_stop_type === 'HTTP'" :span="8">
                   <el-form-item label="端口">
                     <el-input-number
-                      :model-value="formsByEnv[env.value].probe_check_tcp_port"
+                      v-model="formsByEnv[env.value].probe_stop_check_http_port"
                       :min="1"
                       :max="65535"
                       :step="1"
                       placeholder="如 8080"
-                      disabled
+                      :disabled="!isEditingByEnv[env.value]"
+                    />
+                  </el-form-item>
+                </el-col>
+                <el-col v-if="formsByEnv[env.value].pre_stop_type === 'command'" :span="16">
+                  <el-form-item label="命令">
+                    <el-input
+                      v-model="formsByEnv[env.value].pre_stop_command"
+                      type="textarea"
+                      :autosize="{ minRows: 2, maxRows: 6 }"
+                      placeholder="如 sleep 5"
+                      :disabled="!isEditingByEnv[env.value]"
                     />
                   </el-form-item>
                 </el-col>
@@ -274,15 +308,23 @@ const handleProbeTypeChange = (env: AppEnv) => {
   const probeType = formsByEnv[env].probe_type;
   if (probeType === 'HTTP') {
     formsByEnv[env].probe_check_tcp_port = undefined;
+    if (!formsByEnv[env].probe_check_http_port) {
+      formsByEnv[env].probe_check_http_port = formsByEnv[env].container_port;
+    }
     // 兼容清理
     formsByEnv[env].probe_check_port = undefined;
   } else if (probeType === 'TCP') {
     formsByEnv[env].probe_check_path = undefined;
+    formsByEnv[env].probe_check_http_port = undefined;
+    if (!formsByEnv[env].probe_check_tcp_port) {
+      formsByEnv[env].probe_check_tcp_port = formsByEnv[env].container_port;
+    }
     // 兼容清理
     formsByEnv[env].probe_check_port = undefined;
   } else {
     formsByEnv[env].probe_check_path = undefined;
     formsByEnv[env].probe_check_tcp_port = undefined;
+    formsByEnv[env].probe_check_http_port = undefined;
     formsByEnv[env].probe_check_port = undefined;
   }
 };
@@ -291,18 +333,24 @@ const handlePreStopTypeChange = (env: AppEnv) => {
   if (!isEditingByEnv[env]) return;
   const t = formsByEnv[env].pre_stop_type;
   if (t === 'HTTP') {
-    // HTTP：需要 path，端口与 probe_check_tcp_port 共用（保存时写入）
+    // HTTP：路径 + 端口（probe_stop_check_http_port）
     formsByEnv[env].pre_stop_command = undefined;
-  } else if (t === 'TCP') {
-    // TCP：不需要 path
+    if (!formsByEnv[env].probe_stop_check_http_port) {
+      formsByEnv[env].probe_stop_check_http_port =
+        formsByEnv[env].probe_check_http_port || formsByEnv[env].container_port;
+    }
+  } else if (t === 'command') {
+    // COMMAND：只命令
     formsByEnv[env].pre_stop_check_path = undefined;
-    formsByEnv[env].pre_stop_command = undefined;
+    formsByEnv[env].probe_stop_check_http_port = undefined;
+    formsByEnv[env].pre_stop_check_port = undefined;
   } else {
     // 清空
     formsByEnv[env].pre_stop_type = undefined;
     formsByEnv[env].pre_stop_check_path = undefined;
     formsByEnv[env].pre_stop_check_port = undefined;
     formsByEnv[env].pre_stop_command = undefined;
+    formsByEnv[env].probe_stop_check_http_port = undefined;
   }
 };
 
@@ -325,14 +373,18 @@ const fetchConfigs = async () => {
           pod_count: cfg.pod_count ?? undefined,
           limits_memory: cfg.limits_memory ?? undefined,
           gpu_count: cfg.gpu_count ?? undefined,
+          container_port: (cfg as any).container_port ?? undefined,
           probe_type: cfg.probe_type || undefined,
           probe_check_path: cfg.probe_check_path || undefined,
           // TCP 探针端口：优先取 probe_check_tcp_port，其次兼容 probe_check_port
           probe_check_tcp_port:
             (cfg as any).probe_check_tcp_port ?? cfg.probe_check_port ?? undefined,
+          probe_check_http_port: (cfg as any).probe_check_http_port ?? undefined,
+          probe_stop_check_http_port: (cfg as any).probe_stop_check_http_port ?? undefined,
           // 兼容字段保留（不主动回写）
           probe_check_port: undefined,
-          pre_stop_type: cfg.pre_stop_type || undefined,
+          // PreStop：前端不再提供 TCP 选项；如果后端返回 TCP，则按“未启用”处理
+          pre_stop_type: cfg.pre_stop_type === 'TCP' ? undefined : cfg.pre_stop_type || undefined,
           pre_stop_check_path: cfg.pre_stop_check_path || undefined,
           pre_stop_check_port: cfg.pre_stop_check_port ?? undefined,
           pre_stop_command: cfg.pre_stop_command || undefined,
@@ -410,23 +462,35 @@ const saveEnvConfig = async (env: AppEnv) => {
     // 兼容：避免把历史字段 probe_check_port 误提交；统一走 probe_check_tcp_port
     if (payload.probe_type === 'TCP') {
       payload.probe_check_path = undefined;
+      payload.probe_check_http_port = undefined;
     } else if (payload.probe_type === 'HTTP') {
       payload.probe_check_tcp_port = undefined;
+      payload.probe_check_http_port =
+        payload.probe_check_http_port ?? payload.container_port ?? undefined;
     }
 
     // PreStop
-    // - HTTP：只用 URL（pre_stop_check_path），不展示/不写入端口
-    // - TCP：端口只读，和 probe_check_tcp_port 共用
+    // - HTTP：类型+路径+端口（probe_stop_check_http_port）
+    // - command：类型+命令（pre_stop_command）
     if (payload.pre_stop_type === 'HTTP') {
+      payload.pre_stop_command = undefined;
+      payload.probe_stop_check_http_port =
+        payload.probe_stop_check_http_port ??
+        payload.probe_check_http_port ??
+        payload.container_port ??
+        undefined;
+      // 兼容字段不再使用
       payload.pre_stop_check_port = undefined;
-    } else if (payload.pre_stop_type === 'TCP') {
-      payload.pre_stop_check_port = payload.probe_check_tcp_port ?? undefined;
+    } else if (payload.pre_stop_type === 'command') {
       payload.pre_stop_check_path = undefined;
+      payload.probe_stop_check_http_port = undefined;
+      payload.pre_stop_check_port = undefined;
     } else {
       payload.pre_stop_type = undefined;
       payload.pre_stop_check_path = undefined;
       payload.pre_stop_check_port = undefined;
       payload.pre_stop_command = undefined;
+      payload.probe_stop_check_http_port = undefined;
     }
 
     delete (payload as any).probe_check_port;
