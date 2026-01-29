@@ -5,6 +5,7 @@ import (
 	"ares/internal/entity"
 	"context"
 	"strings"
+	"unicode"
 )
 
 // AppInfoManager
@@ -36,7 +37,12 @@ type LegacyServiceProjectMapResponse struct {
 }
 
 func (m *AppInfoManager) QueryServiceProjectMap(ctx context.Context, env string) ([]ServiceProjectMapItem, error) {
-	e := strings.ToLower(strings.TrimSpace(env))
+	raw := strings.TrimSpace(env)
+	// 兼容：env 可能传入中文（例如“开发/测试”），此时一律回退为 dev
+	if raw == "" || containsHan(raw) {
+		raw = "dev"
+	}
+	e := strings.ToLower(raw)
 	if e == "" {
 		e = "dev"
 	}
@@ -64,6 +70,15 @@ func (m *AppInfoManager) QueryServiceProjectMap(ctx context.Context, env string)
 		})
 	}
 	return out, nil
+}
+
+func containsHan(s string) bool {
+	for _, r := range s {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseProjectNameFromGitURL(gitURL string) string {
