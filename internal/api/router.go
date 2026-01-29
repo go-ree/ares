@@ -16,6 +16,7 @@ func Router(r gin.IRouter) {
 	appConfigsController := controller.NewAppConfigsController()
 	publishController := controller.NewPublishController()
 	podController := controller.NewPodController()
+	compatibleController := controller.NewCompatibleController()
 	// Swagger 路由
 	r.GET("/wiki", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/swagger/index.html") })
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -113,6 +114,13 @@ func Router(r gin.IRouter) {
 			k8s.GET("/deployment/query", podController.GetDeploymentsByLabel)
 			// K8s调试信息
 			k8s.GET("/debug", podController.GetK8sDebugInfo)
+		}
+
+		// 特殊兼容接口
+		compatible := apiRouter.Group("/compatible")
+		{
+			compatible.GET("/metadata/relation/all")
+			compatible.GET("/docker/info/getServiceProjectMap", compatibleController.GetAppInfo)
 		}
 	}
 

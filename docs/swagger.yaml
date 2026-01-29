@@ -1,4 +1,11 @@
 definitions:
+  app.AppConfigOptions:
+    properties:
+      code_package_type:
+        $ref: '#/definitions/app.CodePackageTypeOptions'
+      dev_language:
+        type: string
+    type: object
   app.AppQuery:
     properties:
       app_id:
@@ -36,6 +43,44 @@ definitions:
       total_pages:
         description: 总页数
         type: integer
+    type: object
+  app.CodePackageTypeOptions:
+    properties:
+      allowed:
+        items:
+          type: string
+        type: array
+      default:
+        type: string
+    type: object
+  app.CreateAppConfigRequest:
+    properties:
+      base_image:
+        type: string
+      code_package_name:
+        type: string
+      code_package_path:
+        type: string
+      code_package_type:
+        type: string
+      env:
+        type: string
+      gpu_count:
+        type: integer
+      limits_memory:
+        type: integer
+      pod_count:
+        type: integer
+      pre_stop_check_path:
+        type: string
+      pre_stop_command:
+        type: string
+      pre_stop_type:
+        type: string
+      probe_check_path:
+        type: string
+      probe_type:
+        type: string
     type: object
   app.CreateAppRequest:
     properties:
@@ -92,6 +137,24 @@ definitions:
       path:
         type: string
     type: object
+  app.PatchAppRequest:
+    properties:
+      app_name_cn:
+        description: 允许更新的字段（不允许修改 app_name / app_id）
+        type: string
+      description_cn:
+        type: string
+      dev_language:
+        type: string
+      git_url:
+        type: string
+      owner:
+        type: string
+      owner_cn:
+        type: string
+      rundeck_app_name:
+        type: string
+    type: object
   app.PatchDomainRequest:
     properties:
       host:
@@ -132,6 +195,17 @@ definitions:
         items:
           $ref: '#/definitions/app.DomainItem'
         type: array
+    type: object
+  compatible.ServiceProjectMapItem:
+    properties:
+      gitAddress:
+        type: string
+      projectName:
+        type: string
+      projectServiceName:
+        type: string
+      projectType:
+        type: string
     type: object
   entity.AppConfigDomain:
     properties:
@@ -880,6 +954,112 @@ paths:
       summary: 根据ID获取应用详情
       tags:
       - App
+    patch:
+      consumes:
+      - application/json
+      description: 根据应用ID更新应用基本信息（PATCH 指针语义），不允许修改 app_name/app_id
+      parameters:
+      - description: 应用ID
+        in: path
+        name: app_id
+        required: true
+        type: integer
+      - description: 更新字段（指针语义）
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/app.PatchAppRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/entity.Apps'
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "404":
+          description: 应用不存在
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 应用基本信息变更（仅更新传入字段）
+      tags:
+      - App
+  /api/v1/apps/{app_id}/config-options:
+    get:
+      consumes:
+      - application/json
+      description: 用于前端下拉框：返回该应用 dev_language 下允许的 code_package_type 列表与默认值
+      parameters:
+      - description: 应用ID
+        in: path
+        name: app_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/app.AppConfigOptions'
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 获取应用环境配置可选项（按 dev_language 规则）
+      tags:
+      - AppConfig
   /api/v1/apps/{app_id}/configs:
     get:
       parameters:
@@ -921,6 +1101,52 @@ paths:
                   type: integer
               type: object
       summary: 获取应用的所有环境配置
+      tags:
+      - AppConfig
+    post:
+      parameters:
+      - description: 应用ID
+        in: path
+        name: app_id
+        required: true
+        type: integer
+      - description: 创建参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/app.CreateAppConfigRequest'
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/entity.AppConfigs'
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 创建应用环境配置（app_id + env）
       tags:
       - AppConfig
   /api/v1/apps/{app_id}/configs/{env}:
@@ -1205,6 +1431,50 @@ paths:
       summary: 获取全量应用名称列表
       tags:
       - App
+  /api/v1/compatible/docker/info/getServiceProjectMap:
+    get:
+      description: 用于替换老接口 getServiceProjectMap：按 env 查询 app_configs.code_package_type，并返回
+        gitAddress/projectName/projectServiceName/projectType 映射
+      parameters:
+      - description: 环境（不传默认 dev）
+        in: query
+        name: env
+        type: string
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  items:
+                    $ref: '#/definitions/compatible.ServiceProjectMapItem'
+                  type: array
+              type: object
+        "400":
+          description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 兼容性的获取应用配置详情信息
+      tags:
+      - Compatible
   /api/v1/deploy/publish:
     post:
       parameters:
@@ -1397,7 +1667,7 @@ paths:
                 code:
                   type: integer
                 result:
-                  $ref: '#/definitions/publish.PublishQueryResult'
+                  $ref: '#/definitions/entity.TaskRecord'
               type: object
         "400":
           description: 请求错误
@@ -1432,7 +1702,9 @@ paths:
                 code:
                   type: integer
                 result:
-                  $ref: '#/definitions/entity.TaskRecord'
+                  items:
+                    $ref: '#/definitions/entity.TaskRecord'
+                  type: array
               type: object
         "400":
           description: 请求错误

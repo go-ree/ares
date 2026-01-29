@@ -328,6 +328,259 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "post": {
+                "tags": [
+                    "AppConfig"
+                ],
+                "summary": "新增单条多域名配置",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "配置ID",
+                        "name": "config_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "单条域名配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/app.DomainItem"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/entity.AppConfigDomain"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/app-configs/{config_id}/domains/{domain_id}": {
+            "delete": {
+                "tags": [
+                    "AppConfig"
+                ],
+                "summary": "删除单条多域名配置",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "配置ID",
+                        "name": "config_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "域名记录ID",
+                        "name": "domain_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "AppConfig"
+                ],
+                "summary": "修改单条多域名配置（PATCH：只更新传入字段）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "配置ID",
+                        "name": "config_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "域名记录ID",
+                        "name": "domain_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新字段（指针语义）",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/app.PatchDomainRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/entity.AppConfigDomain"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
             }
         },
         "/api/v1/apps": {
@@ -854,6 +1107,197 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "patch": {
+                "description": "根据应用ID更新应用基本信息（PATCH 指针语义），不允许修改 app_name/app_id",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "App"
+                ],
+                "summary": "应用基本信息变更（仅更新传入字段）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "应用ID",
+                        "name": "app_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新字段（指针语义）",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/app.PatchAppRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/entity.Apps"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "应用不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/apps/{app_id}/config-options": {
+            "get": {
+                "description": "用于前端下拉框：返回该应用 dev_language 下允许的 code_package_type 列表与默认值",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AppConfig"
+                ],
+                "summary": "获取应用环境配置可选项（按 dev_language 规则）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "应用ID",
+                        "name": "app_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/app.AppConfigOptions"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
             }
         },
         "/api/v1/apps/{app_id}/configs": {
@@ -890,6 +1334,89 @@ const docTemplate = `{
                                             "items": {
                                                 "$ref": "#/definitions/entity.AppConfigs"
                                             }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "AppConfig"
+                ],
+                "summary": "创建应用环境配置（app_id + env）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "应用ID",
+                        "name": "app_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "创建参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/app.CreateAppConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/entity.AppConfigs"
                                         }
                                     }
                                 }
@@ -1060,6 +1587,85 @@ const docTemplate = `{
                                     "properties": {
                                         "code": {
                                             "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/compatible/docker/info/getServiceProjectMap": {
+            "get": {
+                "description": "用于替换老接口 getServiceProjectMap：按 env 查询 app_configs.code_package_type，并返回 gitAddress/projectName/projectServiceName/projectType 映射",
+                "tags": [
+                    "Compatible"
+                ],
+                "summary": "兼容性的获取应用配置详情信息",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "环境（不传默认 dev）",
+                        "name": "env",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/compatible.ServiceProjectMapItem"
+                                            }
                                         }
                                     }
                                 }
@@ -1454,7 +2060,7 @@ const docTemplate = `{
                                             "type": "integer"
                                         },
                                         "result": {
-                                            "$ref": "#/definitions/publish.PublishQueryResult"
+                                            "$ref": "#/definitions/entity.TaskRecord"
                                         }
                                     }
                                 }
@@ -1521,7 +2127,10 @@ const docTemplate = `{
                                             "type": "integer"
                                         },
                                         "result": {
-                                            "$ref": "#/definitions/entity.TaskRecord"
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/entity.TaskRecord"
+                                            }
                                         }
                                     }
                                 }
@@ -2096,6 +2705,17 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "app.AppConfigOptions": {
+            "type": "object",
+            "properties": {
+                "code_package_type": {
+                    "$ref": "#/definitions/app.CodePackageTypeOptions"
+                },
+                "dev_language": {
+                    "type": "string"
+                }
+            }
+        },
         "app.AppQuery": {
             "type": "object",
             "properties": {
@@ -2148,6 +2768,64 @@ const docTemplate = `{
                 "total_pages": {
                     "description": "总页数",
                     "type": "integer"
+                }
+            }
+        },
+        "app.CodePackageTypeOptions": {
+            "type": "object",
+            "properties": {
+                "allowed": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "default": {
+                    "type": "string"
+                }
+            }
+        },
+        "app.CreateAppConfigRequest": {
+            "type": "object",
+            "properties": {
+                "base_image": {
+                    "type": "string"
+                },
+                "code_package_name": {
+                    "type": "string"
+                },
+                "code_package_path": {
+                    "type": "string"
+                },
+                "code_package_type": {
+                    "type": "string"
+                },
+                "env": {
+                    "type": "string"
+                },
+                "gpu_count": {
+                    "type": "integer"
+                },
+                "limits_memory": {
+                    "type": "integer"
+                },
+                "pod_count": {
+                    "type": "integer"
+                },
+                "pre_stop_check_path": {
+                    "type": "string"
+                },
+                "pre_stop_command": {
+                    "type": "string"
+                },
+                "pre_stop_type": {
+                    "type": "string"
+                },
+                "probe_check_path": {
+                    "type": "string"
+                },
+                "probe_type": {
+                    "type": "string"
                 }
             }
         },
@@ -2235,6 +2913,44 @@ const docTemplate = `{
                 }
             }
         },
+        "app.PatchAppRequest": {
+            "type": "object",
+            "properties": {
+                "app_name_cn": {
+                    "description": "允许更新的字段（不允许修改 app_name / app_id）",
+                    "type": "string"
+                },
+                "description_cn": {
+                    "type": "string"
+                },
+                "dev_language": {
+                    "type": "string"
+                },
+                "git_url": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_cn": {
+                    "type": "string"
+                },
+                "rundeck_app_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "app.PatchDomainRequest": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                }
+            }
+        },
         "app.UpdateAppConfigRequest": {
             "type": "object",
             "properties": {
@@ -2284,6 +3000,23 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/app.DomainItem"
                     }
+                }
+            }
+        },
+        "compatible.ServiceProjectMapItem": {
+            "type": "object",
+            "properties": {
+                "gitAddress": {
+                    "type": "string"
+                },
+                "projectName": {
+                    "type": "string"
+                },
+                "projectServiceName": {
+                    "type": "string"
+                },
+                "projectType": {
+                    "type": "string"
                 }
             }
         },
