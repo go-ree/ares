@@ -68,6 +68,10 @@ const router = createRouter({
           component: () => import('../views/operation/Log.vue'),
         },
         {
+          path: '/operation/batch-deploy',
+          component: () => import('../views/operation/BatchDeploy.vue'),
+        },
+        {
           path: '/operation/monitor',
           component: () => import('../views/operation/Monitor.vue'),
         },

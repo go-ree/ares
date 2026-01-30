@@ -41,6 +41,10 @@ export interface DeployRequest {
   env: string;
   branch: string;
   publisher: string;
+  // 是否走 rundeck（可选）
+  is_rundeck?: boolean;
+  // 额外发布参数（可选）
+  extra_data?: Record<string, any>;
 }
 
 // 批量发布请求参数接口

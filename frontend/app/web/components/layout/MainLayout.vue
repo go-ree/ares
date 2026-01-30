@@ -77,6 +77,10 @@
                 <el-icon><Document /></el-icon>
                 <span class="menu-text">日志查询</span>
               </el-menu-item>
+              <el-menu-item index="/operation/batch-deploy">
+                <el-icon><Upload /></el-icon>
+                <span class="menu-text">一键批量发布</span>
+              </el-menu-item>
               <el-menu-item index="/operation/monitor">
                 <el-icon><DataAnalysis /></el-icon>
                 <span class="menu-text">监控面板</span>
