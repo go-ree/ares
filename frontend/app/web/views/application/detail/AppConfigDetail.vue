@@ -104,6 +104,15 @@
                     />
                   </el-form-item>
                 </el-col>
+                <el-col :span="8">
+                  <el-form-item label="代码包类型">
+                    <el-input
+                      :model-value="formsByEnv[env.value].code_package_type || ''"
+                      placeholder="-"
+                      disabled
+                    />
+                  </el-form-item>
+                </el-col>
               </el-row>
 
               <el-divider content-position="left">资源</el-divider>
@@ -241,6 +250,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import axios from 'axios';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import type { AppConfig, AppEnv, AppInfo, UpdateAppConfigRequest } from '@/models/application';
 import {
@@ -453,9 +463,26 @@ const cancelEdit = (env: AppEnv) => {
   isEditingByEnv[env] = false;
 };
 
+const getChangedKeys = (env: AppEnv) => {
+  const cur = formsByEnv[env] as Record<string, any>;
+  const orig = originalFormsByEnv[env] as Record<string, any>;
+  const keys = new Set<string>([...Object.keys(cur), ...Object.keys(orig)]);
+  const changed: string[] = [];
+  keys.forEach(k => {
+    if (cur[k] !== orig[k]) changed.push(k);
+  });
+  return changed;
+};
+
 const saveEnvConfig = async (env: AppEnv) => {
   if (!Number.isFinite(appId.value) || appId.value <= 0) return;
   if (!isEditingByEnv[env]) return;
+  // 没有任何变动时，不发请求，避免后端报“未更新任何记录”
+  if (getChangedKeys(env).length === 0) {
+    ElMessage.info('未做任何修改，无需保存');
+    isEditingByEnv[env] = false;
+    return;
+  }
   saving.value = true;
   try {
     const payload: UpdateAppConfigRequest = { ...formsByEnv[env] };
@@ -495,17 +522,30 @@ const saveEnvConfig = async (env: AppEnv) => {
 
     delete (payload as any).probe_check_port;
     const resp = await patchAppConfigByEnv(appId.value, env, payload);
-    if (resp.data.code !== 1) throw new Error(resp.data.message || '保存失败');
+    if (resp.data.code !== 1) {
+      // 后端语义：未更新任何记录（当作无变动提示，不视为错误）
+      if ((resp.data.error || '').includes('未更新任何记录')) {
+        ElMessage.info(resp.data.error || resp.data.message || '未更新任何记录');
+        isEditingByEnv[env] = false;
+        return;
+      }
+      throw new Error(resp.data.error || resp.data.message || '保存失败');
+    }
     ElMessage.success('保存成功');
     await ElMessageBox.alert('环境配置保存成功', '保存结果', { type: 'success' });
     await fetchConfigs();
     isEditingByEnv[env] = false;
   } catch (e) {
     console.error(e);
-    ElMessage.error(e instanceof Error ? e.message : '保存失败');
-    await ElMessageBox.alert(e instanceof Error ? e.message : '保存失败', '保存结果', {
-      type: 'error',
-    });
+    let message = '保存失败';
+    if (axios.isAxiosError(e) && e.response?.data) {
+      const data: any = e.response.data;
+      message = data.error || data.message || message;
+    } else if (e instanceof Error) {
+      message = e.message || message;
+    }
+    ElMessage.error(message);
+    await ElMessageBox.alert(message, '保存结果', { type: 'error' });
   } finally {
     saving.value = false;
   }
