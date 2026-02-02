@@ -168,20 +168,15 @@ func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity
 	}
 	var app *entity.Apps
 
-	// 原先是兼容一下rundeck的名称，现在不需要兼容了
-	//if creatReq.IsRundeck {
-	//	app, err = pm.VerifyRunDeckApp(req)
-	//	// 设置 RundeckAppName
-	//	if app != nil && app.RundeckAppName != nil {
-	//		req.RundeckAppName = app.RundeckAppName
-	//	}
-	//} else {
-	//	app, err = pm.VerifyApp(req)
-	//}
-	//
-	//if err != nil {
-	//	return nil, err
-	//}
+	// 原先为了兼容 rundeck 名称做过分支处理；现在统一按 app_name 查询即可
+	app, err = pm.VerifyApp(req)
+	if err != nil {
+		return nil, err
+	}
+	// 防御：避免后续 nil 解引用导致 panic
+	if app == nil {
+		return nil, fmt.Errorf("未找到应用：%s", req.AppName)
+	}
 
 	req.AppId = app.AppId
 
