@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"io"
+	"net/http"
 	"strconv"
 	"sync"
 )
@@ -96,10 +97,11 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 	}()
 
 	// 设置 SSE 相关的响应头
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
+	c.Header("Content-Type", "text/event-stream; charset=utf-8")
+	c.Header("Cache-Control", "no-cache, no-transform")
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no") // 禁用 Nginx 缓冲
+	c.Writer.WriteHeaderNow()
 
 	// 使用Stream方法处理响应
 	c.Stream(func(w io.Writer) bool {
@@ -111,6 +113,9 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 			// 心跳：只用于保持连接，不触发前端默认 onmessage（event != message）
 			if chunk.IsPing {
 				_, _ = fmt.Fprintf(w, "event: ping\nid: %d\ndata: {}\n\n", chunk.NextStart)
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
 				return true
 			}
 			mu.Lock()
@@ -127,6 +132,9 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 				mu.Unlock()
 				return false
 			}
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
 			mu.Unlock()
 			return true
 		case <-doneChan:
@@ -135,9 +143,15 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 				errorResponse := util.ResponseFailure("", streamErr.Error())
 				responseBytes, _ := json.Marshal(errorResponse)
 				fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(responseBytes))
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
 			}
 			// 发送结束事件
 			fmt.Fprintf(w, "event: end\ndata: end of stream\n\n")
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
 			return false
 		}
 	})

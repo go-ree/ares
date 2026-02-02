@@ -179,59 +179,90 @@ func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- BuildLogChunk, err
 	tz := time.FixedZone("UTC+8", 8*3600)
 	pingEvery := 25 * time.Second
 	lastPing := time.Now()
-	flushEvery := 500 * time.Millisecond
-	lastFlush := time.Now()
-	pending := ""
+	// 关键优化：
+	// 1) 不再依赖“必须等到 \n 才推送”，避免无换行时前端长时间不更新
+	// 2) 把一次拿到的超大日志拆成多个较小的 SSE event（更利于前端及时渲染/减少中间层缓冲）
+	// 3) 支持 \r / \r\n（常见的同一行刷新进度条）
+	const maxLinesPerEvent = 120
+	const maxBytesPerEvent = 16 * 1024
 
-	normalizeLogText := func(s string) string {
-		// Jenkins/log 工具常见用 \r 做同一行刷新；这里把 \r 当作换行处理
-		// 先处理 \r\n，避免变成两个换行
-		s = strings.ReplaceAll(s, "\r\n", "\n")
-		s = strings.ReplaceAll(s, "\r", "\n")
-		return s
+	type seg struct {
+		lines    []string
+		nextFrom int64 // 该段对应的 Jenkins offset（用于 SSE id / 断线续传）
 	}
 
-	emitLines := func(lines []string, nextStart int64) {
-		if len(lines) == 0 {
-			return
-		}
-		logChan <- BuildLogChunk{Lines: lines, NextStart: nextStart}
-		lastFlush = time.Now()
-	}
-
-	flushPending := func(nextStart int64) {
-		// 没有完整行但已经积累了内容：按时间强制 flush，避免前端“憋日志”
-		s := strings.TrimSpace(pending)
-		if s == "" {
-			pending = ""
-			return
-		}
-		pending = ""
-		emitLines([]string{convertTimestamperToTZ(s, tz)}, nextStart)
-	}
-
-	consumeText := func(text string, nextStart int64) {
+	splitToSegments := func(text string, baseStart int64, headerNext int64) []seg {
 		if text == "" {
-			return
+			return nil
 		}
-		text = normalizeLogText(text)
-		pending += text
+		out := make([]seg, 0, 8)
+		lines := make([]string, 0, maxLinesPerEvent)
+		bytesInSeg := 0
 
-		// 把 pending 中的完整行（含 \n）切出来下发；尾部不完整行留在 pending
-		lines := make([]string, 0, 32)
-		for {
-			idx := strings.IndexByte(pending, '\n')
-			if idx < 0 {
-				break
+		emit := func(nextOffset int64) {
+			if len(lines) == 0 {
+				return
 			}
-			line := pending[:idx]
-			pending = pending[idx+1:]
-			if line == "" {
+			// clamp
+			if nextOffset < baseStart {
+				nextOffset = baseStart
+			}
+			if headerNext > 0 && nextOffset > headerNext {
+				nextOffset = headerNext
+			}
+			out = append(out, seg{lines: lines, nextFrom: nextOffset})
+			lines = make([]string, 0, maxLinesPerEvent)
+			bytesInSeg = 0
+		}
+
+		lineStart := 0
+		i := 0
+		for i < len(text) {
+			b := text[i]
+			// delimiter: \n, \r, \r\n
+			if b == '\n' || b == '\r' {
+				end := i
+				delimLen := 1
+				if b == '\r' && i+1 < len(text) && text[i+1] == '\n' {
+					delimLen = 2
+				}
+				line := text[lineStart:end]
+				lineStart = i + delimLen
+				i += delimLen
+
+				// 过滤空行（保持旧行为）
+				if line != "" {
+					lines = append(lines, convertTimestamperToTZ(line, tz))
+					bytesInSeg += (len(line) + delimLen)
+				} else {
+					// 空行也要把 delimiter 字节计入 offset 推进，否则 id 会落后
+					bytesInSeg += delimLen
+				}
+
+				// 达到阈值就发一段：按行数或段内字节数控制 event 大小
+				if len(lines) >= maxLinesPerEvent || bytesInSeg >= maxBytesPerEvent {
+					emit(baseStart + int64(lineStart))
+				}
 				continue
 			}
-			lines = append(lines, convertTimestamperToTZ(line, tz))
+			i++
 		}
-		emitLines(lines, nextStart)
+
+		// 尾部没有 delimiter 的残留：也作为一行直接下发（避免“憋住”），offset 直接推进到 headerNext
+		if lineStart < len(text) {
+			tail := text[lineStart:]
+			if tail != "" {
+				lines = append(lines, convertTimestamperToTZ(tail, tz))
+			}
+			emit(headerNext)
+			return out
+		}
+
+		// 恰好以 delimiter 结尾：最后一段的 offset 用 baseStart+lineStart（应等于 headerNext）
+		if len(lines) > 0 {
+			emit(baseStart + int64(lineStart))
+		}
+		return out
 	}
 
 	for {
@@ -253,15 +284,18 @@ func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- BuildLogChunk, err
 			nextStart = start
 		}
 
-		// 分行（支持 \r 刷新）+ 过滤空行 + 时间戳转换
-		consumeText(chunkText, nextStart)
+		// 分段推送：把一次 progressiveText 拿到的大块内容拆小，降低前端/中间层“攒包”概率
+		if chunkText != "" {
+			segs := splitToSegments(chunkText, start, nextStart)
+			for _, s := range segs {
+				if len(s.lines) == 0 {
+					continue
+				}
+				logChan <- BuildLogChunk{Lines: s.lines, NextStart: s.nextFrom}
+			}
+		}
 
 		start = nextStart
-
-		// 无换行时也定时 flush，避免前端一直收不到日志
-		if pending != "" && time.Since(lastFlush) >= flushEvery {
-			flushPending(start)
-		}
 
 		// 心跳：仅用于保持连接活跃（不影响前端 onmessage 追加逻辑）
 		if time.Since(lastPing) >= pingEvery {
@@ -276,18 +310,18 @@ func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- BuildLogChunk, err
 			if !build.IsRunning(ctx) {
 				finalText, finalNext, _, err := getProgressiveText(req.JobName, req.BuildId, start)
 				if err == nil && finalNext >= start {
-					consumeText(finalText, finalNext)
+					if finalText != "" {
+						segs := splitToSegments(finalText, start, finalNext)
+						for _, s := range segs {
+							if len(s.lines) == 0 {
+								continue
+							}
+							logChan <- BuildLogChunk{Lines: s.lines, NextStart: s.nextFrom}
+						}
+					}
 					start = finalNext
 				}
-				// 退出前把残留半行也 flush 掉
-				if pending != "" {
-					flushPending(start)
-				}
 				return true
-			}
-			// 没有更多数据但还在构建：如果 pending 有残留，优先 flush
-			if pending != "" && time.Since(lastFlush) >= flushEvery {
-				flushPending(start)
 			}
 			time.Sleep(1 * time.Second)
 			continue
