@@ -168,19 +168,20 @@ func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity
 	}
 	var app *entity.Apps
 
-	if creatReq.IsRundeck {
-		app, err = pm.VerifyRunDeckApp(req)
-		// 设置 RundeckAppName
-		if app != nil && app.RundeckAppName != nil {
-			req.RundeckAppName = app.RundeckAppName
-		}
-	} else {
-		app, err = pm.VerifyApp(req)
-	}
-
-	if err != nil {
-		return nil, err
-	}
+	// 原先是兼容一下rundeck的名称，现在不需要兼容了
+	//if creatReq.IsRundeck {
+	//	app, err = pm.VerifyRunDeckApp(req)
+	//	// 设置 RundeckAppName
+	//	if app != nil && app.RundeckAppName != nil {
+	//		req.RundeckAppName = app.RundeckAppName
+	//	}
+	//} else {
+	//	app, err = pm.VerifyApp(req)
+	//}
+	//
+	//if err != nil {
+	//	return nil, err
+	//}
 
 	req.AppId = app.AppId
 
