@@ -197,13 +197,13 @@ func (am *AppManager) createDefaultConfig(app *entity.Apps) {
 			LimitsMemory:           2,
 			GpuCount:               0,
 			ProbeType:              "HTTP",
-			ProbeCheckPath:         "/ttpai/inside/checkup",
+			ProbeCheckPath:         "/inside/checkup",
 			ProbeCheckTcpPort:      8080,
 			ProbeCheckHttpPort:     8080,
 			ProbeStopCheckHttpPort: 8080,
 			ContainerPort:          8080,
 			PreStopType:            "HTTP",
-			PreStopCheckPath:       "/ttpai/inside/prestop",
+			PreStopCheckPath:       "/inside/prestop",
 			PreStopCommand:         "NULL",
 		}
 

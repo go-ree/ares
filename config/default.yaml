@@ -2,7 +2,7 @@
 # 注意：仅default.yaml中建议配置apollo相关内容，其他各环境禁止创建apollo配置
 apollo:
   enable: true
-  address: "http://apollo-meta.ttpai.cn:8080"   # 你们实际的 Apollo Config Service 域名/地址
+  address: "http://apollo-meta.aaa.cn:8080"   # 你们实际的 Apollo Config Service 域名/地址
   app_id: "ares"
   cluster: "default"
   namespace: "application"
@@ -11,7 +11,7 @@ apollo:
 
 
 db:
-  conn_str: "sre_tool_wr_all:VNBpFpUSjdxFj6jfSpwN@(hc-business-mw01-mysql.ttpai.top:3306)/ares?charset=utf8mb4&loc=Asia%2FShanghai"
+  conn_str: "sre_tool_wr_all:SqaqaYm%W@(aaa.aaa.com:3306)/ares?charset=utf8mb4&loc=Asia%2FShanghai"
 
 web:
   address: ":8080"
@@ -29,10 +29,10 @@ job:
 #    cron: "* * * * * *"
 
 jenkins:
-  address: "http://172.16.2.88:8080"
+  address: "http://192.168.1.1:8080"
   token:  "118f677d3e8596a6bde966ca5f57c2d018"
   username: "admin"
-  password: "hello@ttpai"
+  password: "hello@123"
 
 k8s:
   clusters:

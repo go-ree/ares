@@ -294,7 +294,7 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 	milliseconds := time.Now().UnixMilli()
 
 	// 示例格式
-	// harbor.ttpai.work/publish/dev/asr-job:1739265948923
+	// harbor.aaa.work/publish/dev/asr-job:1739265948923
 	image := envConfig.HarborURL + "/" + envConfig.HarborProjectName + "/" + envConfig.Env + "/" + app.AppName + ":" + fmt.Sprintf("%d", milliseconds)
 
 	JenkinsParam["app_name"] = app.AppName

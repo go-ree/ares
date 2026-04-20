@@ -30,9 +30,9 @@ CREATE TABLE ares.app_configs (
     limits_memory INT(11) DEFAULT 2,
     gpu_count   INT(11) DEFAULT 1,
     probe_type  VARCHAR(100) DEFAULT 'TCP',
-    probe_check_path VARCHAR(100) DEFAULT '/ttpai/inside/checkup',
+    probe_check_path VARCHAR(100) DEFAULT '/inside/checkup',
     pre_stop_type VARCHAR(100) DEFAULT 'TCP',
-    pre_stop_check_path VARCHAR(100) DEFAULT '/ttpai/inside/prestop',
+    pre_stop_check_path VARCHAR(100) DEFAULT '/inside/prestop',
     pre_stop_command VARCHAR(255) DEFAULT 'NULL',
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

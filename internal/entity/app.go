@@ -35,13 +35,13 @@ type AppConfigs struct {
 	LimitsMemory           int    `xorm:"int(11) default 2 'limits_memory'" json:"limits_memory"`
 	GpuCount               int    `xorm:"int(11) default 0 'gpu_count'" json:"gpu_count"`
 	ProbeType              string `xorm:"varchar(100) default 'TCP' 'probe_type'" json:"probe_type"`
-	ProbeCheckPath         string `xorm:"varchar(100) default '/ttpai/inside/checkup' 'probe_check_path'" json:"probe_check_path"`
+	ProbeCheckPath         string `xorm:"varchar(100) default '/inside/checkup' 'probe_check_path'" json:"probe_check_path"`
 	ProbeCheckTcpPort      int    `xorm:"int(11) notnull default 8080 'probe_check_tcp_port'" json:"probe_check_tcp_port"`
 	ProbeCheckHttpPort     int    `xorm:"int(11) notnull default 8080 'probe_check_http_port'" json:"probe_check_http_port"`
 	ProbeStopCheckHttpPort int    `xorm:"int(11) notnull default 8080 'probe_stop_check_http_port'" json:"probe_stop_check_http_port"`
 	ContainerPort          int    `xorm:"int(11) notnull default 8080 'container_port'" json:"container_port"`
 	PreStopType            string `xorm:"varchar(100) default 'TCP' 'pre_stop_type'" json:"pre_stop_type"`
-	PreStopCheckPath       string `xorm:"varchar(100) default '/ttpai/inside/prestop' 'pre_stop_check_path' " json:"pre_stop_check_path"`
+	PreStopCheckPath       string `xorm:"varchar(100) default '/inside/prestop' 'pre_stop_check_path' " json:"pre_stop_check_path"`
 	PreStopCommand         string `xorm:"varchar(255) default 'NULL' 'pre_stop_command'" json:"pre_stop_command"`
 
 	CreatedTime time.Time  `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at" swaggertype:"string" format:"date-time"`
