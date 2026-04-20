@@ -51,13 +51,13 @@ chaoscanvas/
 
 ### 3. 健康检测接口
 
-- 路径: `/ttpai/inside/checkup`
+- 路径: `/inside/checkup`
 - 返回: JSON格式的健康状态信息
 - 支持: CORS跨域访问
 
 ### 4. Docker容器启动
 
-- 基础镜像: `harbor.ttpai.work/publish-system/ttpai_nodejs_basev2`
+- 基础镜像: `harbor.aaa.work/publish-system/aaa_nodejs_basev2`
 - 工作目录: `/opt/htdocs/chaoscanvas`
 - 启动命令: `npm run start:${env}`
 
@@ -115,7 +115,7 @@ npm run build
 npm run start:prod
 
 # 健康检测测试
-curl http://localhost:8080/ttpai/inside/checkup
+curl http://localhost:8080/inside/checkup
 
 # 简化版启动（无健康检测）
 npm run start:dev-simple

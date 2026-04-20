@@ -28,7 +28,7 @@ export default defineConfig(({ command, mode }) => {
       // 健康检测中间件 - 放在最前面，优先级最高
       server.middlewares.use((req: any, res: any, next: any) => {
         // 只处理健康检测路径
-        if (req.url !== '/ttpai/inside/checkup') {
+        if (req.url !== '/inside/checkup') {
           return next();
         }
 
@@ -117,7 +117,7 @@ export default defineConfig(({ command, mode }) => {
         const url = req.url;
 
         // 跳过健康检测接口
-        if (url === '/ttpai/inside/checkup') {
+        if (url === '/inside/checkup') {
           return next();
         }
 
@@ -175,7 +175,7 @@ export default defineConfig(({ command, mode }) => {
       // 为preview模式添加健康检测 - 放在最前面
       server.middlewares.use((req: any, res: any, next: any) => {
         // 只处理健康检测路径
-        if (req.url !== '/ttpai/inside/checkup') {
+        if (req.url !== '/inside/checkup') {
           return next();
         }
 
@@ -222,7 +222,7 @@ export default defineConfig(({ command, mode }) => {
         const url = req.url;
 
         // 跳过健康检测接口
-        if (url === '/ttpai/inside/checkup') {
+        if (url === '/inside/checkup') {
           return next();
         }
 
@@ -309,18 +309,18 @@ export default defineConfig(({ command, mode }) => {
       allowedHosts: [
         'localhost',
         '127.0.0.1',
-        'chaoscanvas.ttpai.top',
-        '.ttpai.top', // 允许所有ttpai.top子域名
-        '.ttpai.fun',
-        '.ttpai.xyz',
+        'chaoscanvas.aaa.top',
+        '.aaa.top', // 允许所有aaa.top子域名
+        '.aaa.fun',
+        '.aaa.xyz',
         'all', // 允许所有主机（生产环境推荐）
       ],
       proxy: {
         '/api': {
-          // dev 默认走 ares.ttpai.top，模拟环境(moni)默认走 ares.ttpai.fun
+          // dev 默认走 ares.aaa.top，模拟环境(moni)默认走 ares.aaa.fun
           target:
             env.VITE_API_BASE_URL ||
-            (mode === 'moni' ? 'http://ares.ttpai.fun' : 'http://ares.ttpai.top'),
+            (mode === 'moni' ? 'http://ares.aaa.fun' : 'http://ares.aaa.top'),
           changeOrigin: true,
           secure: false,
           rewrite: path => path,

@@ -159,7 +159,7 @@
                   <el-form-item label="健康监测探针路径">
                     <el-input
                       v-model="formsByEnv[env.value].probe_check_path"
-                      placeholder="如 /ttpai/inside/checkup"
+                      placeholder="如 /inside/checkup"
                       :disabled="!isEditingByEnv[env.value]"
                     />
                   </el-form-item>
@@ -210,7 +210,7 @@
                   <el-form-item label="URL">
                     <el-input
                       v-model="formsByEnv[env.value].pre_stop_check_path"
-                      placeholder="如 /ttpai/inside/prestop"
+                      placeholder="如 /inside/prestop"
                       :disabled="!isEditingByEnv[env.value]"
                     />
                   </el-form-item>
