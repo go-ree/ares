@@ -1,0 +1,46 @@
+{
+  "extends": "@vue/tsconfig/tsconfig.dom.json",
+  "include": ["env.d.ts", "src/**/*", "src/**/*.vue", "app/**/*", "app/**/*.vue", "config/**/*"],
+  "exclude": ["src/**/__tests__/*", "dist", "node_modules"],
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["app/web/*"],
+      "@components/*": ["app/web/components/*"],
+      "@assets/*": ["app/web/assets/*"],
+      "@services/*": ["app/web/services/*"],
+      "@utils/*": ["app/web/utils/*"]
+    },
+
+    // 适中的类型检查 - 保持实用性
+    "strict": true,
+    "noUnusedLocals": false, // 允许未使用的局部变量，避免开发时的干扰
+    "noUnusedParameters": false, // 允许未使用的参数
+    "exactOptionalPropertyTypes": false, // 关闭严格的可选属性检查
+    "noImplicitReturns": false, // 允许函数有分支不返回值
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": false, // 关闭索引访问检查
+    "noImplicitOverride": false,
+
+    // 模块解析
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "preserve",
+
+    // Node.js 类型支持
+    "types": ["node"],
+
+    // 其他配置
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "useDefineForClassFields": true,
+    "verbatimModuleSyntax": false // 关闭严格的模块语法检查
+  }
+}

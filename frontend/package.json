@@ -1,0 +1,75 @@
+{
+  "name": "chaoscanvas",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build:dev": "vite build --mode development --config config/vite.config.ts",
+    "build:prod": "vite build --mode production --config config/vite.config.ts",
+    "build": "npm run build:prod",
+    "dev": "vite --mode development --port 8080 --host 0.0.0.0 --config config/vite.config.ts",
+    "start:dev": "vite --mode development --port 8080 --host 0.0.0.0 --config config/vite.config.ts",
+    "start:prod": "vite preview --port 8080 --host 0.0.0.0 --config config/vite.config.ts",
+    "start:dev-simple": "vite --mode development --port 8080 --host 0.0.0.0",
+    "start:moni": "vite --mode moni --port 8080 --host 0.0.0.0 --config config/vite.config.ts",
+    "start:prod-simple": "vite preview --port 8080 --host 0.0.0.0",
+    "start": "npm run dev",
+    "preview": "vite preview --config config/vite.config.ts",
+    "serve": "vite preview --port 5000 --config config/vite.config.ts",
+    "type-check": "vue-tsc --noEmit",
+    "type-check:watch": "vue-tsc --noEmit --watch",
+    "lint": "npm run prettier && npm run eslint",
+    "eslint": "eslint --fix --ext .js,.jsx,.ts,.tsx,.vue src",
+    "eslint:check": "eslint --ext .js,.jsx,.ts,.tsx,.vue src",
+    "prettier": "prettier --config .prettierrc.json --write \"src/**/*.{js,jsx,ts,tsx,vue,json,css,scss,less}\"",
+    "prettier:check": "prettier --config .prettierrc.json --check \"src/**/*.{js,jsx,ts,tsx,vue,json,css,scss,less}\"",
+    "clean": "rimraf dist",
+    "clean:deps": "rimraf node_modules package-lock.json",
+    "prebuild": "npm run clean",
+    "prebuild:prod": "npm run clean",
+    "analyze": "vite build --config config/vite.config.ts",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "@vitejs/plugin-vue": "^4.5.0",
+    "axios": "^1.9.0",
+    "element-plus": "^2.9.9",
+    "pinia": "^3.0.2",
+    "sass": "^1.69.0",
+    "terser": "^5.26.0",
+    "vite": "^4.5.0",
+    "vue": "^3.5.13",
+    "vue-router": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vue/tsconfig": "^0.7.0",
+    "typescript": "~5.7.2",
+    "vue-tsc": "^2.2.8",
+    "cross-env": "^7.0.3",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint-plugin-vue": "^9.0.0",
+    "prettier": "^3.0.0",
+    "husky": "^8.0.3",
+    "lint-staged": "^15.0.0",
+    "rimraf": "^5.0.0",
+    "rollup-plugin-visualizer": "^5.12.0"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,vue}": [
+      "prettier --write"
+    ],
+    "*.{json,css,scss,less,md}": [
+      "prettier --write"
+    ]
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged",
+      "pre-push": "npm run type-check"
+    }
+  }
+}
