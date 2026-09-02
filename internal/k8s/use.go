@@ -594,11 +594,9 @@ func QuickStatusCheck() {
 func ExampleUsage() {
 	slog.Info("=== 底层K8s客户端示例 ===")
 
-	// 🚀 直接通过全局变量访问（底层操作）
-
 	// 开发环境操作
-	if Dev != nil {
-		pods, err := Dev.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
+	if devClient := DefaultClient(EnvDev); devClient != nil {
+		pods, err := devClient.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
 		if err != nil {
 			slog.Error("获取dev环境Pod列表失败", "error", err)
 		} else {
@@ -607,8 +605,8 @@ func ExampleUsage() {
 	}
 
 	// 测试环境操作
-	if Test != nil {
-		namespaces, err := Test.CoreV1().Namespaces().List(context.Background(), metav1.ListOptions{})
+	if testClient := DefaultClient(EnvTest); testClient != nil {
+		namespaces, err := testClient.CoreV1().Namespaces().List(context.Background(), metav1.ListOptions{})
 		if err != nil {
 			slog.Error("获取test环境命名空间失败", "error", err)
 		} else {

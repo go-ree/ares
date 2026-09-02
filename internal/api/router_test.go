@@ -1,7 +1,8 @@
 package api
 
 import (
-	"ares/internal/config"
+	"ares/internal/jenkins"
+	"ares/internal/k8s"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,13 +41,10 @@ func TestRouterRegistersWithoutPanic(t *testing.T) {
 }
 
 func TestDisabledIntegrationsReturnServiceUnavailable(t *testing.T) {
-	original := config.Main
-	t.Cleanup(func() { config.Main = original })
-
-	disabled := false
-	config.Main = &config.Config{}
-	config.Main.Jenkins.Enabled = &disabled
-	config.Main.K8s.Enabled = &disabled
+	originalJenkins := jenkins.Current()
+	t.Cleanup(func() { jenkins.Activate(originalJenkins) })
+	jenkins.Disable()
+	k8s.Disable()
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

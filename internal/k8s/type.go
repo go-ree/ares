@@ -1,6 +1,8 @@
 package k8s
 
 import (
+	"time"
+
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -17,7 +19,9 @@ const (
 type ClusterConfig struct {
 	Name        string      // 集群名称
 	Environment Environment // 环境
-	ConfigPath  string      // kubeconfig 路径
+	Kubeconfig  []byte      // Web 上传的 kubeconfig 内容
+	InCluster   bool        // 使用 Pod 的 service account
+	Timeout     time.Duration
 }
 
 // ClientManager K8s客户端管理器

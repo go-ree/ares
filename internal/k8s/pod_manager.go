@@ -567,15 +567,5 @@ func (pm *PodManager) validateLogRequest(req *PodLogRequest) error {
 
 // getClientForEnv 获取环境对应的K8s客户端
 func (pm *PodManager) getClientForEnv(env string) *kubernetes.Clientset {
-	standardEnv := envNameMap[env]
-	switch standardEnv {
-	case "dev":
-		return Dev
-	case "test":
-		return Test
-	case "moni":
-		return Moni
-	default:
-		return nil
-	}
+	return getClientByEnv(env)
 }

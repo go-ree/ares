@@ -20,6 +20,8 @@ docker compose up -d --build --wait
 
 当前登录页尚未接入服务端鉴权，输入任意姓名即可进入。默认 Compose 仅适合本地体验或受信网络，不能未经鉴权直接暴露到公网。
 
+Jenkins 与 Kubernetes 不再是启动依赖。进入“系统设置 → 系统配置”，使用 `.env` 中的 `ARES_SETTINGS_ADMIN_TOKEN` 加载并保存集成配置；连接失败只影响对应功能，不影响 Ares 与应用管理功能运行。
+
 空数据库会自动创建表，并初始化 3 个 Demo 应用、9 份环境配置、示例域名和终态发布记录。初始化是幂等的：只要 `apps` 表已有记录，重启就不会再次写入或覆盖数据。
 
 常用命令：
@@ -36,7 +38,7 @@ docker compose down
 docker compose down -v
 ```
 
-完整配置、外部 Jenkins/Kubernetes 接入和生产注意事项见 [部署指南](docs/deployment.md)。
+完整配置、外部 Jenkins/Kubernetes 接入和生产注意事项见 [部署指南](docs/operations/deployment.md)。
 
 ## 本地验证
 

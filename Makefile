@@ -23,6 +23,8 @@
 NAME := gomessage
 #版本
 VERSION := 2.3.18
+# Swagger 生成器版本（与 go.mod 保持一致）
+SWAG_VERSION := v1.16.4
 #编译输出目录
 OUTPUT_PATH := ./build/${VERSION}
 #是否开启cgo（0代表不开启，1代表开启）
@@ -66,9 +68,7 @@ start:
 ######################################
 .PHONY: swagger
 swagger:
-	go install github.com/swaggo/swag/cmd/swag@v1.8.12
-	mkdir -p assets
-	swag init -o assets/docs
+	go run github.com/swaggo/swag/cmd/swag@$(SWAG_VERSION) init -g main.go -o internal/swagger
 
 
 ######################################
@@ -83,7 +83,6 @@ build_mac:
 	CGO_ENABLED=${CGO_STATUS} \
 	go build -ldflags='-s -w' -o "${OUTPUT_PATH}/${packageName}/${NAME}" ./main.go
 	cp -rf ./config "${OUTPUT_PATH}/${packageName}/"
-	cp -rf ./assets "${OUTPUT_PATH}/${packageName}/"
 	tar -zcvf "${OUTPUT_PATH}/${packageName}.tar.gz" -C ${OUTPUT_PATH} ${packageName}
 	ls -alh "${OUTPUT_PATH}/${packageName}/"
 
@@ -100,7 +99,6 @@ build_mac_arm64:
 	CGO_ENABLED=${CGO_STATUS} \
 	go build -ldflags='-s -w' -o "${OUTPUT_PATH}/${packageName}/${NAME}" ./main.go
 	cp -rf ./config "${OUTPUT_PATH}/${packageName}/"
-	cp -rf ./assets "${OUTPUT_PATH}/${packageName}/"
 	tar -zcvf "${OUTPUT_PATH}/${packageName}.tar.gz" -C ${OUTPUT_PATH} ${packageName}
 	ls -alh "${OUTPUT_PATH}/${packageName}/"
 
@@ -120,7 +118,6 @@ build_windows:
 	CGO_ENABLED=${CGO_STATUS} \
 	go build -ldflags='-s -w -extldflags "-static"' -o "${OUTPUT_PATH}/${packageName}/${NAME}.exe" ./main.go
 	cp -rf ./config "${OUTPUT_PATH}/${packageName}/"
-	cp -rf ./assets "${OUTPUT_PATH}/${packageName}/"
 	tar -zcvf "${OUTPUT_PATH}/${packageName}.tar.gz" -C ${OUTPUT_PATH} ${packageName}
 	ls -alh "${OUTPUT_PATH}/${packageName}/"
 
@@ -140,7 +137,6 @@ build_linux:
 	CGO_ENABLED=${CGO_STATUS} \
 	go build -ldflags='-s -w -extldflags "-static"' -o "${OUTPUT_PATH}/${packageName}/${NAME}" ./main.go
 	cp -rf ./config "${OUTPUT_PATH}/${packageName}/"
-	cp -rf ./assets "${OUTPUT_PATH}/${packageName}/"
 	tar -zcvf "${OUTPUT_PATH}/${packageName}.tar.gz" -C ${OUTPUT_PATH} ${packageName}
 	ls -alh "${OUTPUT_PATH}/${packageName}/"
 

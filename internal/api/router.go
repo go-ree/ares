@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	_ "ares/docs"
 	"ares/internal/api/controller"
+	_ "ares/internal/swagger"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"     // swagger embed files
@@ -114,6 +114,14 @@ func Router(r gin.IRouter) {
 			k8s.GET("/deployment/query", podController.GetDeploymentsByLabel)
 			// K8s调试信息
 			k8s.GET("/debug", podController.GetK8sDebugInfo)
+		}
+
+		system := apiRouter.Group("/system")
+		integrations := system.Group("/integrations", controller.RequireSettingsAdminToken)
+		{
+			integrations.GET("", controller.GetIntegrationSettings)
+			integrations.PUT("/jenkins", controller.UpdateJenkinsSettings)
+			integrations.PUT("/kubernetes", controller.UpdateKubernetesSettings)
 		}
 
 		// 特殊兼容接口

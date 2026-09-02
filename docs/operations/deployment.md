@@ -52,13 +52,8 @@ curl --fail \
 | `MYSQL_PASSWORD` | `ares-demo-password` | 业务数据库密码 |
 | `MYSQL_ROOT_PASSWORD` | `ares-root-password` | MySQL root 密码 |
 | `ARES_DEMO_DATA_ENABLED` | `true` | 空库是否写入 Demo 数据 |
-| `ARES_JENKINS_ENABLED` | `false` | 是否在启动时连接 Jenkins |
-| `ARES_JENKINS_ADDRESS` | 空 | Jenkins 地址 |
-| `ARES_JENKINS_USERNAME` | 空 | Jenkins 用户名 |
-| `ARES_JENKINS_TOKEN` | 空 | Jenkins API Token |
-| `ARES_JENKINS_TIMEOUT_SECONDS` | `15` | Jenkins 单次启动/API 请求超时 |
-| `ARES_K8S_ENABLED` | `false` | 是否初始化 Kubernetes 客户端 |
-| `ARES_K8S_TIMEOUT_SECONDS` | `15` | Kubernetes API 请求超时 |
+| `ARES_SETTINGS_ADMIN_TOKEN` | `ares-local-admin-token` | Web 系统配置接口的管理员令牌；共享环境必须修改 |
+| `ARES_SETTINGS_ENCRYPTION_KEY` | 本地示例值 | 加密 Jenkins Token 与 kubeconfig；共享环境必须替换且妥善备份 |
 | `GOPROXY` | `https://proxy.golang.org,direct` | 构建后端镜像时使用的 Go 模块代理 |
 
 Compose 会根据 MySQL 变量生成 `ARES_DB_CONN_STR`。如需脱离 Compose 运行后端，也可直接设置 `ARES_DB_CONN_STR`、`ARES_WEB_ADDRESS`、`ARES_LOG_LEVEL`、`ARES_LOG_ACCESS_FILE` 和 `ARES_LOG_RUNTIME_FILE`。
@@ -80,6 +75,7 @@ Ares 是 Compose 场景中的 schema owner，启动时通过 Xorm 自动创建�
 - `pipelines_job_combination`
 - `env_configs`
 - `dev_language_rules`
+- `integration_settings`
 
 应用 ID 自增起点会设为 `10000`，与 API 校验范围一致。四种开发语言规则只补缺失项，不覆盖已有规则。
 
@@ -92,60 +88,16 @@ Ares 是 Compose 场景中的 schema owner，启动时通过 Xorm 自动创建�
 
 Demo 任务不会使用运行中状态，因此在 Jenkins 关闭时不会触发后台轮询。重启容器不会重复写入。`init.sql` 只作为手工初始化兼容文件，Compose 不会挂载执行它。
 
-## 接入 Jenkins
+## 接入 Jenkins 与 Kubernetes
 
-在 `.env` 中配置：
+启动 Ares 后进入“系统设置 → 系统配置”，输入 `.env` 中的 `ARES_SETTINGS_ADMIN_TOKEN`：
 
-```dotenv
-ARES_JENKINS_ENABLED=true
-ARES_JENKINS_ADDRESS=https://jenkins.example.com
-ARES_JENKINS_USERNAME=ares
-ARES_JENKINS_TOKEN=replace-with-api-token
-```
+- Jenkins：填写服务地址、用户名、API Token 与请求超时后启用。
+- Kubernetes：为 `dev`、`test`、`moni` 环境添加集群，并粘贴自包含的 kubeconfig 后启用；命令型认证插件和容器内文件引用会被拒绝。
 
-然后重建后端：
+敏感字段不会通过查询接口回显，数据库中只保存使用 `ARES_SETTINGS_ENCRYPTION_KEY` 加密后的密文。修改 Jenkins 地址或用户名时必须重新输入 Token，避免把旧凭据发送到另一个服务端点。
 
-```bash
-docker compose up -d --build --wait ares web
-```
-
-Jenkins 开启后采用 fail-fast：启动阶段无法连接会让 Ares 容器退出。还必须在 Jenkins 中创建与 `pipelines_job_combination` 对应的 CI/CD Job；Demo 流水线名称仅用于展示，并不代表真实 Job 已存在。
-
-Jenkins 关闭时，发布、节点状态和日志流接口会返回 HTTP 503，并且不会先写入悬空的 `init` 任务。
-
-## 接入 Kubernetes
-
-Kubernetes 需要集群名称和 kubeconfig 路径，建议使用本地覆盖文件，不要把 kubeconfig 提交到仓库：
-
-1. 复制 `config/docker.yaml` 为 `config/docker.local.yaml`。
-2. 在其中配置 `k8s.clusters`，并确保 kubeconfig 对容器内的 `ares` 用户可读。
-3. 在 `.env` 中设置 `ARES_K8S_ENABLED=true`。
-4. 创建被 `.gitignore` 忽略的 `compose.override.yaml`，挂载配置与 kubeconfig。
-
-示例：
-
-```yaml
-services:
-  ares:
-    command: ["/app/ares", "-config", "/app/config/docker.local.yaml"]
-    volumes:
-      - ./config/docker.local.yaml:/app/config/docker.local.yaml:ro
-      - /absolute/path/to/kubeconfigs:/run/secrets/kubeconfigs:ro
-```
-
-`config/docker.local.yaml` 中的集群片段：
-
-```yaml
-k8s:
-  enabled: true
-  clusters:
-    dev:
-      name: dev-cluster
-      config_path: /run/secrets/kubeconfigs/dev.yaml
-      description: 开发集群
-```
-
-环境变量 `ARES_K8S_ENABLED` 的优先级高于 YAML。启用后若 kubeconfig 无效或集群不可达，Ares 会 fail-fast；关闭时 Pod/Deployment API 返回 HTTP 503，其他功能正常可用。
+保存启用状态前，Ares 会先验证外部服务连接；失败时返回错误并保留原有可用配置。容器重启时若外部服务暂时不可达，Ares 仍会继续启动，错误会显示在系统配置页。未启用 Jenkins 时，发布、节点状态和日志流接口返回 HTTP 503；未启用 Kubernetes 时，集群查询接口返回 HTTP 503，其他功能正常可用。
 
 ## 健康检查与日志
 
@@ -153,7 +105,7 @@ k8s:
 - `/health/ready`：在 1 秒超时内检查 MySQL。
 - `/inside/checkup`：Nginx/前端健康检查。
 
-Jenkins 和 Kubernetes 不参与基础 Compose readiness；启用它们时，初始化本身采用 fail-fast。
+Jenkins 和 Kubernetes 不参与基础 Compose readiness，也不会成为 Ares 的启动前置条件。
 
 后端访问日志输出到 stdout，运行日志输出到 stderr，可直接查看：
 
@@ -197,14 +149,7 @@ docker compose up -d --build --wait
 
 ### 从旧镜像迁移
 
-新镜像不再把仓库的 `config/default.yaml`、`dev.yaml`、`moni.yaml` 或集群配置打包进镜像，以避免凭据随镜像分发。镜像内的 `/app/config/default.yaml` 是 Compose 专用的无密配置：数据库必须通过 `ARES_DB_CONN_STR` 注入，Apollo/Jenkins/Kubernetes 默认关闭。
-
-旧部署如果依赖镜像内置的 Apollo 环境文件，升级前需改为以下任一方式：
-
-- 通过环境变量注入数据库和集成配置。
-- 只读挂载自己的 YAML，并使用 `command: ["/app/ares", "-config", "/run/secrets/ares.yaml"]` 显式选择。
-
-旧 Compose 中的 `command: ["./ares", "-config", "..."]` 仍可覆盖镜像默认命令。
+新镜像不再把仓库的环境配置或集群凭据打包进镜像。数据库连接仍通过 `ARES_DB_CONN_STR` 注入；Jenkins 与 Kubernetes 配置改为启动后在 Web 中保存。升级前请备份数据库，并准备固定的 `ARES_SETTINGS_ENCRYPTION_KEY`；密钥遗失或变更后，已保存的敏感配置无法解密，需要重新录入。
 
 ## 上线前检查
 

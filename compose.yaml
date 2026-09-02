@@ -37,13 +37,8 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
       ARES_DB_CONN_STR: "${MYSQL_USER:-ares}:${MYSQL_PASSWORD:-ares-demo-password}@tcp(mysql:3306)/${MYSQL_DATABASE:-ares}?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai&timeout=5s&readTimeout=10s&writeTimeout=10s"
       ARES_DEMO_DATA_ENABLED: ${ARES_DEMO_DATA_ENABLED:-true}
-      ARES_JENKINS_ENABLED: ${ARES_JENKINS_ENABLED:-false}
-      ARES_JENKINS_ADDRESS: ${ARES_JENKINS_ADDRESS:-}
-      ARES_JENKINS_USERNAME: ${ARES_JENKINS_USERNAME:-}
-      ARES_JENKINS_TOKEN: ${ARES_JENKINS_TOKEN:-}
-      ARES_JENKINS_TIMEOUT_SECONDS: ${ARES_JENKINS_TIMEOUT_SECONDS:-15}
-      ARES_K8S_ENABLED: ${ARES_K8S_ENABLED:-false}
-      ARES_K8S_TIMEOUT_SECONDS: ${ARES_K8S_TIMEOUT_SECONDS:-15}
+      ARES_SETTINGS_ADMIN_TOKEN: ${ARES_SETTINGS_ADMIN_TOKEN:-ares-local-admin-token}
+      ARES_SETTINGS_ENCRYPTION_KEY: ${ARES_SETTINGS_ENCRYPTION_KEY:-ares-local-encryption-key-change-me-32chars}
     depends_on:
       mysql:
         condition: service_healthy
