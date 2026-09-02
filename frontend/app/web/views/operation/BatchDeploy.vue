@@ -121,7 +121,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue';
-import type { ElTable } from 'element-plus';
+import type { TableInstance } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useUserStore } from '@/stores/user';
 import { queryApps } from '@/services/application';
@@ -151,7 +151,7 @@ const apps = ref<AppInfo[]>([]);
 const selectedMap = ref(new Map<number, AppInfo>());
 const selectedKeys = computed(() => Array.from(selectedMap.value.keys()));
 
-const tableRef = ref<InstanceType<typeof ElTable>>();
+const tableRef = ref<TableInstance>();
 
 const fetchApps = async () => {
   loading.value = true;

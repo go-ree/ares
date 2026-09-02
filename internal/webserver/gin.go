@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"ares/internal/config"
+	"ares/internal/db"
 	"ares/internal/logger"
 
 	"github.com/gin-gonic/gin"
@@ -25,7 +26,22 @@ func Run(ctx context.Context, router func(gin.IRouter)) {
 
 	g.Use(gin.LoggerWithConfig(gin.LoggerConfig{Output: logger.AccessFile}))
 
-	g.Any("/health", func(c *gin.Context) {
+	liveness := func(c *gin.Context) {
+		c.String(http.StatusOK, "OK")
+	}
+	g.Any("/health", liveness)
+	g.GET("/health/live", liveness)
+	g.GET("/health/ready", func(c *gin.Context) {
+		if db.Engine == nil {
+			c.String(http.StatusServiceUnavailable, "database not initialized")
+			return
+		}
+		pingContext, cancel := context.WithTimeout(c.Request.Context(), time.Second)
+		defer cancel()
+		if err := db.Engine.PingContext(pingContext); err != nil {
+			c.String(http.StatusServiceUnavailable, "database unavailable")
+			return
+		}
 		c.String(http.StatusOK, "OK")
 	})
 	g.Any("/metrics", func(c *gin.Context) {

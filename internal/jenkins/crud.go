@@ -152,22 +152,21 @@ func GetJenkinsBuildLog(jobName string, buildId int64) (string, error) {
 }
 
 // StreamJenkinsBuildLog	持续获取jenkins的构建日志
-func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- BuildLogChunk, errChan chan<- error) bool {
-	ctx := context.Background()
+func StreamJenkinsBuildLog(ctx context.Context, req *BuildLogQuery, logChan chan<- BuildLogChunk, errChan chan<- error) bool {
 	if Jenkins == nil {
-		errChan <- errors.New("jenkins not initialized")
+		sendJenkinsStreamError(ctx, errChan, errors.New("jenkins not initialized"))
 		return false
 	}
 	job, err := Jenkins.GetJob(ctx, req.JobName)
 	if err != nil {
 		slog.Error("获取Job失败", "job_name", req.JobName, "build_id", req.BuildId, "err", err)
-		errChan <- err
+		sendJenkinsStreamError(ctx, errChan, err)
 		return false
 	}
 	build, err := job.GetBuild(ctx, req.BuildId)
 	if err != nil {
 		slog.Error("获取buildId失败", "job_name", req.JobName, "build_id", req.BuildId, "err", err)
-		errChan <- err
+		sendJenkinsStreamError(ctx, errChan, err)
 		return false
 	}
 
@@ -273,9 +272,12 @@ func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- BuildLogChunk, err
 		default:
 		}
 
-		chunkText, nextStart, moreData, err := getProgressiveText(req.JobName, req.BuildId, start)
+		chunkText, nextStart, moreData, err := getProgressiveText(ctx, req.JobName, req.BuildId, start)
 		if err != nil {
-			errChan <- err
+			if ctx.Err() != nil {
+				return true
+			}
+			sendJenkinsStreamError(ctx, errChan, err)
 			return false
 		}
 
@@ -291,7 +293,9 @@ func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- BuildLogChunk, err
 				if len(s.lines) == 0 {
 					continue
 				}
-				logChan <- BuildLogChunk{Lines: s.lines, NextStart: s.nextFrom}
+				if !sendJenkinsLogChunk(ctx, logChan, BuildLogChunk{Lines: s.lines, NextStart: s.nextFrom}) {
+					return true
+				}
 			}
 		}
 
@@ -299,7 +303,9 @@ func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- BuildLogChunk, err
 
 		// 心跳：仅用于保持连接活跃（不影响前端 onmessage 追加逻辑）
 		if time.Since(lastPing) >= pingEvery {
-			logChan <- BuildLogChunk{IsPing: true, NextStart: start}
+			if !sendJenkinsLogChunk(ctx, logChan, BuildLogChunk{IsPing: true, NextStart: start}) {
+				return true
+			}
 			lastPing = time.Now()
 		}
 
@@ -308,7 +314,7 @@ func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- BuildLogChunk, err
 		// - 构建已结束：再拉一次确保最后增量，然后退出
 		if !moreData {
 			if !build.IsRunning(ctx) {
-				finalText, finalNext, _, err := getProgressiveText(req.JobName, req.BuildId, start)
+				finalText, finalNext, _, err := getProgressiveText(ctx, req.JobName, req.BuildId, start)
 				if err == nil && finalNext >= start {
 					if finalText != "" {
 						segs := splitToSegments(finalText, start, finalNext)
@@ -316,26 +322,61 @@ func StreamJenkinsBuildLog(req *BuildLogQuery, logChan chan<- BuildLogChunk, err
 							if len(s.lines) == 0 {
 								continue
 							}
-							logChan <- BuildLogChunk{Lines: s.lines, NextStart: s.nextFrom}
+							if !sendJenkinsLogChunk(ctx, logChan, BuildLogChunk{Lines: s.lines, NextStart: s.nextFrom}) {
+								return true
+							}
 						}
 					}
 					start = finalNext
 				}
 				return true
 			}
-			time.Sleep(1 * time.Second)
+			if !waitForJenkinsPoll(ctx, time.Second) {
+				return true
+			}
 			continue
 		}
 
 		// 还有更多数据：短暂 sleep 防止过高频请求
-		time.Sleep(300 * time.Millisecond)
+		if !waitForJenkinsPoll(ctx, 300*time.Millisecond) {
+			return true
+		}
+	}
+}
+
+func sendJenkinsStreamError(ctx context.Context, errChan chan<- error, err error) bool {
+	select {
+	case errChan <- err:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func sendJenkinsLogChunk(ctx context.Context, logChan chan<- BuildLogChunk, chunk BuildLogChunk) bool {
+	select {
+	case logChan <- chunk:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func waitForJenkinsPoll(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 
 // getProgressiveText 使用 Jenkins 标准接口获取增量日志：
 // GET /job/<job>/<build>/logText/progressiveText?start=<offset>
 // 返回：增量文本、nextStart(X-Text-Size)、moreData(X-More-Data)
-func getProgressiveText(jobName string, buildID int64, start int64) (string, int64, bool, error) {
+func getProgressiveText(ctx context.Context, jobName string, buildID int64, start int64) (string, int64, bool, error) {
 	base := strings.TrimRight(config.Main.Jenkins.Address, "/")
 	jobPath := buildJobPath(jobName)
 	u := base + jobPath + "/" + strconv.FormatInt(buildID, 10) + "/logText/progressiveText"
@@ -348,7 +389,7 @@ func getProgressiveText(jobName string, buildID int64, start int64) (string, int
 	q.Set("start", strconv.FormatInt(start, 10))
 	parsed.RawQuery = q.Encode()
 
-	req, err := http.NewRequest("GET", parsed.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
 		return "", start, false, err
 	}
@@ -356,7 +397,11 @@ func getProgressiveText(jobName string, buildID int64, start int64) (string, int
 	req.SetBasicAuth(config.Main.Jenkins.UserName, config.Main.Jenkins.Token)
 	req.Header.Set("Accept", "text/plain")
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: config.JenkinsTimeout()}
+	if Jenkins != nil && Jenkins.Requester != nil && Jenkins.Requester.Client != nil {
+		client = Jenkins.Requester.Client
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", start, false, err
 	}

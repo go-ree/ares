@@ -2,11 +2,13 @@ package publish
 
 import (
 	"ares/internal/api/util"
+	"ares/internal/config"
 	"ares/internal/db"
 	"ares/internal/entity"
 	"ares/internal/jenkins"
 	"ares/internal/tool"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -17,6 +19,8 @@ import (
 type PublishManager struct {
 	utilManager *util.ParamPage
 }
+
+var ErrJenkinsDisabled = errors.New("jenkins integration is disabled")
 
 // NewPublishManager 创建新的发布管理器
 func NewPublishManager() *PublishManager {
@@ -148,6 +152,9 @@ func (pm *PublishManager) VerifyPipelines(req *PublishRequest) (*entity.Pipeline
 
 // CreatePublish 创建单次发布动作
 func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity.TaskRecord, error) {
+	if !config.JenkinsEnabled() {
+		return nil, ErrJenkinsDisabled
+	}
 	// 验证所需的参数信息是否完成且不为空
 	err := tool.ValidateStruct(creatReq)
 	if err != nil {
@@ -245,6 +252,9 @@ func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity
 
 // CreateBatchPublish 批量创建发布任务
 func (pm *PublishManager) CreateBatchPublish(req *CreateBatchPublishRequest) (*CreateBatchPublishResponse, error) {
+	if !config.JenkinsEnabled() {
+		return nil, ErrJenkinsDisabled
+	}
 	response := &CreateBatchPublishResponse{
 		TaskRecords: make([]CreatePublishResult, len(req.BatchPublish)),
 	}

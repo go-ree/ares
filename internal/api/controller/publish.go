@@ -3,6 +3,7 @@ package controller
 import (
 	"ares/internal/api/util"
 	"ares/internal/publish"
+	"errors"
 	"log/slog"
 	"strconv"
 
@@ -35,6 +36,10 @@ func (pc *PublishController) CreateBuildTask(c *gin.Context) {
 	}
 	publishResult, err := pc.publishManager.CreatePublish(&req)
 	if err != nil {
+		if errors.Is(err, publish.ErrJenkinsDisabled) {
+			c.JSON(503, util.ResponseFailure("Jenkins 集成未启用", err.Error()))
+			return
+		}
 		c.JSON(500, util.ResponseFailure("", err.Error()))
 		return
 	}
@@ -57,6 +62,10 @@ func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
 	}
 	publishBatchResult, err := pc.publishManager.CreateBatchPublish(&req)
 	if err != nil {
+		if errors.Is(err, publish.ErrJenkinsDisabled) {
+			c.JSON(503, util.ResponseFailure("Jenkins 集成未启用", err.Error()))
+			return
+		}
 		c.JSON(500, util.ResponseFailure("", err.Error()))
 		return
 	}

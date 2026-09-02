@@ -43,8 +43,8 @@ type Pipelines struct {
 type PipelinesJobCombination struct {
 	Id              int    `xorm:"INT(11) pk autoincr 'id'" json:"id"`
 	DescriptionCN   string `xorm:"VARCHAR(255) notnull 'description_cn'" json:"description_cn"`
-	CiJobName       string `xorm:"VARCHAR(100) notnull 'ci_job_name'" json:"ci_job_name"` // 关联pipelines.job_name
-	CdJobName       string `xorm:"VARCHAR(100) notnull 'cd_job_name'" json:"cd_job_name"` // 关联pipelines.job_name
+	CiJobName       string `xorm:"VARCHAR(100) notnull index(idx_ci_job) unique(uk_ci_cd_combination) 'ci_job_name'" json:"ci_job_name"` // 关联pipelines.job_name
+	CdJobName       string `xorm:"VARCHAR(100) notnull index(idx_cd_job) unique(uk_ci_cd_combination) 'cd_job_name'" json:"cd_job_name"` // 关联pipelines.job_name
 	CodePackageType string `xorm:"VARCHAR(100) notnull unique 'code_package_type'" json:"code_package_type"`
 
 	CreatedTime time.Time  `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at" swaggertype:"string" format:"date-time"`

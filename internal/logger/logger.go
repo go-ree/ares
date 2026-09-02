@@ -48,6 +48,12 @@ func Init2(logLevel string) error {
 }
 
 func createLogFile(file string) (*os.File, error) {
+	switch strings.ToLower(strings.TrimSpace(file)) {
+	case "-", "stdout", "/dev/stdout":
+		return os.Stdout, nil
+	case "stderr", "/dev/stderr":
+		return os.Stderr, nil
+	}
 	ex, err := os.Executable()
 	if err != nil {
 		return nil, err

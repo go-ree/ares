@@ -2,6 +2,7 @@ package controller
 
 import (
 	"ares/internal/api/util"
+	"ares/internal/config"
 	"ares/internal/jenkins"
 	"encoding/json"
 	"fmt"
@@ -21,6 +22,10 @@ import (
 // @Failure 502 {object} util.ResponseTemplate{code=int} "调用链异常"
 // @Router	/api/v1/status/nodes [get]
 func GetJenkinsNodeStatus(c *gin.Context) {
+	if !config.JenkinsEnabled() {
+		c.JSON(503, util.ResponseFailure("Jenkins 集成未启用", "jenkins integration is disabled"))
+		return
+	}
 	nodeInfo, err := jenkins.GetJenkinsNodeStatus()
 	if err != nil {
 		c.JSON(502, util.ResponseFailure("", err.Error()))
@@ -64,6 +69,10 @@ func GetJenkinsNodeStatus(c *gin.Context) {
 // @Failure 502 {object} util.ResponseTemplate{code=int} "调用链异常"
 // @Router	/api/v1/job/stream/log [get]
 func StreamJenkinsBuildLogHandler(c *gin.Context) {
+	if !config.JenkinsEnabled() {
+		c.JSON(503, util.ResponseFailure("Jenkins 集成未启用", "jenkins integration is disabled"))
+		return
+	}
 	var query jenkins.BuildLogQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
 		c.JSON(400, util.ResponseFailure("参数错误", err.Error()))
@@ -88,10 +97,14 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 	// 启动日志流处理
 	go func() {
 		defer close(doneChan)
-		success := jenkins.StreamJenkinsBuildLog(&query, logChan, errChan)
+		success := jenkins.StreamJenkinsBuildLog(c.Request.Context(), &query, logChan, errChan)
 		if !success {
-			if err := <-errChan; err != nil {
+			// Cancellation can make the producer return without publishing an
+			// error. Never wait indefinitely for a value that may not exist.
+			select {
+			case err := <-errChan:
 				streamErr = err
+			default:
 			}
 		}
 	}()

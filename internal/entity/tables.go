@@ -6,6 +6,7 @@ const (
 	TableAppConfigs       = "app_configs"
 	TableTaskRecord       = "task_record"
 	TablePipelines        = "pipelines"
+	TablePipelineJobs     = "pipelines_job_combination"
 	TableEnvConfigs       = "env_configs"
 	TableDevLanguageRules = "dev_language_rules"
 )
@@ -24,6 +25,10 @@ func (a *TaskRecord) TableName() string {
 
 func (a *Pipelines) TableName() string {
 	return TablePipelines
+}
+
+func (a *PipelinesJobCombination) TableName() string {
+	return TablePipelineJobs
 }
 
 func (a *EnvConfigs) TableName() string {

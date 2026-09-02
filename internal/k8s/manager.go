@@ -1,6 +1,7 @@
 package k8s
 
 import (
+	"ares/internal/config"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -62,6 +63,7 @@ func createClient(cfg ClusterConfig) (*kubernetes.Clientset, error) {
 	if err != nil {
 		return nil, fmt.Errorf("加载集群配置失败: %w", err)
 	}
+	k8sConfig.Timeout = config.K8sTimeout()
 
 	clientset, err := kubernetes.NewForConfig(k8sConfig)
 	if err != nil {

@@ -22,6 +22,8 @@ env
 build
 .venv
 .env
+compose.override.yaml
+config/docker.local.yaml
 *.tar.gz
 lastupdate.tmp
 GoMessage
@@ -33,4 +35,3 @@ data/*.log
 tmp
 tmp/
 tmp/*
-

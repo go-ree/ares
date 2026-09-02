@@ -1,0 +1,103 @@
+name: ares
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ares}
+      MYSQL_USER: ${MYSQL_USER:-ares}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ares-demo-password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-ares-root-password}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - ares
+
+  ares:
+    image: ares-api:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    restart: unless-stopped
+    init: true
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      ARES_DB_CONN_STR: "${MYSQL_USER:-ares}:${MYSQL_PASSWORD:-ares-demo-password}@tcp(mysql:3306)/${MYSQL_DATABASE:-ares}?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai&timeout=5s&readTimeout=10s&writeTimeout=10s"
+      ARES_DEMO_DATA_ENABLED: ${ARES_DEMO_DATA_ENABLED:-true}
+      ARES_JENKINS_ENABLED: ${ARES_JENKINS_ENABLED:-false}
+      ARES_JENKINS_ADDRESS: ${ARES_JENKINS_ADDRESS:-}
+      ARES_JENKINS_USERNAME: ${ARES_JENKINS_USERNAME:-}
+      ARES_JENKINS_TOKEN: ${ARES_JENKINS_TOKEN:-}
+      ARES_JENKINS_TIMEOUT_SECONDS: ${ARES_JENKINS_TIMEOUT_SECONDS:-15}
+      ARES_K8S_ENABLED: ${ARES_K8S_ENABLED:-false}
+      ARES_K8S_TIMEOUT_SECONDS: ${ARES_K8S_TIMEOUT_SECONDS:-15}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    expose:
+      - "8080"
+    ports:
+      - "127.0.0.1:${ARES_API_PORT:-8081}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health/ready | grep -q '^OK$'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    networks:
+      - ares
+
+  web:
+    image: ares-web:local
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    depends_on:
+      ares:
+        condition: service_healthy
+    ports:
+      - "${ARES_BIND_ADDRESS:-127.0.0.1}:${ARES_HTTP_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/inside/checkup"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    networks:
+      - ares
+
+volumes:
+  mysql_data:
+
+networks:
+  ares:
+    driver: bridge

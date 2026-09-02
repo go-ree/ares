@@ -2,6 +2,7 @@ package controller
 
 import (
 	"ares/internal/api/util"
+	"ares/internal/config"
 	"ares/internal/k8s"
 	"fmt"
 	"github.com/gin-gonic/gin"
@@ -11,6 +12,14 @@ import (
 
 type PodController struct {
 	podManager *k8s.PodManager
+}
+
+func ensureK8sEnabled(c *gin.Context) bool {
+	if config.K8sEnabled() {
+		return true
+	}
+	c.JSON(503, util.ResponseFailure("Kubernetes 集成未启用", "kubernetes integration is disabled"))
+	return false
 }
 
 func NewPodController() *PodController {
@@ -30,6 +39,9 @@ func NewPodController() *PodController {
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router	/api/v1/k8s/pod/query [get]
 func (pc *PodController) GetAppPods(c *gin.Context) {
+	if !ensureK8sEnabled(c) {
+		return
+	}
 	// 从查询参数获取值
 	appName := c.Query("app_name")
 	env := c.Query("env")
@@ -136,6 +148,9 @@ func (pc *PodController) GetAppPods(c *gin.Context) {
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router	/api/v1/k8s/pod/list [get]
 func (pc *PodController) GetAllPods(c *gin.Context) {
+	if !ensureK8sEnabled(c) {
+		return
+	}
 	// 从查询参数获取值
 	env := c.Query("env")
 	namespace := c.DefaultQuery("namespace", "default")
@@ -176,6 +191,7 @@ func (pc *PodController) GetAllPods(c *gin.Context) {
 // @Router	/api/v1/k8s/debug [get]
 func (pc *PodController) GetK8sDebugInfo(c *gin.Context) {
 	debugInfo := make(map[string]interface{})
+	debugInfo["enabled"] = config.K8sEnabled()
 
 	// 检查是否已初始化
 	debugInfo["initialized"] = k8s.IsInitialized()
@@ -229,6 +245,9 @@ func (pc *PodController) GetK8sDebugInfo(c *gin.Context) {
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router	/api/v1/k8s/deployment/query [get]
 func (pc *PodController) GetDeploymentsByLabel(c *gin.Context) {
+	if !ensureK8sEnabled(c) {
+		return
+	}
 	// 从查询参数获取值
 	labelSelector := c.Query("label_selector")
 	env := c.Query("env")

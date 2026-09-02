@@ -119,7 +119,10 @@ func Router(r gin.IRouter) {
 		// 特殊兼容接口
 		compatible := apiRouter.Group("/compatible")
 		{
-			compatible.GET("/metadata/relation/all")
+			// Historical placeholder route returned an empty 200 through global
+			// middleware. Keep that contract explicitly instead of relying on the
+			// middleware chain to provide a handler.
+			compatible.GET("/metadata/relation/all", func(c *gin.Context) { c.Status(http.StatusOK) })
 			compatible.GET("/docker/info/getServiceProjectMap", compatibleController.GetAppInfo)
 		}
 	}
