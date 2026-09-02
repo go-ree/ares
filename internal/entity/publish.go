@@ -18,11 +18,11 @@ type TaskRecord struct {
 	CdBuildId      int64           `xorm:"int(11) DEFAULT 0 'cd_build_id'" json:"cd_build_id"`
 	PipelineParam  json.RawMessage `xorm:"JSON  'pipeline_param' " json:"pipeline_param" swaggertype:"string"`
 	Status         string          `xorm:"VARCHAR(100) DEFAULT 'init' 'status'" json:"status"`
-	Message        string          `xorm:"VARCHAR(255) DEFAULT 'NULL' 'message'" json:"message"`
-	CiJobName      string          `xorm:"VARCHAR(100) DEFAULT 'NULL' 'ci_job_name'" json:"ci_job_name"`
-	CdJobName      string          `xorm:"VARCHAR(100) DEFAULT 'NULL' 'cd_job_name'" json:"cd_job_name"`
+	Message        string          `xorm:"VARCHAR(255) null 'message'" json:"message"`
+	CiJobName      string          `xorm:"VARCHAR(100) null 'ci_job_name'" json:"ci_job_name"`
+	CdJobName      string          `xorm:"VARCHAR(100) null 'cd_job_name'" json:"cd_job_name"`
 	AutoDeploy     int             `xorm:"TINYINT(1) DEFAULT(1) 'auto_deploy'" json:"auto_deploy"`
-	Products       string          `xorm:"VARCHAR(255) DEFAULT 'NULL' 'products'" json:"products"`
+	Products       string          `xorm:"VARCHAR(255) null 'products'" json:"products"`
 	AppletImages   []AppletImage   `xorm:"-" json:"applet_images"` // 新增：任务图片（仅对外返回）
 	CreatedTime    time.Time       `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at" swaggertype:"string" format:"date-time"`
 	UpdatedTime    time.Time       `xorm:"timestamp updated notnull DEFAULT CURRENT_TIMESTAMP 'updated_at'" json:"updated_at" swaggertype:"string" format:"date-time"`

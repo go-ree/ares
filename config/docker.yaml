@@ -1,6 +1,7 @@
 db:
   # Required at runtime; Docker Compose provides it through ARES_DB_CONN_STR.
   conn_str: ""
+  schema_migration_timeout: "2m"
 
 web:
   address: ":8080"

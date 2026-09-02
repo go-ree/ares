@@ -4,6 +4,7 @@ import { batchDeploy, createDeploy } from '@/services/deploy';
 import { useUserStore } from '@/stores/user';
 import api from '@/config/api';
 import type { DeployingService, ServiceInfo, SelectedService, DeployForm } from '@/types/deploy';
+import { normalizeLegacyNullableText } from '@/utils/legacy-nullable-text';
 
 export function useDeploy() {
   const userStore = useUserStore();
@@ -473,13 +474,13 @@ export function useDeploy() {
         progress: calculateProgress(item.status),
         startTime: formatDateTime(item.created_at),
         operator: item.publisher,
-        message: item.message === 'NULL' ? '' : item.message,
+        message: normalizeLegacyNullableText(item.message),
         taskId: item.task_id,
-        ciJobName: item.ci_job_name === 'NULL' ? '' : item.ci_job_name,
-        cdJobName: item.cd_job_name === 'NULL' ? '' : item.cd_job_name,
+        ciJobName: normalizeLegacyNullableText(item.ci_job_name),
+        cdJobName: normalizeLegacyNullableText(item.cd_job_name),
         ciBuildId: item.ci_build_id || null,
         cdBuildId: item.cd_build_id || null,
-        products: item.products === 'NULL' ? '' : item.products,
+        products: normalizeLegacyNullableText(item.products),
         pipelineParam: item.pipeline_param,
       }));
     } catch (error) {

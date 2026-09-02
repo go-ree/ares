@@ -3,6 +3,7 @@ package app
 import (
 	"ares/internal/db"
 	"ares/internal/entity"
+	"ares/internal/tool"
 	"context"
 	"fmt"
 	"strings"
@@ -27,11 +28,15 @@ func buildPatchAppMap(req PatchAppRequest) (map[string]any, error) {
 		if v == nil {
 			return nil
 		}
-		s := strings.TrimSpace(*v)
+		s := tool.NormalizeNullableText(*v)
 		if !allowEmpty && s == "" {
 			return fmt.Errorf("%s 不能为空", key)
 		}
-		m[key] = s
+		if allowEmpty && s == "" {
+			m[key] = nil
+		} else {
+			m[key] = s
+		}
 		return nil
 	}
 
@@ -51,7 +56,7 @@ func buildPatchAppMap(req PatchAppRequest) (map[string]any, error) {
 	if err := setStrTrim("git_url", req.GitUrl, false); err != nil {
 		return nil, err
 	}
-	// 允许置空：用于清理描述/解绑 rundeck 名称（置空会写入空字符串）
+	// 允许置空：用于清理描述/解绑 rundeck 名称（置空会写入 SQL NULL）
 	if err := setStrTrim("description_cn", req.DescriptionCN, true); err != nil {
 		return nil, err
 	}

@@ -27,6 +27,15 @@ func (v *AppValidator) ValidateAppID(appID int64) error {
 
 // ValidateCreateApp 验证创建应用请求
 func (v *AppValidator) ValidateCreateApp(req *CreateAppRequest) error {
+	if req == nil {
+		return errors.New("请求不能为空")
+	}
+	if tool.IsEmptyLikeText(req.AppNameCN) {
+		return errors.New("app_name_cn 不能为空")
+	}
+	if tool.IsEmptyLikeText(req.DescriptionCN) {
+		return errors.New("description_cn 不能为空")
+	}
 	err := tool.ValidateStruct(req)
 	if err != nil {
 		return err
@@ -86,7 +95,7 @@ func (v *AppValidator) ValidatePatchApp(req *PatchAppRequest) error {
 
 	if req.RundeckAppName != nil {
 		s := strings.TrimSpace(*req.RundeckAppName)
-		if s != "" && !namePattern.MatchString(s) {
+		if !tool.IsEmptyLikeText(s) && !namePattern.MatchString(s) {
 			return errors.New("rundeck_app_name 格式不正确：必须以小写字母开头，只能包含小写字母、数字和连字符，长度3-25")
 		}
 	}
@@ -119,7 +128,7 @@ func (v *AppValidator) ValidatePatchApp(req *PatchAppRequest) error {
 		}
 	}
 	// 其它字段仅做“传了但全空白”阻断（更细的长度限制按需再加）
-	if req.AppNameCN != nil && strings.TrimSpace(*req.AppNameCN) == "" {
+	if req.AppNameCN != nil && tool.IsEmptyLikeText(*req.AppNameCN) {
 		return errors.New("app_name_cn 不能为空")
 	}
 	if req.OwnerCN != nil && strings.TrimSpace(*req.OwnerCN) == "" {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"ares/internal/cli"
 	"ares/internal/swagger"
@@ -23,7 +24,8 @@ type Config struct {
 		Address string `yaml:"address"`
 	} `yaml:"web"`
 	DB struct {
-		ConnStr string `yaml:"conn_str"`
+		ConnStr                string `yaml:"conn_str"`
+		SchemaMigrationTimeout string `yaml:"schema_migration_timeout"`
 	} `yaml:"db"`
 	Job map[string]struct {
 		Cron string `yaml:"cron"`
@@ -73,12 +75,16 @@ func applyEnvironmentOverrides(cfg *Config) error {
 
 	overrideString("ARES_WEB_ADDRESS", &cfg.Web.Address)
 	overrideString("ARES_DB_CONN_STR", &cfg.DB.ConnStr)
+	overrideString("ARES_DB_SCHEMA_MIGRATION_TIMEOUT", &cfg.DB.SchemaMigrationTimeout)
 	overrideString("ARES_LOG_LEVEL", &cfg.Log.Level)
 	overrideString("ARES_LOG_ACCESS_FILE", &cfg.Log.AccessLogfile)
 	overrideString("ARES_LOG_RUNTIME_FILE", &cfg.Log.RuntimeLogfile)
 	overrideString("ARES_SETTINGS_ADMIN_TOKEN", &cfg.Settings.AdminToken)
 	overrideString("ARES_SETTINGS_ENCRYPTION_KEY", &cfg.Settings.EncryptionKey)
 	if err := overrideOptionalBool("ARES_DEMO_DATA_ENABLED", &cfg.DemoData.Enabled); err != nil {
+		return err
+	}
+	if _, err := parsePositiveDuration("db.schema_migration_timeout", cfg.DB.SchemaMigrationTimeout, 2*time.Minute); err != nil {
 		return err
 	}
 	return nil
@@ -101,6 +107,26 @@ func overrideOptionalBool(name string, target *bool) error {
 	}
 	*target = parsed
 	return nil
+}
+
+func parsePositiveDuration(name, value string, fallback time.Duration) (time.Duration, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil || parsed <= 0 {
+		return 0, fmt.Errorf("invalid positive duration for %s: %q", name, value)
+	}
+	return parsed, nil
+}
+
+func DBSchemaMigrationTimeout() time.Duration {
+	timeout, err := parsePositiveDuration("db.schema_migration_timeout", Main.DB.SchemaMigrationTimeout, 2*time.Minute)
+	if err != nil {
+		return 2 * time.Minute
+	}
+	return timeout
 }
 
 func SettingsAdminToken() string {

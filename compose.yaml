@@ -36,6 +36,7 @@ services:
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       ARES_DB_CONN_STR: "${MYSQL_USER:-ares}:${MYSQL_PASSWORD:-ares-demo-password}@tcp(mysql:3306)/${MYSQL_DATABASE:-ares}?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai&timeout=5s&readTimeout=10s&writeTimeout=10s"
+      ARES_DB_SCHEMA_MIGRATION_TIMEOUT: ${ARES_DB_SCHEMA_MIGRATION_TIMEOUT:-2m}
       ARES_DEMO_DATA_ENABLED: ${ARES_DEMO_DATA_ENABLED:-true}
       ARES_SETTINGS_ADMIN_TOKEN: ${ARES_SETTINGS_ADMIN_TOKEN:-ares-local-admin-token}
       ARES_SETTINGS_ENCRYPTION_KEY: ${ARES_SETTINGS_ENCRYPTION_KEY:-ares-local-encryption-key-change-me-32chars}
@@ -50,8 +51,8 @@ services:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health/ready | grep -q '^OK$'"]
       interval: 5s
       timeout: 3s
-      retries: 12
-      start_period: 10s
+      retries: 36
+      start_period: ${ARES_DB_SCHEMA_MIGRATION_TIMEOUT:-2m}
     security_opt:
       - no-new-privileges:true
     read_only: true

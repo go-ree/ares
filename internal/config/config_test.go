@@ -5,6 +5,7 @@ import "testing"
 func TestApplyEnvironmentOverrides(t *testing.T) {
 	t.Setenv("ARES_WEB_ADDRESS", ":9090")
 	t.Setenv("ARES_DB_CONN_STR", "demo:secret@tcp(mysql:3306)/ares")
+	t.Setenv("ARES_DB_SCHEMA_MIGRATION_TIMEOUT", "4m")
 	t.Setenv("ARES_DEMO_DATA_ENABLED", "true")
 	t.Setenv("ARES_SETTINGS_ADMIN_TOKEN", "test-admin-token")
 	t.Setenv("ARES_SETTINGS_ENCRYPTION_KEY", "test-encryption-key-with-32-characters")
@@ -18,6 +19,9 @@ func TestApplyEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.DB.ConnStr != "demo:secret@tcp(mysql:3306)/ares" {
 		t.Fatalf("unexpected database DSN: %q", cfg.DB.ConnStr)
+	}
+	if cfg.DB.SchemaMigrationTimeout != "4m" {
+		t.Fatalf("unexpected schema migration timeout: %q", cfg.DB.SchemaMigrationTimeout)
 	}
 	if !cfg.DemoData.Enabled {
 		t.Fatal("demo data override was not applied")
@@ -34,5 +38,12 @@ func TestApplyEnvironmentOverridesRejectsInvalidBoolean(t *testing.T) {
 	t.Setenv("ARES_DEMO_DATA_ENABLED", "sometimes")
 	if err := applyEnvironmentOverrides(&Config{}); err == nil {
 		t.Fatal("expected invalid boolean environment value to fail")
+	}
+}
+
+func TestApplyEnvironmentOverridesRejectsInvalidMigrationTimeout(t *testing.T) {
+	t.Setenv("ARES_DB_SCHEMA_MIGRATION_TIMEOUT", "never")
+	if err := applyEnvironmentOverrides(&Config{}); err == nil {
+		t.Fatal("expected invalid schema migration timeout to fail")
 	}
 }

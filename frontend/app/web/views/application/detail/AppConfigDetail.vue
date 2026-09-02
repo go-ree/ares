@@ -259,6 +259,7 @@ import {
   getAppDetail,
   patchAppConfigByEnv,
 } from '@/services/application';
+import { normalizeLegacyNullableText } from '@/utils/legacy-nullable-text';
 
 const route = useRoute();
 const appId = ref<number>(Number(route.params.appId));
@@ -324,7 +325,7 @@ const handleProbeTypeChange = (env: AppEnv) => {
     // 兼容清理
     formsByEnv[env].probe_check_port = undefined;
   } else if (probeType === 'TCP') {
-    formsByEnv[env].probe_check_path = undefined;
+    formsByEnv[env].probe_check_path = '';
     formsByEnv[env].probe_check_http_port = undefined;
     if (!formsByEnv[env].probe_check_tcp_port) {
       formsByEnv[env].probe_check_tcp_port = formsByEnv[env].container_port;
@@ -332,7 +333,8 @@ const handleProbeTypeChange = (env: AppEnv) => {
     // 兼容清理
     formsByEnv[env].probe_check_port = undefined;
   } else {
-    formsByEnv[env].probe_check_path = undefined;
+    formsByEnv[env].probe_type = '';
+    formsByEnv[env].probe_check_path = '';
     formsByEnv[env].probe_check_tcp_port = undefined;
     formsByEnv[env].probe_check_http_port = undefined;
     formsByEnv[env].probe_check_port = undefined;
@@ -344,22 +346,22 @@ const handlePreStopTypeChange = (env: AppEnv) => {
   const t = formsByEnv[env].pre_stop_type;
   if (t === 'HTTP') {
     // HTTP：路径 + 端口（probe_stop_check_http_port）
-    formsByEnv[env].pre_stop_command = undefined;
+    formsByEnv[env].pre_stop_command = '';
     if (!formsByEnv[env].probe_stop_check_http_port) {
       formsByEnv[env].probe_stop_check_http_port =
         formsByEnv[env].probe_check_http_port || formsByEnv[env].container_port;
     }
   } else if (t === 'command') {
     // COMMAND：只命令
-    formsByEnv[env].pre_stop_check_path = undefined;
+    formsByEnv[env].pre_stop_check_path = '';
     formsByEnv[env].probe_stop_check_http_port = undefined;
     formsByEnv[env].pre_stop_check_port = undefined;
   } else {
     // 清空
-    formsByEnv[env].pre_stop_type = undefined;
-    formsByEnv[env].pre_stop_check_path = undefined;
+    formsByEnv[env].pre_stop_type = '';
+    formsByEnv[env].pre_stop_check_path = '';
     formsByEnv[env].pre_stop_check_port = undefined;
-    formsByEnv[env].pre_stop_command = undefined;
+    formsByEnv[env].pre_stop_command = '';
     formsByEnv[env].probe_stop_check_http_port = undefined;
   }
 };
@@ -377,9 +379,9 @@ const fetchConfigs = async () => {
         configsByEnv[cfg.env] = cfg;
         const form: UpdateAppConfigRequest = {
           code_package_type: cfg.code_package_type || undefined,
-          code_package_path: cfg.code_package_path || undefined,
-          code_package_name: cfg.code_package_name || undefined,
-          base_image: cfg.base_image || undefined,
+          code_package_path: normalizeLegacyNullableText(cfg.code_package_path),
+          code_package_name: normalizeLegacyNullableText(cfg.code_package_name),
+          base_image: normalizeLegacyNullableText(cfg.base_image),
           pod_count: cfg.pod_count ?? undefined,
           limits_memory: cfg.limits_memory ?? undefined,
           gpu_count: cfg.gpu_count ?? undefined,
@@ -397,7 +399,7 @@ const fetchConfigs = async () => {
           pre_stop_type: cfg.pre_stop_type === 'TCP' ? undefined : cfg.pre_stop_type || undefined,
           pre_stop_check_path: cfg.pre_stop_check_path || undefined,
           pre_stop_check_port: cfg.pre_stop_check_port ?? undefined,
-          pre_stop_command: cfg.pre_stop_command || undefined,
+          pre_stop_command: normalizeLegacyNullableText(cfg.pre_stop_command),
         };
         formsByEnv[cfg.env] = { ...form };
         originalFormsByEnv[cfg.env] = { ...form };
@@ -477,50 +479,47 @@ const getChangedKeys = (env: AppEnv) => {
 const saveEnvConfig = async (env: AppEnv) => {
   if (!Number.isFinite(appId.value) || appId.value <= 0) return;
   if (!isEditingByEnv[env]) return;
+  const changedKeys = getChangedKeys(env);
   // 没有任何变动时，不发请求，避免后端报“未更新任何记录”
-  if (getChangedKeys(env).length === 0) {
+  if (changedKeys.length === 0) {
     ElMessage.info('未做任何修改，无需保存');
     isEditingByEnv[env] = false;
     return;
   }
   saving.value = true;
   try {
-    const payload: UpdateAppConfigRequest = { ...formsByEnv[env] };
+    const payload: UpdateAppConfigRequest = {};
+    const currentForm = formsByEnv[env] as Record<string, unknown>;
+    for (const key of changedKeys) {
+      const value = currentForm[key];
+      if (value !== undefined) {
+        (payload as Record<string, unknown>)[key] = value;
+      }
+    }
     // 兼容：避免把历史字段 probe_check_port 误提交；统一走 probe_check_tcp_port
     if (payload.probe_type === 'TCP') {
-      payload.probe_check_path = undefined;
-      payload.probe_check_http_port = undefined;
+      delete payload.probe_check_http_port;
     } else if (payload.probe_type === 'HTTP') {
-      payload.probe_check_tcp_port = undefined;
-      payload.probe_check_http_port =
-        payload.probe_check_http_port ?? payload.container_port ?? undefined;
+      delete payload.probe_check_tcp_port;
     }
 
     // PreStop
     // - HTTP：类型+路径+端口（probe_stop_check_http_port）
     // - command：类型+命令（pre_stop_command）
-    if (payload.pre_stop_type === 'HTTP') {
-      payload.pre_stop_command = undefined;
-      payload.probe_stop_check_http_port =
-        payload.probe_stop_check_http_port ??
-        payload.probe_check_http_port ??
-        payload.container_port ??
-        undefined;
-      // 兼容字段不再使用
-      payload.pre_stop_check_port = undefined;
-    } else if (payload.pre_stop_type === 'command') {
-      payload.pre_stop_check_path = undefined;
-      payload.probe_stop_check_http_port = undefined;
-      payload.pre_stop_check_port = undefined;
-    } else {
-      payload.pre_stop_type = undefined;
-      payload.pre_stop_check_path = undefined;
-      payload.pre_stop_check_port = undefined;
-      payload.pre_stop_command = undefined;
-      payload.probe_stop_check_http_port = undefined;
+    if (Object.prototype.hasOwnProperty.call(payload, 'pre_stop_type')) {
+      if (payload.pre_stop_type === 'HTTP') {
+        // 兼容字段不再使用
+        delete payload.pre_stop_check_port;
+      } else if (payload.pre_stop_type === 'command') {
+        delete payload.probe_stop_check_http_port;
+        delete payload.pre_stop_check_port;
+      } else {
+        delete payload.pre_stop_check_port;
+        delete payload.probe_stop_check_http_port;
+      }
     }
 
-    delete (payload as any).probe_check_port;
+    delete payload.probe_check_port;
     const resp = await patchAppConfigByEnv(appId.value, env, payload);
     if (resp.data.code !== 1) {
       // 后端语义：未更新任何记录（当作无变动提示，不视为错误）

@@ -51,6 +51,7 @@ curl --fail \
 | `MYSQL_USER` | `ares` | 业务数据库用户 |
 | `MYSQL_PASSWORD` | `ares-demo-password` | 业务数据库密码 |
 | `MYSQL_ROOT_PASSWORD` | `ares-root-password` | MySQL root 密码 |
+| `ARES_DB_SCHEMA_MIGRATION_TIMEOUT` | `2m` | 单次版本化 schema 迁移操作的超时；大库可按 DDL / 扫描耗时调高 |
 | `ARES_DEMO_DATA_ENABLED` | `true` | 空库是否写入 Demo 数据 |
 | `ARES_SETTINGS_ADMIN_TOKEN` | `ares-local-admin-token` | Web 系统配置接口的管理员令牌；共享环境必须修改 |
 | `ARES_SETTINGS_ENCRYPTION_KEY` | 本地示例值 | 加密 Jenkins Token 与 kubeconfig；共享环境必须替换且妥善备份 |
@@ -150,6 +151,8 @@ docker compose up -d --build --wait
 ### 从旧镜像迁移
 
 新镜像不再把仓库的环境配置或集群凭据打包进镜像。数据库连接仍通过 `ARES_DB_CONN_STR` 注入；Jenkins 与 Kubernetes 配置改为启动后在 Web 中保存。升级前请备份数据库，并准备固定的 `ARES_SETTINGS_ENCRYPTION_KEY`；密钥遗失或变更后，已保存的敏感配置无法解密，需要重新录入。
+
+包含迁移 `20260902_001_cleanup_legacy_null_strings` 的版本会在启动时治理历史字符串 `"NULL"` 并调整相关列约束。升级前须确认有效的开发语言规则完整，停止所有旧版 Ares 写入实例，再启动新版本；迁移结果记录在 `schema_migrations`。大数据量环境可通过 `ARES_DB_SCHEMA_MIGRATION_TIMEOUT` 调高迁移专用连接的操作超时，不会放宽正常 API 查询的 10 秒 I/O 上限。迁移细节见 [NULL 字符串治理方案](../plans/null-string-cleanup.md)。
 
 ## 上线前检查
 

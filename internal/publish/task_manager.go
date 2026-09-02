@@ -68,6 +68,9 @@ func (tm *TaskManager) fetchTasks() ([]entity.TaskRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("查询任务列表失败：%s", err)
 	}
+	for i := range tasks {
+		normalizeTaskRecordNullableText(&tasks[i])
+	}
 
 	// 添加日志记录
 	slog.Info("监听构建任务列表状态（状态机）",
@@ -117,6 +120,7 @@ func (tm *TaskManager) triggerJenkinsBuild(task entity.TaskRecord) error {
 	if err != nil {
 		return fmt.Errorf("转换参数失败：%s", err)
 	}
+	normalizeLegacyPipelineParameters(jenkinsParam)
 
 	jobBuildId, _, err := jenkins.CreateBuildTask(task.CdJobName, jenkinsParam)
 	if err != nil {
