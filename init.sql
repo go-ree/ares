@@ -1,5 +1,5 @@
 # 创建apps表，用来存储app信息
-CREATE TABLE ares.apps (
+CREATE TABLE IF NOT EXISTS ares.apps (
     app_id INT(11) AUTO_INCREMENT PRIMARY KEY,
     app_name VARCHAR(255) NOT NULL,
     rundeck_app_name VARCHAR(255) DEFAULT null,
@@ -15,7 +15,7 @@ CREATE TABLE ares.apps (
 )AUTO_INCREMENT = 10000;
 
 # 创建app_config表，用来存储发布信息
-CREATE TABLE ares.app_configs (
+CREATE TABLE IF NOT EXISTS ares.app_configs (
     config_id  INT(11)  AUTO_INCREMENT PRIMARY KEY,
     app_id     INT(11)  NOT NULL,
     env        VARCHAR(100) NOT NULL,
@@ -28,9 +28,13 @@ CREATE TABLE ares.app_configs (
     pod_count INT(11) DEFAULT 1,
     # 这里规定只能使用Gi
     limits_memory INT(11) DEFAULT 2,
-    gpu_count   INT(11) DEFAULT 1,
+    gpu_count   INT(11) DEFAULT 0,
     probe_type  VARCHAR(100) DEFAULT 'TCP',
     probe_check_path VARCHAR(100) DEFAULT '/inside/checkup',
+    probe_check_tcp_port INT(11) NOT NULL DEFAULT 8080,
+    probe_check_http_port INT(11) NOT NULL DEFAULT 8080,
+    probe_stop_check_http_port INT(11) NOT NULL DEFAULT 8080,
+    container_port INT(11) NOT NULL DEFAULT 8080,
     pre_stop_type VARCHAR(100) DEFAULT 'TCP',
     pre_stop_check_path VARCHAR(100) DEFAULT '/inside/prestop',
     pre_stop_command VARCHAR(255) DEFAULT 'NULL',
@@ -43,7 +47,7 @@ CREATE TABLE ares.app_configs (
 );
 
 -- 多域名配置：基于 app_configs.config_id 绑定多个 host/path
-CREATE TABLE ares.app_config_domains (
+CREATE TABLE IF NOT EXISTS ares.app_config_domains (
     id BIGINT(20) AUTO_INCREMENT PRIMARY KEY,
     config_id INT(11) NOT NULL,
     host VARCHAR(255) NOT NULL,
@@ -55,7 +59,7 @@ CREATE TABLE ares.app_config_domains (
     INDEX idx_config_id (config_id)
 );
 
-CREATE TABLE ares.task_record (
+CREATE TABLE IF NOT EXISTS ares.task_record (
     task_id INT(11) AUTO_INCREMENT PRIMARY KEY,
     app_name VARCHAR(255) NOT NULL,
     rundeck_app_name VARCHAR(255) DEFAULT null,
@@ -84,7 +88,7 @@ CREATE TABLE ares.task_record (
 );
 
 -- 任务图片表：按 task_id 存放多种渠道（type）的图片 url
-CREATE TABLE ares.task_record_images (
+CREATE TABLE IF NOT EXISTS ares.task_record_images (
     id BIGINT(20) AUTO_INCREMENT PRIMARY KEY,
     task_id INT(11) NOT NULL,
     img_type VARCHAR(32) NOT NULL,
@@ -95,7 +99,7 @@ CREATE TABLE ares.task_record_images (
     INDEX idx_task_id (task_id)
 );
 
-CREATE TABLE ares.pipelines (
+CREATE TABLE IF NOT EXISTS ares.pipelines (
     id INT(11) AUTO_INCREMENT PRIMARY KEY,
     job_name VARCHAR(100) NOT NULL UNIQUE,
     description_cn VARCHAR(255) NOT NULL,
@@ -104,9 +108,9 @@ CREATE TABLE ares.pipelines (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE ares.pipelines_job_combination (
+CREATE TABLE IF NOT EXISTS ares.pipelines_job_combination (
     id INT(11) AUTO_INCREMENT PRIMARY KEY,
     description_cn VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
     -- 与pipelines.job_name完全匹配的字段定义
@@ -138,7 +142,7 @@ CREATE TABLE ares.pipelines_job_combination (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 #######################################以上均为投产版##########################################################
 # 创建env表，用来存储环境对应集群信息
-CREATE TABLE ares.env_configs (
+CREATE TABLE IF NOT EXISTS ares.env_configs (
     id INT(11) AUTO_INCREMENT PRIMARY KEY,
     env VARCHAR(100) NOT NULL UNIQUE,
     cluster_name VARCHAR(255) NOT NULL,
@@ -157,7 +161,7 @@ CREATE TABLE ares.env_configs (
 
 -- dev_language 与 code_package_type 规则（单表 JSON）
 -- rules 示例：{"allowed":["jar","war"],"default":"jar"}
-CREATE TABLE ares.dev_language_rules (
+CREATE TABLE IF NOT EXISTS ares.dev_language_rules (
     dev_language VARCHAR(100) PRIMARY KEY COMMENT '与 apps.dev_language 一致',
     rules JSON NOT NULL COMMENT '{"allowed":[...],"default":"..."}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -166,7 +170,7 @@ CREATE TABLE ares.dev_language_rules (
     CHECK (JSON_VALID(rules))
 );
 
-INSERT INTO ares.dev_language_rules (dev_language, rules) VALUES
+INSERT IGNORE INTO ares.dev_language_rules (dev_language, rules) VALUES
 ('java',    JSON_OBJECT('allowed', JSON_ARRAY('jar','war'),                  'default','jar')),
 ('python',  JSON_OBJECT('allowed', JSON_ARRAY('python','ai'),                'default','python')),
 ('node.js', JSON_OBJECT('allowed', JSON_ARRAY('static','miniapp','node.js'), 'default','node.js')),

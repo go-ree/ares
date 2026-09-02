@@ -1,0 +1,34 @@
+apollo:
+  enable: false
+
+db:
+  # Required at runtime; Docker Compose provides it through ARES_DB_CONN_STR.
+  conn_str: ""
+
+web:
+  address: ":8080"
+
+log:
+  level: "info"
+  accessLogfile: "stdout"
+  runtimeLogfile: "stderr"
+
+job:
+  taskManager:
+    cron: "@every 10s"
+
+jenkins:
+  enabled: false
+  timeout_seconds: 15
+  address: ""
+  token: ""
+  username: ""
+  password: ""
+
+k8s:
+  enabled: false
+  timeout_seconds: 15
+  clusters: {}
+
+demo_data:
+  enabled: true

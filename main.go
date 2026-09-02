@@ -4,6 +4,7 @@ import (
 	"ares/internal/jenkins"
 	"ares/internal/k8s"
 	"context"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -44,20 +45,28 @@ func main() {
 		os.Exit(5)
 	}
 
-	err = job.Init()
-	if err != nil {
-		os.Exit(5)
+	if config.JenkinsEnabled() {
+		err = jenkins.Init()
+		if err != nil {
+			os.Exit(5)
+		}
+
+		err = job.Init()
+		if err != nil {
+			os.Exit(5)
+		}
+	} else {
+		slog.Warn("jenkins integration disabled; publishing actions are unavailable")
 	}
 
-	err = jenkins.Init()
-	if err != nil {
-		os.Exit(5)
-	}
-
-	// 初始化K8s客户端管理器
-	err = k8s.Init()
-	if err != nil {
-		os.Exit(5)
+	if config.K8sEnabled() {
+		// 初始化K8s客户端管理器
+		err = k8s.Init()
+		if err != nil {
+			os.Exit(5)
+		}
+	} else {
+		slog.Warn("kubernetes integration disabled; cluster queries are unavailable")
 	}
 
 	// Ignore errors; 出错自动os.Exit(5)
