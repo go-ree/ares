@@ -376,4 +376,3 @@ curl -X PATCH '/api/v1/app-configs/20001/domains/123' \
 2. 需要多域名时：
    - 先 `GET /apps/{app_id}/configs` 拿到对应环境的 `config_id`
    - 再用 `GET/PUT/POST/PATCH/DELETE /app-configs/{config_id}/domains...` 进行管理
-

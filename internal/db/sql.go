@@ -110,6 +110,7 @@ func InitializeDB() error {
 		new(entity.TaskRecordImage),
 		new(entity.Pipelines),
 		new(entity.EnvConfigs),
+		new(entity.IntegrationSetting),
 	)
 	if err != nil {
 		slog.Error("failed to sync database tables", slog.Any("error", err))

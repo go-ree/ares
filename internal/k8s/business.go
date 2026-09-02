@@ -11,17 +11,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-// 环境客户端映射表
-var envClientMap = map[string]*kubernetes.Clientset{
-	"dev":         nil, // 将在init后设置
-	"development": nil,
-	"test":        nil,
-	"testing":     nil,
-	"moni":        nil,
-	"monitor":     nil,
-	"staging":     nil,
-}
-
 // 环境名称标准化映射
 var envNameMap = map[string]string{
 	"dev":         "dev",
@@ -39,22 +28,6 @@ var (
 	podManager     *PodManager
 	serviceManager *ServiceManager
 )
-
-// updateEnvClientMap 更新环境客户端映射（在初始化后调用）
-func updateEnvClientMap() {
-	envClientMap["dev"] = Dev
-	envClientMap["development"] = Dev
-	envClientMap["test"] = Test
-	envClientMap["testing"] = Test
-	envClientMap["moni"] = Moni
-	envClientMap["monitor"] = Moni
-	envClientMap["staging"] = Moni
-
-	// 初始化管理器
-	appManager = NewApplicationManager()
-	podManager = NewPodManager()
-	serviceManager = NewServiceManager()
-}
 
 // EnvStatus 环境状态
 type EnvStatus struct {
@@ -113,8 +86,8 @@ func GetServiceManager() *ServiceManager {
 
 // CheckEnvHealth 检查指定环境的健康状态
 func CheckEnvHealth(env string) *EnvStatus {
-	envKey := strings.ToLower(env)
-	client := envClientMap[envKey]
+	envKey := normalizeEnvironmentName(env)
+	client := getClientByEnv(envKey)
 	envName := envNameMap[envKey]
 
 	if client == nil && envName == "" {
@@ -346,7 +319,20 @@ func GetAllEnvsStatus() map[string]*EnvStatus {
 
 // getClientByEnv 内部函数：根据环境名获取客户端
 func getClientByEnv(env string) *kubernetes.Clientset {
-	return envClientMap[strings.ToLower(env)]
+	switch normalizeEnvironmentName(env) {
+	case "dev":
+		return DefaultClient(EnvDev)
+	case "test":
+		return DefaultClient(EnvTest)
+	case "moni":
+		return DefaultClient(EnvStage)
+	default:
+		return nil
+	}
+}
+
+func normalizeEnvironmentName(env string) string {
+	return envNameMap[strings.ToLower(strings.TrimSpace(env))]
 }
 
 // ---- 新增便捷函数，使用新的管理器模式 ----

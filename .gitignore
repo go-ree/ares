@@ -1,37 +1,60 @@
-### gitignore template
-.idea
-vue/.idea
-vue/node_modules
+# Editors and operating-system files
+.idea/
 *.iml
+**/.vscode/*
+!**/.vscode/extensions.json
+.DS_Store
+
+# Local environment and deployment overrides
+.env
+.env.*
+!.env.example
+/compose.override.yaml
+/config/*.local.yaml
+/config/dev.yaml
+/config/test.yaml
+/config/moni.yaml
+/config/*-cluster-config
+/config/kubeconfig*
+/config/*.kubeconfig
+/config/*.pem
+/config/*.key
+
+# Go build and test output
+/ares
+/gomessage
+/GoMessage
+/bin/
+/build/
+/out/
+*.test
+*.prof
+*.pprof
+coverage.out
+
+# Frontend dependencies and build output
+/frontend/node_modules/
+/frontend/dist/
+/frontend/dist-ssr/
+/frontend/coverage/
+
+# Local Python environments
+/.venv/
+/venv/
+/env/
+
+# Runtime data, logs, and temporary files
+/data/
+/log/
+/logs/
+/tmp/
+/tmp_logs/
 *.log
-*.tgz
-*/*.tgz
 *.db
-./config/*.db
 *.sqlite
 *.sqlite3
-out
-gen
-tmp_logs
-tmp
-logs
-log
-cmd
-venv
-env
-build
-.venv
-.env
-compose.override.yaml
-config/docker.local.yaml
+
+# Packaged artifacts
 *.tar.gz
-lastupdate.tmp
-GoMessage
-*prof
-.DS_Store
-data
-data/*.db
-data/*.log
-tmp
-tmp/
-tmp/*
+*.tgz
+/lastupdate.tmp

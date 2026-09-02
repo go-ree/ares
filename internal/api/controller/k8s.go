@@ -2,7 +2,6 @@ package controller
 
 import (
 	"ares/internal/api/util"
-	"ares/internal/config"
 	"ares/internal/k8s"
 	"fmt"
 	"github.com/gin-gonic/gin"
@@ -15,7 +14,7 @@ type PodController struct {
 }
 
 func ensureK8sEnabled(c *gin.Context) bool {
-	if config.K8sEnabled() {
+	if k8s.IsInitialized() {
 		return true
 	}
 	c.JSON(503, util.ResponseFailure("Kubernetes 集成未启用", "kubernetes integration is disabled"))
@@ -191,7 +190,7 @@ func (pc *PodController) GetAllPods(c *gin.Context) {
 // @Router	/api/v1/k8s/debug [get]
 func (pc *PodController) GetK8sDebugInfo(c *gin.Context) {
 	debugInfo := make(map[string]interface{})
-	debugInfo["enabled"] = config.K8sEnabled()
+	debugInfo["enabled"] = k8s.IsInitialized()
 
 	// 检查是否已初始化
 	debugInfo["initialized"] = k8s.IsInitialized()
@@ -202,9 +201,9 @@ func (pc *PodController) GetK8sDebugInfo(c *gin.Context) {
 
 	// 检查全局客户端状态
 	clientStatus := map[string]bool{
-		"dev_client":  k8s.Dev != nil,
-		"test_client": k8s.Test != nil,
-		"moni_client": k8s.Moni != nil,
+		"dev_client":  k8s.DefaultClient(k8s.EnvDev) != nil,
+		"test_client": k8s.DefaultClient(k8s.EnvTest) != nil,
+		"moni_client": k8s.DefaultClient(k8s.EnvStage) != nil,
 	}
 	debugInfo["client_status"] = clientStatus
 

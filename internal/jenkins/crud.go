@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"ares/internal/config"
 )
 
 // JenkinsManager jenkins管理器
@@ -53,10 +51,11 @@ type BuildLogChunk struct {
 // GetJenkinsNodeStatus	获取jenkins中node的状态信息
 func (jm *JenkinsManager) GetJenkinsNodeStatus() (*Nodes, error) {
 	ctx := context.Background()
-	if Jenkins == nil {
+	runtime := Current()
+	if runtime == nil {
 		return nil, errors.New("jenkins not initialized")
 	}
-	nodes, err := Jenkins.GetAllNodes(ctx)
+	nodes, err := runtime.Client.GetAllNodes(ctx)
 	if err != nil {
 		slog.Error("Failed to get all nodes", slog.Any("error", err))
 		return nil, err
@@ -97,10 +96,11 @@ type Node struct {
 // GetJenkinsNodeStatus	获取jenkins中node的状态信息
 func GetJenkinsNodeStatus() (*Nodes, error) {
 	ctx := context.Background()
-	if Jenkins == nil {
+	runtime := Current()
+	if runtime == nil {
 		return nil, errors.New("jenkins not initialized")
 	}
-	nodes, err := Jenkins.GetAllNodes(ctx)
+	nodes, err := runtime.Client.GetAllNodes(ctx)
 	if err != nil {
 		slog.Error("Failed to get all nodes", slog.Any("error", err))
 		return nil, err
@@ -134,10 +134,11 @@ func GetJenkinsNodeStatus() (*Nodes, error) {
 // GetJenkinsBuildLog 获取jenkins构建日志
 func GetJenkinsBuildLog(jobName string, buildId int64) (string, error) {
 	ctx := context.Background()
-	if Jenkins == nil {
+	runtime := Current()
+	if runtime == nil {
 		return "", errors.New("jenkins not initialized")
 	}
-	job, err := Jenkins.GetJob(ctx, jobName)
+	job, err := runtime.Client.GetJob(ctx, jobName)
 	if err != nil {
 		slog.Error("获取 Job 失败", slog.Any("error", err))
 		return "", err
@@ -153,11 +154,12 @@ func GetJenkinsBuildLog(jobName string, buildId int64) (string, error) {
 
 // StreamJenkinsBuildLog	持续获取jenkins的构建日志
 func StreamJenkinsBuildLog(ctx context.Context, req *BuildLogQuery, logChan chan<- BuildLogChunk, errChan chan<- error) bool {
-	if Jenkins == nil {
+	runtime := Current()
+	if runtime == nil {
 		sendJenkinsStreamError(ctx, errChan, errors.New("jenkins not initialized"))
 		return false
 	}
-	job, err := Jenkins.GetJob(ctx, req.JobName)
+	job, err := runtime.Client.GetJob(ctx, req.JobName)
 	if err != nil {
 		slog.Error("获取Job失败", "job_name", req.JobName, "build_id", req.BuildId, "err", err)
 		sendJenkinsStreamError(ctx, errChan, err)
@@ -272,7 +274,7 @@ func StreamJenkinsBuildLog(ctx context.Context, req *BuildLogQuery, logChan chan
 		default:
 		}
 
-		chunkText, nextStart, moreData, err := getProgressiveText(ctx, req.JobName, req.BuildId, start)
+		chunkText, nextStart, moreData, err := getProgressiveText(ctx, runtime, req.JobName, req.BuildId, start)
 		if err != nil {
 			if ctx.Err() != nil {
 				return true
@@ -314,7 +316,7 @@ func StreamJenkinsBuildLog(ctx context.Context, req *BuildLogQuery, logChan chan
 		// - 构建已结束：再拉一次确保最后增量，然后退出
 		if !moreData {
 			if !build.IsRunning(ctx) {
-				finalText, finalNext, _, err := getProgressiveText(ctx, req.JobName, req.BuildId, start)
+				finalText, finalNext, _, err := getProgressiveText(ctx, runtime, req.JobName, req.BuildId, start)
 				if err == nil && finalNext >= start {
 					if finalText != "" {
 						segs := splitToSegments(finalText, start, finalNext)
@@ -376,8 +378,8 @@ func waitForJenkinsPoll(ctx context.Context, delay time.Duration) bool {
 // getProgressiveText 使用 Jenkins 标准接口获取增量日志：
 // GET /job/<job>/<build>/logText/progressiveText?start=<offset>
 // 返回：增量文本、nextStart(X-Text-Size)、moreData(X-More-Data)
-func getProgressiveText(ctx context.Context, jobName string, buildID int64, start int64) (string, int64, bool, error) {
-	base := strings.TrimRight(config.Main.Jenkins.Address, "/")
+func getProgressiveText(ctx context.Context, runtime *Runtime, jobName string, buildID int64, start int64) (string, int64, bool, error) {
+	base := runtime.Config.Address
 	jobPath := buildJobPath(jobName)
 	u := base + jobPath + "/" + strconv.FormatInt(buildID, 10) + "/logText/progressiveText"
 
@@ -394,12 +396,12 @@ func getProgressiveText(ctx context.Context, jobName string, buildID int64, star
 		return "", start, false, err
 	}
 	// Jenkins token 作为 password 使用 basic auth
-	req.SetBasicAuth(config.Main.Jenkins.UserName, config.Main.Jenkins.Token)
+	req.SetBasicAuth(runtime.Config.Username, runtime.Config.Token)
 	req.Header.Set("Accept", "text/plain")
 
-	client := &http.Client{Timeout: config.JenkinsTimeout()}
-	if Jenkins != nil && Jenkins.Requester != nil && Jenkins.Requester.Client != nil {
-		client = Jenkins.Requester.Client
+	client := &http.Client{Timeout: runtime.Config.Timeout}
+	if runtime.Client.Requester != nil && runtime.Client.Requester.Client != nil {
+		client = runtime.Client.Requester.Client
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -472,10 +474,11 @@ func convertTimestamperToTZ(line string, tz *time.Location) string {
 func CreateBuildTask(jobName string, params map[string]string) (int64, string, error) {
 	ctx := context.Background()
 	// 实现创建逻辑
-	if Jenkins == nil {
+	runtime := Current()
+	if runtime == nil {
 		return 0, "", errors.New("jenkins not initialized")
 	}
-	queueId, err := Jenkins.BuildJob(ctx, jobName, params)
+	queueId, err := runtime.Client.BuildJob(ctx, jobName, params)
 	if err != nil {
 		slog.Error("任务构建失败", slog.Any("error", err))
 		return 0, "", err
@@ -486,7 +489,7 @@ func CreateBuildTask(jobName string, params map[string]string) (int64, string, e
 
 	// 这段代码是一个循环，检查任务的 Executable.Number 是否为 0。根据 Jenkins 的 API，任务在队列中会有一个大约 4.7 秒的静默期。
 	// 在此期间，任务的构建编号可能尚未分配。循环中每隔 1 秒调用一次 Poll 方法来更新任务状态。如果在此过程中发生错误，返回 nil 和错误信息。
-	buildInfo, err := Jenkins.GetBuildFromQueueID(ctx, queueId)
+	buildInfo, err := runtime.Client.GetBuildFromQueueID(ctx, queueId)
 	if err != nil {
 		return 0, "", err
 	}
@@ -502,7 +505,7 @@ func CreateBuildTask(jobName string, params map[string]string) (int64, string, e
 }
 
 func BuildTask() error {
-	if Jenkins == nil {
+	if !IsConfigured() {
 		return errors.New("jenkins not initialized")
 	}
 
@@ -513,14 +516,15 @@ func BuildTask() error {
 // 传入：管线名称、构建id
 // 返回：构建状态（RUNNING、SUCCESS、FAILURE、ABORTED）
 func GetBuildStatus(jobName string, buildId int64) (string, error) {
-	if Jenkins == nil {
+	runtime := Current()
+	if runtime == nil {
 		return "", errors.New("jenkins not initialized")
 	}
 
 	ctx := context.Background()
 
 	// 获取job对象
-	job, err := Jenkins.GetJob(ctx, jobName)
+	job, err := runtime.Client.GetJob(ctx, jobName)
 	if err != nil {
 		slog.Error("获取 Job 失败", slog.Any("error", err))
 		return "", err

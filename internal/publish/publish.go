@@ -2,7 +2,6 @@ package publish
 
 import (
 	"ares/internal/api/util"
-	"ares/internal/config"
 	"ares/internal/db"
 	"ares/internal/entity"
 	"ares/internal/jenkins"
@@ -152,7 +151,7 @@ func (pm *PublishManager) VerifyPipelines(req *PublishRequest) (*entity.Pipeline
 
 // CreatePublish 创建单次发布动作
 func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity.TaskRecord, error) {
-	if !config.JenkinsEnabled() {
+	if !jenkins.IsConfigured() {
 		return nil, ErrJenkinsDisabled
 	}
 	// 验证所需的参数信息是否完成且不为空
@@ -252,7 +251,7 @@ func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity
 
 // CreateBatchPublish 批量创建发布任务
 func (pm *PublishManager) CreateBatchPublish(req *CreateBatchPublishRequest) (*CreateBatchPublishResponse, error) {
-	if !config.JenkinsEnabled() {
+	if !jenkins.IsConfigured() {
 		return nil, ErrJenkinsDisabled
 	}
 	response := &CreateBatchPublishResponse{

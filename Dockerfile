@@ -11,7 +11,6 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY main.go ./
-COPY docs ./docs
 COPY internal ./internal
 RUN go build -trimpath -ldflags="-s -w" -o /out/ares ./main.go
 

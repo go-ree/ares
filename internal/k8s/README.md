@@ -537,23 +537,7 @@ CheckAppStatus(env, namespace, appName string) (*AppInfo, error)
 
 ## ⚙️ 配置说明
 
-### 一次配置，到处使用
-```yaml
-# config/default.yaml
-k8s:
-  clusters:
-    dev:
-      name: "k8s-k6-dev"
-      config_path: "config/k6-cluster-config"
-    test:
-      name: "k8s-k2-test" 
-      config_path: "config/k2-cluster-config"
-    moni:
-      name: "k8s-k2-moni"
-      config_path: "config/k2-cluster-config"
-```
-
-配置完成后，所有业务代码都可以直接使用，无需关心底层集群配置。
+Kubernetes 不再从启动 YAML 或仓库内文件读取连接配置。Ares 启动后，由管理员在“系统设置 → 系统配置”中为 `dev`、`test`、`moni` 环境录入集群名称与 kubeconfig；连接验证通过后，运行时管理器会原子切换到新客户端。
 
 ## 🛡️ 最佳实践
 
@@ -620,7 +604,7 @@ func healthCheckEndpoint(w http.ResponseWriter, r *http.Request) {
 ### 之前：直接调用K8s API
 ```go
 // ❌ 复杂：需要了解K8s API细节
-client := k8s.Dev
+client := k8s.DefaultClient(k8s.EnvDev)
 deployment := &appsv1.Deployment{...}
 _, err := client.AppsV1().Deployments("default").Create(ctx, deployment, metav1.CreateOptions{})
 ```
@@ -646,4 +630,4 @@ result, err := k8s.DeployApp(ctx, appReq)
 
 ---
 
-**总结**：新的管理器模式在保持原有简单易用特性的基础上，提供了更强大、更专业的K8s操作能力。您可以根据需要选择使用高级管理器功能或简单的便捷函数，系统会根据您的业务需求提供最合适的抽象层次！ 
+**总结**：新的管理器模式在保持原有简单易用特性的基础上，提供了更强大、更专业的K8s操作能力。您可以根据需要选择使用高级管理器功能或简单的便捷函数，系统会根据您的业务需求提供最合适的抽象层次！

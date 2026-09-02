@@ -21,6 +21,9 @@ func NewTaskManager() *TaskManager {
 
 // UpdateTaskStatuses 更新任务状态
 func (tm *TaskManager) UpdateTaskStatuses() {
+	if !jenkins.IsConfigured() {
+		return
+	}
 	tasks, err := tm.fetchTasks()
 	if err != nil {
 		slog.Error("查询任务列表失败", slog.Any("error", err))

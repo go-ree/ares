@@ -576,17 +576,7 @@ func (am *ApplicationManager) validateRequest(req *ApplicationRequest) error {
 
 // getClientForEnv 获取环境对应的K8s客户端
 func (am *ApplicationManager) getClientForEnv(env string) *kubernetes.Clientset {
-	standardEnv := envNameMap[env]
-	switch standardEnv {
-	case "dev":
-		return Dev
-	case "test":
-		return Test
-	case "moni":
-		return Moni
-	default:
-		return nil
-	}
+	return getClientByEnv(env)
 }
 
 // ApplicationStatus 应用状态

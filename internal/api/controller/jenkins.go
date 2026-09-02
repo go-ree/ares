@@ -2,7 +2,6 @@ package controller
 
 import (
 	"ares/internal/api/util"
-	"ares/internal/config"
 	"ares/internal/jenkins"
 	"encoding/json"
 	"fmt"
@@ -22,7 +21,7 @@ import (
 // @Failure 502 {object} util.ResponseTemplate{code=int} "调用链异常"
 // @Router	/api/v1/status/nodes [get]
 func GetJenkinsNodeStatus(c *gin.Context) {
-	if !config.JenkinsEnabled() {
+	if !jenkins.IsConfigured() {
 		c.JSON(503, util.ResponseFailure("Jenkins 集成未启用", "jenkins integration is disabled"))
 		return
 	}
@@ -69,7 +68,7 @@ func GetJenkinsNodeStatus(c *gin.Context) {
 // @Failure 502 {object} util.ResponseTemplate{code=int} "调用链异常"
 // @Router	/api/v1/job/stream/log [get]
 func StreamJenkinsBuildLogHandler(c *gin.Context) {
-	if !config.JenkinsEnabled() {
+	if !jenkins.IsConfigured() {
 		c.JSON(503, util.ResponseFailure("Jenkins 集成未启用", "jenkins integration is disabled"))
 		return
 	}
