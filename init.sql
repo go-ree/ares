@@ -1,13 +1,18 @@
+CREATE TABLE IF NOT EXISTS ares.schema_migrations (
+    version VARCHAR(128) NOT NULL PRIMARY KEY,
+    applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 # 创建apps表，用来存储app信息
 CREATE TABLE IF NOT EXISTS ares.apps (
     app_id INT(11) AUTO_INCREMENT PRIMARY KEY,
     app_name VARCHAR(255) NOT NULL,
     rundeck_app_name VARCHAR(255) DEFAULT null,
-    app_name_cn VARCHAR(255) DEFAULT 'NULL',
+    app_name_cn VARCHAR(255) NOT NULL,
     owner VARCHAR(100) NOT NULL,
     owner_cn varchar(100) NOT NULL,
     dev_language VARCHAR(100) NOT NULL,
-    description_cn varchar(255) DEFAULT 'NULL',
+    description_cn varchar(255) DEFAULT NULL,
     git_url varchar(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -19,10 +24,10 @@ CREATE TABLE IF NOT EXISTS ares.app_configs (
     config_id  INT(11)  AUTO_INCREMENT PRIMARY KEY,
     app_id     INT(11)  NOT NULL,
     env        VARCHAR(100) NOT NULL,
-    code_package_type VARCHAR(100) DEFAULT 'NULL',
-    code_package_path VARCHAR(255) DEFAULT 'NULL',
-    code_package_name VARCHAR(255) DEFAULT 'NULL',
-    base_image  VARCHAR(255) DEFAULT 'NULL',
+    code_package_type VARCHAR(100) NOT NULL,
+    code_package_path VARCHAR(255) DEFAULT NULL,
+    code_package_name VARCHAR(255) DEFAULT NULL,
+    base_image  VARCHAR(255) DEFAULT NULL,
 
     # 运行时配置
     pod_count INT(11) DEFAULT 1,
@@ -37,7 +42,7 @@ CREATE TABLE IF NOT EXISTS ares.app_configs (
     container_port INT(11) NOT NULL DEFAULT 8080,
     pre_stop_type VARCHAR(100) DEFAULT 'TCP',
     pre_stop_check_path VARCHAR(100) DEFAULT '/inside/prestop',
-    pre_stop_command VARCHAR(255) DEFAULT 'NULL',
+    pre_stop_command VARCHAR(255) DEFAULT NULL,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -73,14 +78,14 @@ CREATE TABLE IF NOT EXISTS ares.task_record (
     pipeline_param json,
     # init(初始状态)、running（运行中）、success（成功）、failed（失败）
     status VARCHAR(100) DEFAULT 'init',
-    message VARCHAR(255) DEFAULT 'NULL',
-    ci_job_name VARCHAR(100) DEFAULT 'NULL',
-    cd_job_name VARCHAR(100) DEFAULT 'NULL',
+    message VARCHAR(255) DEFAULT NULL,
+    ci_job_name VARCHAR(100) DEFAULT NULL,
+    cd_job_name VARCHAR(100) DEFAULT NULL,
     # 自动触发cd阶段
     auto_deploy TINYINT(1) DEFAULT 1 COMMENT '0 for false, 1 for true',
 
     # 产出物
-    products varchar(255) DEFAULT 'NULL',
+    products varchar(255) DEFAULT NULL,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

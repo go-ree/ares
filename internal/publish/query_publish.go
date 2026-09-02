@@ -198,6 +198,7 @@ func (pm *PublishManager) QueryBuildPublish(ctx context.Context, params PublishQ
 			return nil, err
 		}
 		for i := range taskRecord {
+			normalizeTaskRecordNullableText(&taskRecord[i])
 			if imgs, ok := imgMap[taskRecord[i].TaskId]; ok {
 				taskRecord[i].AppletImages = imgs
 			} else {

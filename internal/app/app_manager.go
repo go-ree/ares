@@ -4,6 +4,7 @@ import (
 	"ares/internal/api/util"
 	"ares/internal/db"
 	"ares/internal/entity"
+	"ares/internal/tool"
 	"context"
 	"fmt"
 	"log/slog"
@@ -101,6 +102,14 @@ func (am *AppManager) CreateApps(ctx context.Context, req CreateAppsRequest) (*C
 
 // CreateAppWithTx 使用事务创建应用
 func (am *AppManager) CreateAppWithTx(ctx context.Context, req *CreateAppRequest) (*entity.Apps, error) {
+	if req == nil {
+		return nil, NewValidationError("请求不能为空")
+	}
+	req.AppNameCN = tool.NormalizeNullableText(req.AppNameCN)
+	if req.AppNameCN == "" {
+		return nil, NewValidationError("app_name_cn 不能为空")
+	}
+	req.DescriptionCN = tool.NormalizeNullableText(req.DescriptionCN)
 	// 检查应用是否已存在
 	exists, err := am.checkAppExists(ctx, req.AppName)
 	if err != nil {
@@ -129,7 +138,11 @@ func (am *AppManager) CreateAppWithTx(ctx context.Context, req *CreateAppRequest
 		GitUrl:        req.GitUrl,
 	}
 	// 保存到数据库
-	if _, err := session.Insert(app); err != nil {
+	insert := session
+	if app.DescriptionCN == "" {
+		insert = insert.Nullable("description_cn")
+	}
+	if _, err := insert.Insert(app); err != nil {
 		session.Rollback()
 		return nil, err
 	}
@@ -190,9 +203,9 @@ func (am *AppManager) createDefaultConfig(app *entity.Apps) {
 			AppID:                  app.AppId,
 			Env:                    env,
 			CodePackageType:        defaultCodePackageType,
-			CodePackageName:        "NULL",
-			CodePackagePath:        "NULL",
-			BaseImage:              "NULL",
+			CodePackageName:        "",
+			CodePackagePath:        "",
+			BaseImage:              "",
 			PodCount:               1,
 			LimitsMemory:           2,
 			GpuCount:               0,
@@ -204,7 +217,13 @@ func (am *AppManager) createDefaultConfig(app *entity.Apps) {
 			ContainerPort:          8080,
 			PreStopType:            "HTTP",
 			PreStopCheckPath:       "/inside/prestop",
-			PreStopCommand:         "NULL",
+			PreStopCommand:         "",
+		}
+		if tool.IsEmptyLikeText(appConfig.CodePackageType) {
+			slog.Error("无法创建默认应用配置：开发语言缺少默认代码包类型",
+				"app_id", app.AppId,
+				"dev_language", app.DevLanguage)
+			return
 		}
 
 		session := db.Engine.NewSession()
@@ -217,7 +236,12 @@ func (am *AppManager) createDefaultConfig(app *entity.Apps) {
 		}
 
 		// 创建应用配置
-		if _, err := session.Insert(appConfig); err != nil {
+		if _, err := session.Nullable(
+			"code_package_name",
+			"code_package_path",
+			"base_image",
+			"pre_stop_command",
+		).Insert(appConfig); err != nil {
 			slog.Error("创建应用配置失败",
 				"app_id", app.AppId,
 				"env", env,
@@ -262,6 +286,6 @@ func getDefaultPackageType(language string) string {
 	case "node.js":
 		return "node.js"
 	default:
-		return "NULL"
+		return ""
 	}
 }

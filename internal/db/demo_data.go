@@ -110,7 +110,12 @@ func InitializeDemoData() error {
 		configIDs[app.App.AppName] = make(map[string]int)
 		for _, envName := range []string{"dev", "test", "moni"} {
 			appConfig := demoAppConfig(app.App.AppId, envName, app.PackageType, app.BaseImage)
-			if _, err := session.Insert(&appConfig); err != nil {
+			if _, err := session.Nullable(
+				"code_package_path",
+				"code_package_name",
+				"base_image",
+				"pre_stop_command",
+			).Insert(&appConfig); err != nil {
 				return fmt.Errorf("insert demo config %s/%s: %w", app.App.AppName, envName, err)
 			}
 			configIDs[app.App.AppName][envName] = appConfig.ConfigID
@@ -271,7 +276,7 @@ func demoAppConfig(appID int, envName, packageType, baseImage string) entity.App
 		ContainerPort:          8080,
 		PreStopType:            "HTTP",
 		PreStopCheckPath:       "/health",
-		PreStopCommand:         "NULL",
+		PreStopCommand:         "",
 	}
 }
 

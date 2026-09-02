@@ -246,6 +246,7 @@ func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity
 	if !exists {
 		return nil, fmt.Errorf("更新后的记录未找到，ID: %d", taskRecord.TaskId)
 	}
+	normalizeTaskRecordNullableText(&updatedRecord)
 	return &updatedRecord, nil
 }
 
@@ -311,9 +312,9 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 	JenkinsParam["branch"] = req.Branch
 	JenkinsParam["git_url"] = app.GitUrl
 	JenkinsParam["code_package_type"] = appConfig.CodePackageType
-	JenkinsParam["code_package_path"] = appConfig.CodePackagePath
-	JenkinsParam["code_package_name"] = appConfig.CodePackageName
-	JenkinsParam["base_image"] = appConfig.BaseImage
+	JenkinsParam["code_package_path"] = tool.NormalizeNullableText(appConfig.CodePackagePath)
+	JenkinsParam["code_package_name"] = tool.NormalizeNullableText(appConfig.CodePackageName)
+	JenkinsParam["base_image"] = tool.NormalizeNullableText(appConfig.BaseImage)
 	JenkinsParam["pod_count"] = strconv.Itoa(appConfig.PodCount)
 	JenkinsParam["limits_memory"] = strconv.Itoa(appConfig.LimitsMemory)
 	JenkinsParam["gpu_count"] = strconv.Itoa(appConfig.GpuCount)
@@ -325,8 +326,8 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 	JenkinsParam["container_port"] = strconv.Itoa(appConfig.ContainerPort)
 	JenkinsParam["pre_stop_type"] = appConfig.PreStopType
 	JenkinsParam["pre_stop_check_path"] = appConfig.PreStopCheckPath
-	JenkinsParam["pre_stop_command"] = appConfig.PreStopCommand
-	JenkinsParam["domain"] = "NULL"
+	JenkinsParam["pre_stop_command"] = tool.NormalizeNullableText(appConfig.PreStopCommand)
+	JenkinsParam["domain"] = ""
 	JenkinsParam["domain_path"] = "/"
 
 	// domains_list（Jenkins 透传）：仅使用 app_config_domains（domain/domain_path 已废弃）
@@ -464,6 +465,7 @@ func (pm *PublishManager) JobStatus() ([]*entity.TaskRecord, error) {
 		hiddenMessage := json.RawMessage(`{"message": "隐藏详情，减少数据量"}`)
 		// 清空 PipelineParam 字段
 		for _, record := range taskRecords {
+			normalizeTaskRecordNullableText(record)
 			record.PipelineParam = hiddenMessage
 		}
 	}
@@ -487,6 +489,7 @@ func (pm *PublishManager) GetTaskRecordDetails(taskID int) (*entity.TaskRecord, 
 	if !has {
 		return nil, fmt.Errorf("未找到任务详情，task_id: %d", taskID)
 	}
+	normalizeTaskRecordNullableText(&taskRecord)
 
 	// 回填任务图片（方案B：图片表），保持前端好处理：没数据返回空数组而不是 null
 	imgMap, err := fetchTaskRecordImagesByTaskIDs([]int{taskID})

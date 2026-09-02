@@ -3,6 +3,7 @@ package app
 import (
 	"ares/internal/db"
 	"ares/internal/entity"
+	"ares/internal/tool"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -33,14 +34,14 @@ func loadDevLanguageRules(ctx context.Context, devLanguage string) (*devLanguage
 	if err := json.Unmarshal(row.Rules, &rules); err != nil {
 		return nil, fmt.Errorf("dev_language 规则解析失败：%s", err)
 	}
-	if len(rules.Allowed) == 0 || strings.TrimSpace(rules.Default) == "" {
+	if len(rules.Allowed) == 0 || tool.IsEmptyLikeText(rules.Default) {
 		return nil, fmt.Errorf("dev_language 规则不完整：%s", lang)
 	}
 	// normalize allowed/default
 	seen := make(map[string]struct{}, len(rules.Allowed))
 	allowed := make([]string, 0, len(rules.Allowed))
 	for _, a := range rules.Allowed {
-		v := strings.TrimSpace(a)
+		v := tool.NormalizeNullableText(a)
 		if v == "" {
 			continue
 		}
@@ -51,7 +52,7 @@ func loadDevLanguageRules(ctx context.Context, devLanguage string) (*devLanguage
 		allowed = append(allowed, v)
 	}
 	rules.Allowed = allowed
-	rules.Default = strings.TrimSpace(rules.Default)
+	rules.Default = tool.NormalizeNullableText(rules.Default)
 	if _, ok := seen[rules.Default]; !ok {
 		return nil, fmt.Errorf("dev_language 规则 default 不在 allowed 中：%s default=%s", lang, rules.Default)
 	}
@@ -214,9 +215,9 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 		AppID:                  appID,
 		Env:                    env,
 		CodePackageType:        rules.Default,
-		CodePackageName:        "NULL",
-		CodePackagePath:        "NULL",
-		BaseImage:              "NULL",
+		CodePackageName:        "",
+		CodePackagePath:        "",
+		BaseImage:              "",
 		PodCount:               1,
 		LimitsMemory:           2,
 		GpuCount:               0,
@@ -228,7 +229,7 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 		ContainerPort:          8080,
 		PreStopType:            "HTTP",
 		PreStopCheckPath:       "/inside/prestop",
-		PreStopCommand:         "NULL",
+		PreStopCommand:         "",
 	}
 
 	// 覆盖写入（如有传值）
@@ -247,13 +248,13 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 		row.CodePackageType = cpt
 	}
 	if req.CodePackagePath != nil {
-		row.CodePackagePath = strings.TrimSpace(*req.CodePackagePath)
+		row.CodePackagePath = tool.NormalizeNullableText(*req.CodePackagePath)
 	}
 	if req.CodePackageName != nil {
-		row.CodePackageName = strings.TrimSpace(*req.CodePackageName)
+		row.CodePackageName = tool.NormalizeNullableText(*req.CodePackageName)
 	}
 	if req.BaseImage != nil {
-		row.BaseImage = strings.TrimSpace(*req.BaseImage)
+		row.BaseImage = tool.NormalizeNullableText(*req.BaseImage)
 	}
 	if req.PodCount != nil {
 		row.PodCount = *req.PodCount
@@ -317,10 +318,15 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 		}
 	}
 	if req.PreStopCommand != nil {
-		row.PreStopCommand = strings.TrimSpace(*req.PreStopCommand)
+		row.PreStopCommand = tool.NormalizeNullableText(*req.PreStopCommand)
 	}
 
-	if _, err := db.Engine.Context(ctx).Insert(row); err != nil {
+	if _, err := db.Engine.Context(ctx).Nullable(
+		"code_package_path",
+		"code_package_name",
+		"base_image",
+		"pre_stop_command",
+	).Insert(row); err != nil {
 		return nil, err
 	}
 	return row, nil
@@ -357,7 +363,18 @@ func buildUpdateMap(req UpdateAppConfigRequest) (map[string]any, error) {
 
 	setStr := func(key string, v *string) {
 		if v != nil {
-			m[key] = *v
+			m[key] = strings.TrimSpace(*v)
+		}
+	}
+	setNullableText := func(key string, v *string) {
+		if v == nil {
+			return
+		}
+		normalized := tool.NormalizeNullableText(*v)
+		if normalized == "" {
+			m[key] = nil
+		} else {
+			m[key] = normalized
 		}
 	}
 	setInt := func(key string, v *int) {
@@ -366,10 +383,16 @@ func buildUpdateMap(req UpdateAppConfigRequest) (map[string]any, error) {
 		}
 	}
 
-	setStr("code_package_type", req.CodePackageType)
-	setStr("code_package_path", req.CodePackagePath)
-	setStr("code_package_name", req.CodePackageName)
-	setStr("base_image", req.BaseImage)
+	if req.CodePackageType != nil {
+		codePackageType := tool.NormalizeNullableText(*req.CodePackageType)
+		if codePackageType == "" {
+			return nil, fmt.Errorf("code_package_type 不能为空")
+		}
+		m["code_package_type"] = codePackageType
+	}
+	setNullableText("code_package_path", req.CodePackagePath)
+	setNullableText("code_package_name", req.CodePackageName)
+	setNullableText("base_image", req.BaseImage)
 
 	setInt("pod_count", req.PodCount)
 	setInt("limits_memory", req.LimitsMemory)
@@ -406,7 +429,7 @@ func buildUpdateMap(req UpdateAppConfigRequest) (map[string]any, error) {
 	}
 	setStr("pre_stop_type", req.PreStopType)
 	setStr("pre_stop_check_path", req.PreStopCheckPath)
-	setStr("pre_stop_command", req.PreStopCommand)
+	setNullableText("pre_stop_command", req.PreStopCommand)
 
 	if len(m) == 0 {
 		return nil, fmt.Errorf("没有需要更新的字段")

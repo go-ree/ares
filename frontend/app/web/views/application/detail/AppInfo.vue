@@ -129,6 +129,7 @@ import { useRoute } from 'vue-router';
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus';
 import type { AppInfo, PatchAppRequest } from '@/models/application';
 import { getAppDetail, patchApp } from '@/services/application';
+import { normalizeLegacyNullableText } from '@/utils/legacy-nullable-text';
 
 const route = useRoute();
 const appId = computed(() => Number(route.params.appId));
@@ -160,13 +161,21 @@ const rules: FormRules = {
 const formRef = ref<FormInstance>();
 
 const hydrate = (detail: AppInfo) => {
-  appDetail.value = detail;
-  form.app_name_cn = detail.app_name_cn || '';
+  const appNameCN = normalizeLegacyNullableText(detail.app_name_cn);
+  const descriptionCN = normalizeLegacyNullableText(detail.description_cn);
+  const rundeckAppName = normalizeLegacyNullableText(detail.rundeck_app_name);
+  appDetail.value = {
+    ...detail,
+    app_name_cn: appNameCN,
+    description_cn: descriptionCN,
+    rundeck_app_name: rundeckAppName || null,
+  };
+  form.app_name_cn = appNameCN;
   form.owner = detail.owner || '';
   form.owner_cn = detail.owner_cn || '';
-  form.description_cn = detail.description_cn || '';
+  form.description_cn = descriptionCN;
   form.git_url = detail.git_url || '';
-  form.rundeck_app_name = (detail.rundeck_app_name as any) || '';
+  form.rundeck_app_name = rundeckAppName;
 
   original.value = {
     app_name_cn: form.app_name_cn,

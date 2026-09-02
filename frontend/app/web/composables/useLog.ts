@@ -3,6 +3,7 @@ import { ElMessage } from 'element-plus';
 import { queryPublishLogs, queryTaskLogs } from '@/services/deploy';
 import api from '@/config/api';
 import type { LogItem, DeployingService, LogFilter } from '@/types/deploy';
+import { normalizeLegacyNullableText } from '@/utils/legacy-nullable-text';
 
 export function useLog() {
   const LOG_BATCH_FLUSH_MS = 200; // 100~300ms 批量追加，避免频繁重排
@@ -184,13 +185,13 @@ export function useLog() {
             status: getDeployStatus(item.status),
             deployTime: formatDateTime(item.created_at),
             operator: item.publisher,
-            message: item.message === 'NULL' ? '' : item.message,
+            message: normalizeLegacyNullableText(item.message),
             auto_deploy: item.auto_deploy,
-            ci_job_name: item.ci_job_name === 'NULL' ? '' : item.ci_job_name,
-            cd_job_name: item.cd_job_name === 'NULL' ? '' : item.cd_job_name,
+            ci_job_name: normalizeLegacyNullableText(item.ci_job_name),
+            cd_job_name: normalizeLegacyNullableText(item.cd_job_name),
             ci_build_id: item.ci_build_id || 0,
             cd_build_id: item.cd_build_id || 0,
-            products: item.products === 'NULL' ? '' : item.products,
+            products: normalizeLegacyNullableText(item.products),
           }));
           total.value = result.total || 0;
         } else {

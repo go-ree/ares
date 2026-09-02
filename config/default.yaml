@@ -1,6 +1,7 @@
 db:
   # Set ARES_DB_CONN_STR or provide a local, untracked configuration file.
   conn_str: ""
+  schema_migration_timeout: "2m"
 
 web:
   address: ":8080"
