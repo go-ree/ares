@@ -430,6 +430,15 @@ W01 的仓库内实现与本地验收已经收口，[PR #6](https://github.com/g
 
 ## 9. 进度记录
 
+### 2026-09-03：W01 PR 首轮 CI 修复
+
+- 状态：[PR #6](https://github.com/go-ree/ares/pull/6) 的代码质量五项检查通过，供应链检查修复后待复验；W01 仍受三类仓库管理条件阻塞。
+- 首轮结果：工作流语法、后端测试与静态检查、关键包竞态、Go 漏洞和前端质量均通过；供应链检查在后端 Trivy 扫描步骤失败。
+- 根因：Trivy Action 的 SARIF 模式默认移除 `severity` 过滤，导致 `UNKNOWN` 且调用不可达的模块公告 `GO-2026-5932` 也触发退出码 1，与文档约定的 HIGH/CRITICAL 镜像门禁不一致；镜像本身未检出 HIGH/CRITICAL。
+- 修复：后端和前端两次 Trivy 扫描均显式设置 `limit-severities-for-sarif: true`，使 SARIF 内容、退出码与既定严重级别保持一致；没有新增忽略规则、豁免或降低门禁级别。
+- 复验：本地 Action 语法、文档格式与差异检查通过；等待新提交对应的 GitHub Actions 结果。
+- 关联运行：[失败的供应链检查](https://github.com/go-ree/ares/actions/runs/33733340715)。
+
 ### 2026-09-03：W01 实现收口
 
 - 分支：`codex/open-source-quality-gates`

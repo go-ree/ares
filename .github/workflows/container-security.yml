@@ -95,6 +95,7 @@ jobs:
           scanners: vuln
           vuln-type: os,library
           severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
 
       - name: 扫描前端镜像漏洞
         if: ${{ always() && steps.build-images.outcome == 'success' }}
@@ -109,6 +110,7 @@ jobs:
           scanners: vuln
           vuln-type: os,library
           severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
 
       - name: 上传 SBOM 与漏洞报告
         if: ${{ always() && steps.build-images.outcome == 'success' }}

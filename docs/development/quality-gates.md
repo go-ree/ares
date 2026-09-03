@@ -97,7 +97,7 @@ Dependabot 每周检查 Go Modules、前端 npm、GitHub Actions、两份 Docker
 
 依赖 PR 仍需执行全部 Required Checks。不得仅通过忽略扫描结果或降低严重级别来获得绿色检查。确实无法立即修复时，豁免必须在路线图风险看板和 PR 中同时记录：漏洞编号、不可达或不可利用的证据、影响范围、责任人、到期日和移除条件。
 
-Go 以 govulncheck 的可达调用结果为合并门禁，同时保留模块级公告供人工判断；npm 对完整依赖树阻止未豁免的 high/critical。Trivy 覆盖两个运行时镜像中的操作系统包和能够从镜像元数据识别的应用依赖；压缩进静态 bundle 的前端依赖由完整 npm audit 与 lockfile 应用依赖 SBOM 覆盖。
+Go 以 govulncheck 的可达调用结果为合并门禁，同时保留模块级公告供人工判断；npm 对完整依赖树阻止未豁免的 high/critical。Trivy 覆盖两个运行时镜像中的操作系统包和能够从镜像元数据识别的应用依赖；SARIF 输出显式使用与退出码相同的 high/critical 过滤条件，避免报告格式默认放宽范围后误改门禁语义。压缩进静态 bundle 的前端依赖由完整 npm audit 与 lockfile 应用依赖 SBOM 覆盖。
 
 ## 6. 变更同步规则
 
