@@ -1,13 +1,16 @@
 import { ref, reactive, computed } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import { batchDeploy, createDeploy } from '@/services/deploy';
 import { useUserStore } from '@/stores/user';
 import api from '@/config/api';
 import type { DeployingService, ServiceInfo, SelectedService, DeployForm } from '@/types/deploy';
 import { normalizeLegacyNullableText } from '@/utils/legacy-nullable-text';
+import { useEnvironments } from '@/composables/useEnvironments';
+import type { BatchDeployResponse } from '@/models/deploy';
 
 export function useDeploy() {
   const userStore = useUserStore();
+  const { labelForEnvironment } = useEnvironments();
 
   // 发布表单数据
   const deployForm = reactive<DeployForm>({
@@ -38,7 +41,7 @@ export function useDeploy() {
 
   // 工具函数
   const isServiceProcessing = (status: string): boolean => {
-    return ['发布中', '打包中', '部署中'].includes(status);
+    return ['发布中', '打包中', '部署中', '排队中', '执行中', 'queued', 'running'].includes(status);
   };
 
   const getStatusType = (status: string) => {
@@ -54,6 +57,11 @@ export function useDeploy() {
       已取消: 'warning',
       超时: 'warning',
       未知状态: 'info',
+      排队中: 'info',
+      执行中: 'primary',
+      执行成功: 'success',
+      执行失败: 'danger',
+      成功但有警告: 'warning',
     };
     return statusMap[displayStatus] || 'info';
   };
@@ -71,6 +79,11 @@ export function useDeploy() {
       已取消: 'warning',
       超时: 'warning',
       未知状态: '',
+      排队中: '',
+      执行中: '',
+      执行成功: 'success',
+      执行失败: 'exception',
+      成功但有警告: 'warning',
     };
     return statusMap[displayStatus] || '';
   };
@@ -87,26 +100,23 @@ export function useDeploy() {
       cancelled: '已取消',
       timeout: '超时',
       unknown: '未知状态',
+      queued: '排队中',
+      running: '执行中',
+      succeeded: '执行成功',
+      failed: '执行失败',
+      succeeded_with_warnings: '成功但有警告',
     };
     return statusMap[status] || status;
   };
 
   const getEnvLabel = (env: string): string => {
-    const envMap: Record<string, string> = {
-      dev: '开发环境',
-      test: '测试环境',
-      moni: '模拟环境',
-    };
-    return envMap[env] || env;
+    return labelForEnvironment(env);
   };
 
   const getEnvType = (env: string): string => {
-    const envMap: Record<string, string> = {
-      dev: 'info',
-      test: 'warning',
-      moni: 'success',
-    };
-    return envMap[env] || 'info';
+    const tagTypes = ['info', 'warning', 'success', 'primary'] as const;
+    const hash = Array.from(env).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    return tagTypes[hash % tagTypes.length];
   };
 
   const calculateProgress = (status: string): number => {
@@ -121,6 +131,11 @@ export function useDeploy() {
       cancelled: 100,
       timeout: 100,
       unknown: 0,
+      queued: 10,
+      running: 50,
+      succeeded: 100,
+      failed: 100,
+      succeeded_with_warnings: 100,
     };
     return statusProgressMap[status] || 0;
   };
@@ -140,33 +155,15 @@ export function useDeploy() {
 
   // 事件处理函数
   const handleEnvChange = () => {
-    // 环境改变时的逻辑
     console.log('环境改变:', deployForm.environment);
-
-    // 如果切换到模拟环境，更新所有服务的分支
-    if (deployForm.environment === 'moni') {
-      selectedServices.value.forEach(service => {
-        service.branch = `release_${globalBranchSuffix.value}`;
-        service.branchSuffix = globalBranchSuffix.value;
-      });
-    } else {
-      // 如果切换到其他环境，更新所有服务的分支
-      selectedServices.value.forEach(service => {
-        service.branch = deployForm.environment;
-        service.branchSuffix = undefined;
-      });
-    }
+    // 环境只代表目标配置，不得隐式改写 Git 分支。
   };
 
   const handleGlobalBranchChange = () => {
     // 全局分支改变时的逻辑
     console.log('全局分支后缀改变:', globalBranchSuffix.value);
     selectedServices.value.forEach(service => {
-      if (deployForm.environment === 'moni') {
-        service.branch = `release_${globalBranchSuffix.value}`;
-        service.branchSuffix = globalBranchSuffix.value;
-        console.log(`更新服务 ${service.serviceName} 的分支为: ${service.branch}`);
-      }
+      service.branch = globalBranchSuffix.value;
     });
   };
 
@@ -174,26 +171,13 @@ export function useDeploy() {
     const service = selectedServices.value[index];
     if (service) {
       service.serviceName = serviceName;
-      if (deployForm.environment === 'moni') {
-        service.branch = `release_${globalBranchSuffix.value}`;
-      } else {
-        service.branch = deployForm.environment;
-      }
     }
-  };
-
-  const handleBranchSuffixChange = (suffix: string, service: SelectedService) => {
-    service.branchSuffix = suffix;
-    service.branch = `release_${suffix}`;
   };
 
   const handleAddService = () => {
     const newService: SelectedService = {
       serviceName: '',
-      branch:
-        deployForm.environment === 'moni'
-          ? `release_${globalBranchSuffix.value}`
-          : deployForm.environment,
+      branch: globalBranchSuffix.value,
       status: '待发布',
     };
     selectedServices.value.push(newService);
@@ -245,48 +229,6 @@ export function useDeploy() {
     }
   };
 
-  const handleRedeploySingle = async (service: SelectedService, _index: number) => {
-    try {
-      if (!userStore.userInfo) {
-        throw new Error('用户未登录');
-      }
-
-      service.status = '发布中';
-      service.lastUpdateTime = formatDateTime(new Date().toISOString());
-
-      const response = await createDeploy(
-        {
-          app_name: service.serviceName,
-          env: deployForm.environment,
-          branch: service.branch,
-        },
-        {
-          username: userStore.userInfo.username,
-          nameCn: userStore.userInfo.nameCn,
-        }
-      );
-
-      if (response.data.code === 1) {
-        const taskRecord = response.data.result;
-        const taskId = taskRecord?.task_record?.task_id;
-        if (!taskId) {
-          throw new Error(
-            taskRecord?.error || response.data.message || (response.data as any).msg || '重发失败'
-          );
-        }
-        service.taskId = taskId;
-        ElMessage.success(`${service.serviceName} 重发任务已提交`);
-      } else {
-        throw new Error(response.data.message || (response.data as any).msg || '重发失败');
-      }
-    } catch (error) {
-      service.status = '发布失败';
-      console.error('单个重发失败:', error);
-      const errorMessage = error instanceof Error ? error.message : '重发失败';
-      ElMessage.error(errorMessage);
-    }
-  };
-
   const handleBatchDeploy = async () => {
     try {
       if (!userStore.userInfo) {
@@ -319,34 +261,41 @@ export function useDeploy() {
         nameCn: userStore.userInfo.nameCn,
       });
 
-      if (response.data.code === 1) {
-        const result = response.data.result;
+      const envelope = response.data as unknown as {
+        code: number;
+        message?: string;
+        result?: BatchDeployResponse | null;
+        error?: BatchDeployResponse | string | null;
+      };
+      const result =
+        envelope.result ||
+        (typeof envelope.error === 'object' && envelope.error !== null ? envelope.error : null);
+      if (result) {
         const successCount = result.success_count;
         const failureCount = result.failure_count;
         const totalCount = result.total_count;
 
-        ElMessage.success(
-          `批量发布任务已提交，成功: ${successCount}，失败: ${failureCount}，总计: ${totalCount}`
-        );
+        const summary = `批量发布任务已提交，成功: ${successCount}，失败: ${failureCount}，总计: ${totalCount}`;
+        if (failureCount > 0) ElMessage.warning(summary);
+        else ElMessage.success(summary);
 
-        // 更新任务ID
-        if (result.task_records && Array.isArray(result.task_records)) {
-          for (const taskRecord of result.task_records) {
-            if (taskRecord.success && taskRecord.task_record) {
-              const taskDetail = taskRecord.task_record;
-              const serviceIndex = selectedServices.value.findIndex(
-                service =>
-                  service.serviceName === taskDetail.app_name &&
-                  service.branch === taskDetail.branch
-              );
-              if (serviceIndex >= 0) {
-                selectedServices.value[serviceIndex].taskId = taskDetail.task_id;
-              }
-            }
+        result.task_records?.forEach((taskResult, index) => {
+          const service = deployableServices[taskResult.request_index ?? index];
+          if (!service) return;
+          if (taskResult.success && taskResult.task_record) {
+            service.taskId = taskResult.task_record.task_id;
+            service.status = getDeployStatus(taskResult.task_record.status);
+            service.lastUpdateTime = formatDateTime(taskResult.task_record.updated_at);
+          } else {
+            service.status = '发布失败';
           }
-        }
+        });
       } else {
-        throw new Error(response.data.message || (response.data as any).msg || '批量发布失败');
+        throw new Error(
+          (typeof envelope.error === 'string' && envelope.error) ||
+            envelope.message ||
+            '批量发布失败'
+        );
       }
     } catch (error) {
       console.error('批量发布失败:', error);
@@ -359,99 +308,6 @@ export function useDeploy() {
           service.status = '发布失败';
         }
       });
-    }
-  };
-
-  const handleBatchRedeploy = async () => {
-    try {
-      if (!userStore.userInfo) {
-        throw new Error('用户未登录');
-      }
-
-      const deployableServices = selectedServices.value.filter(
-        service => service.serviceName && service.branch && !isServiceProcessing(service.status)
-      );
-
-      if (deployableServices.length === 0) {
-        ElMessage.warning('没有可重发的服务');
-        return;
-      }
-
-      // 设置所有服务状态为发布中
-      deployableServices.forEach(service => {
-        service.status = '发布中';
-      });
-
-      // 构建批量重发请求
-      const deployRequests = deployableServices.map(service => ({
-        app_name: service.serviceName,
-        env: deployForm.environment,
-        branch: service.branch,
-      }));
-
-      const response = await batchDeploy(deployRequests, {
-        username: userStore.userInfo.username,
-        nameCn: userStore.userInfo.nameCn,
-      });
-
-      if (response.data.code === 1) {
-        const result = response.data.result;
-        const successCount = result.success_count;
-        const failureCount = result.failure_count;
-        const totalCount = result.total_count;
-
-        ElMessage.success(
-          `批量重发任务已提交，成功: ${successCount}，失败: ${failureCount}，总计: ${totalCount}`
-        );
-
-        // 更新任务ID
-        if (result.task_records && Array.isArray(result.task_records)) {
-          for (const taskRecord of result.task_records) {
-            if (taskRecord.success && taskRecord.task_record) {
-              const taskDetail = taskRecord.task_record;
-              const serviceIndex = selectedServices.value.findIndex(
-                service =>
-                  service.serviceName === taskDetail.app_name &&
-                  service.branch === taskDetail.branch
-              );
-              if (serviceIndex >= 0) {
-                selectedServices.value[serviceIndex].taskId = taskDetail.task_id;
-              }
-            }
-          }
-        }
-      } else {
-        throw new Error(response.data.message || (response.data as any).msg || '批量重发失败');
-      }
-    } catch (error) {
-      console.error('批量重发失败:', error);
-      const errorMessage = error instanceof Error ? error.message : '批量重发失败';
-      ElMessage.error(errorMessage);
-
-      // 重置失败的服务状态
-      selectedServices.value.forEach(service => {
-        if (service.status === '发布中') {
-          service.status = '发布失败';
-        }
-      });
-    }
-  };
-
-  const handleCancelDeploy = async (service: DeployingService) => {
-    try {
-      await ElMessageBox.confirm(`确定要取消 ${service.serviceName} 的发布吗？`, '取消发布', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning',
-      });
-
-      // TODO: 调用取消发布 API
-      service.status = '已取消';
-      ElMessage.success('已取消发布');
-    } catch (error) {
-      if (error !== 'cancel') {
-        ElMessage.error('取消发布失败');
-      }
     }
   };
 
@@ -481,7 +337,6 @@ export function useDeploy() {
         ciBuildId: item.ci_build_id || null,
         cdBuildId: item.cd_build_id || null,
         products: normalizeLegacyNullableText(item.products),
-        pipelineParam: item.pipeline_param,
       }));
     } catch (error) {
       console.error('获取发布中服务列表失败:', error);
@@ -546,14 +401,10 @@ export function useDeploy() {
     handleEnvChange,
     handleGlobalBranchChange,
     handleServiceSelect,
-    handleBranchSuffixChange,
     handleAddService,
     handleRemoveService,
     handleDeploySingle,
-    handleRedeploySingle,
     handleBatchDeploy,
-    handleBatchRedeploy,
-    handleCancelDeploy,
     refreshDeployingList,
     loadAvailableServices,
   };

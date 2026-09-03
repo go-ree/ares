@@ -1,4 +1,4 @@
-export type KubernetesEnvironment = 'dev' | 'test' | 'moni';
+export type KubernetesEnvironment = string;
 
 export interface SystemApiResponse<T> {
   code: number;

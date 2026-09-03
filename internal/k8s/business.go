@@ -4,23 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
-
-// 环境名称标准化映射
-var envNameMap = map[string]string{
-	"dev":         "dev",
-	"development": "dev",
-	"test":        "test",
-	"testing":     "test",
-	"moni":        "moni",
-	"monitor":     "moni",
-	"staging":     "moni",
-}
 
 // 全局管理器实例
 var (
@@ -88,7 +76,7 @@ func GetServiceManager() *ServiceManager {
 func CheckEnvHealth(env string) *EnvStatus {
 	envKey := normalizeEnvironmentName(env)
 	client := getClientByEnv(envKey)
-	envName := envNameMap[envKey]
+	envName := envKey
 
 	if client == nil && envName == "" {
 		return &EnvStatus{
@@ -307,11 +295,11 @@ func CanAccessNamespace(env, namespace string) bool {
 
 // GetAllEnvsStatus 获取所有环境的状态概览
 func GetAllEnvsStatus() map[string]*EnvStatus {
-	envs := []string{"dev", "test", "moni"}
 	results := make(map[string]*EnvStatus)
 
-	for _, env := range envs {
-		results[env] = CheckEnvHealth(env)
+	for _, env := range ListEnvironments() {
+		code := string(env)
+		results[code] = CheckEnvHealth(code)
 	}
 
 	return results
@@ -319,20 +307,19 @@ func GetAllEnvsStatus() map[string]*EnvStatus {
 
 // getClientByEnv 内部函数：根据环境名获取客户端
 func getClientByEnv(env string) *kubernetes.Clientset {
-	switch normalizeEnvironmentName(env) {
-	case "dev":
-		return DefaultClient(EnvDev)
-	case "test":
-		return DefaultClient(EnvTest)
-	case "moni":
-		return DefaultClient(EnvStage)
-	default:
+	environment, err := ParseEnvironment(env)
+	if err != nil {
 		return nil
 	}
+	return DefaultClient(environment)
 }
 
 func normalizeEnvironmentName(env string) string {
-	return envNameMap[strings.ToLower(strings.TrimSpace(env))]
+	environment, err := ParseEnvironment(env)
+	if err != nil {
+		return ""
+	}
+	return string(environment)
 }
 
 // ---- 新增便捷函数，使用新的管理器模式 ----

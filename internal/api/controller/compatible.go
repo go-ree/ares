@@ -19,7 +19,7 @@ func NewCompatibleController() *CompatibleController {
 // @Tags Compatible
 // @Summary 兼容性的获取应用配置详情信息
 // @Description 用于替换老接口 getServiceProjectMap：按 env 查询 app_configs.code_package_type，并返回 gitAddress/projectName/projectServiceName/projectType 映射（legacy 响应：code 为字符串）
-// @Param env query string false "环境（不传默认 dev）"
+// @Param env query string false "环境代码或展示名（不传时使用排序第一的已启用环境）"
 // @Success 200 {object} compatible.LegacyServiceProjectMapResponse "成功"
 // @Failure 200 {object} compatible.LegacyServiceProjectMapResponse "失败（legacy：HTTP 仍返回 200，code 为 500）"
 // @Router	/api/v1/compatible/docker/info/getServiceProjectMap [get]

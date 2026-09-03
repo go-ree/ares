@@ -31,7 +31,7 @@ func NewApplicationManager() *ApplicationManager {
 type ApplicationRequest struct {
 	AppName       string            `json:"app_name" validate:"required"`
 	Namespace     string            `json:"namespace" validate:"required"`
-	Env           string            `json:"env" validate:"required,oneof=dev test moni"`
+	Env           string            `json:"env" validate:"required"`
 	Image         string            `json:"image" validate:"required"`
 	Replicas      int32             `json:"replicas" validate:"min=1"`
 	Port          int32             `json:"port" validate:"min=1,max=65535"`
@@ -566,9 +566,8 @@ func (am *ApplicationManager) validateRequest(req *ApplicationRequest) error {
 		return fmt.Errorf("端口号必须在1-65535之间")
 	}
 
-	// 验证环境是否支持
-	if _, ok := envNameMap[req.Env]; !ok {
-		return fmt.Errorf("不支持的环境: %s", req.Env)
+	if _, err := ParseEnvironment(req.Env); err != nil {
+		return err
 	}
 
 	return nil

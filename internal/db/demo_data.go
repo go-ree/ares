@@ -2,6 +2,9 @@ package db
 
 import (
 	"ares/internal/entity"
+	"ares/internal/workflow"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -59,9 +62,9 @@ type demoApplication struct {
 	BaseImage   string
 }
 
-// InitializeDemoData seeds a small, coherent data set only when the apps table
-// is completely empty. The transaction makes restarts idempotent and prevents
-// users' existing data from being overwritten.
+// InitializeDemoData seeds a small, coherent data set only when all related
+// business tables are empty. The transaction makes restarts idempotent and
+// avoids attaching demo rows to a partially initialized or restored database.
 func InitializeDemoData() error {
 	session := Engine.NewSession()
 	defer session.Close()
@@ -75,13 +78,13 @@ func InitializeDemoData() error {
 		}
 	}()
 
-	appCount, err := session.Unscoped().Count(new(entity.Apps))
+	nonEmptyTables, err := nonEmptyDemoBusinessTables(session)
 	if err != nil {
-		return fmt.Errorf("count apps before demo seed: %w", err)
+		return err
 	}
-	if appCount != 0 {
+	if len(nonEmptyTables) > 0 {
 		_ = session.Rollback()
-		slog.Info("demo data skipped because apps table is not empty", "app_count", appCount)
+		slog.Warn("demo data skipped because business tables are not empty", "tables", nonEmptyTables)
 		return nil
 	}
 
@@ -91,24 +94,18 @@ func InitializeDemoData() error {
 		}
 	}
 
-	pipelineJobs := make(map[string][2]string)
-	for _, packageType := range []string{"golang", "static", "python"} {
-		ciJob, cdJob, err := ensureDemoPipelinePair(session, packageType)
-		if err != nil {
-			return err
-		}
-		pipelineJobs[packageType] = [2]string{ciJob, cdJob}
-	}
-
 	apps := demoApplications()
 	configIDs := make(map[string]map[string]int)
+	workflowVersionIDs := make(map[string]map[string]int64)
 	for i := range apps {
 		app := &apps[i]
 		if _, err := session.Insert(&app.App); err != nil {
 			return fmt.Errorf("insert demo app %s: %w", app.App.AppName, err)
 		}
 		configIDs[app.App.AppName] = make(map[string]int)
-		for _, envName := range []string{"dev", "test", "moni"} {
+		workflowVersionIDs[app.App.AppName] = make(map[string]int64)
+		for _, environment := range demoEnvironments() {
+			envName := environment.Env
 			appConfig := demoAppConfig(app.App.AppId, envName, app.PackageType, app.BaseImage)
 			if _, err := session.Nullable(
 				"code_package_path",
@@ -119,6 +116,11 @@ func InitializeDemoData() error {
 				return fmt.Errorf("insert demo config %s/%s: %w", app.App.AppName, envName, err)
 			}
 			configIDs[app.App.AppName][envName] = appConfig.ConfigID
+			versionID, err := insertDemoWorkflow(session, app.App.AppName, envName, appConfig.ConfigID)
+			if err != nil {
+				return err
+			}
+			workflowVersionIDs[app.App.AppName][envName] = versionID
 		}
 	}
 
@@ -135,7 +137,7 @@ func InitializeDemoData() error {
 		}
 	}
 
-	if err := insertDemoTasks(session, apps, pipelineJobs); err != nil {
+	if err := insertDemoTasks(session, apps, workflowVersionIDs); err != nil {
 		return err
 	}
 
@@ -143,8 +145,36 @@ func InitializeDemoData() error {
 		return fmt.Errorf("commit demo data: %w", err)
 	}
 	committed = true
-	slog.Info("demo data initialized", "apps", len(apps), "environments", 3)
+	slog.Info("demo data initialized", "apps", len(apps), "environments", len(demoEnvironments()))
 	return nil
+}
+
+func nonEmptyDemoBusinessTables(session *xorm.Session) ([]string, error) {
+	tables := []struct {
+		name string
+		bean any
+	}{
+		{"apps", new(entity.Apps)},
+		{"app_configs", new(entity.AppConfigs)},
+		{"app_config_domains", new(entity.AppConfigDomain)},
+		{"task_record", new(entity.TaskRecord)},
+		{"task_record_images", new(entity.TaskRecordImage)},
+		{"release_workflows", new(entity.ReleaseWorkflow)},
+		{"release_workflow_versions", new(entity.ReleaseWorkflowVersion)},
+		{"app_config_workflows", new(entity.AppConfigWorkflow)},
+		{"task_step_records", new(entity.TaskStepRecord)},
+	}
+	nonEmpty := make([]string, 0)
+	for _, table := range tables {
+		count, err := session.Unscoped().Count(table.bean)
+		if err != nil {
+			return nil, fmt.Errorf("count %s before demo seed: %w", table.name, err)
+		}
+		if count > 0 {
+			nonEmpty = append(nonEmpty, fmt.Sprintf("%s=%d", table.name, count))
+		}
+	}
+	return nonEmpty, nil
 }
 
 func demoApplications() []demoApplication {
@@ -196,9 +226,10 @@ func demoApplications() []demoApplication {
 
 func demoEnvironments() []entity.EnvConfigs {
 	return []entity.EnvConfigs{
-		{Env: "dev", ClusterName: "demo-dev", DescriptionCN: "开发环境", HarborURL: "registry.example.local", HarborProjectName: "ares-dev", NodeVersion: "22", MavenVersion: "3.9"},
-		{Env: "test", ClusterName: "demo-test", DescriptionCN: "测试环境", HarborURL: "registry.example.local", HarborProjectName: "ares-test", NodeVersion: "22", MavenVersion: "3.9"},
-		{Env: "moni", ClusterName: "demo-moni", DescriptionCN: "模拟环境", HarborURL: "registry.example.local", HarborProjectName: "ares-moni", NodeVersion: "22", MavenVersion: "3.9"},
+		{Env: "dev", DescriptionCN: "开发环境", Enabled: true, SortOrder: 10, HarborURL: "registry.example.local", HarborProjectName: "ares-dev"},
+		{Env: "test", DescriptionCN: "测试环境", Enabled: true, SortOrder: 20, HarborURL: "registry.example.local", HarborProjectName: "ares-test"},
+		{Env: "moni", DescriptionCN: "模拟环境", Enabled: true, SortOrder: 30, HarborURL: "registry.example.local", HarborProjectName: "ares-moni"},
+		{Env: "preview", DescriptionCN: "预览环境", Enabled: true, SortOrder: 40, HarborURL: "registry.example.local", HarborProjectName: "ares-preview"},
 	}
 }
 
@@ -217,44 +248,56 @@ func ensureDemoEnvironment(session *xorm.Session, row entity.EnvConfigs) error {
 	return nil
 }
 
-func ensureDemoPipelinePair(session *xorm.Session, packageType string) (string, string, error) {
-	var existingCombination entity.PipelinesJobCombination
-	has, err := session.Unscoped().Where("code_package_type = ?", packageType).Get(&existingCombination)
+func insertDemoWorkflow(session *xorm.Session, appName, env string, configID int) (int64, error) {
+	name := fmt.Sprintf("%s/%s Demo 发布流程", appName, env)
+	spec := workflow.WorkflowSpec{
+		SchemaVersion: workflow.SchemaVersionV1,
+		Name:          name,
+		Steps: []workflow.StepSpec{
+			{
+				Key: "prepare", Name: "准备发布上下文", Uses: workflow.NoopUses,
+				Category: "prepare", With: json.RawMessage(`{"message":"发布上下文已准备"}`),
+				TimeoutSeconds: 60, OnFailure: workflow.FailureStop,
+			},
+			{
+				Key: "release", Name: "模拟发布", Uses: workflow.NoopUses,
+				Category: "deploy", With: json.RawMessage(`{"message":"Demo 发布完成","output":{"demo":true}}`),
+				TimeoutSeconds: 60, OnFailure: workflow.FailureStop,
+			},
+		},
+	}
+	specJSON, err := json.Marshal(spec)
 	if err != nil {
-		return "", "", fmt.Errorf("query demo pipeline combination %s: %w", packageType, err)
+		return 0, fmt.Errorf("marshal demo workflow %s/%s: %w", appName, env, err)
 	}
-	if has {
-		return existingCombination.CiJobName, existingCombination.CdJobName, nil
+	digest := sha256.Sum256(specJSON)
+	workflowRow := entity.ReleaseWorkflow{
+		Name:        name,
+		Description: "无需外部 CI/CD 平台即可运行的示例流程",
 	}
-
-	ciJob := fmt.Sprintf("demo-%s-ci", packageType)
-	cdJob := fmt.Sprintf("demo-%s-cd", packageType)
-	for _, job := range []entity.Pipelines{
-		{JobName: ciJob, DescriptionCN: fmt.Sprintf("%s Demo 构建流水线", packageType), URL: fmt.Sprintf("http://jenkins:8080/job/%s", ciJob)},
-		{JobName: cdJob, DescriptionCN: fmt.Sprintf("%s Demo 部署流水线", packageType), URL: fmt.Sprintf("http://jenkins:8080/job/%s", cdJob)},
-	} {
-		var existingJob entity.Pipelines
-		jobExists, err := session.Unscoped().Where("job_name = ?", job.JobName).Get(&existingJob)
-		if err != nil {
-			return "", "", fmt.Errorf("query demo pipeline %s: %w", job.JobName, err)
-		}
-		if !jobExists {
-			if _, err := session.Insert(&job); err != nil {
-				return "", "", fmt.Errorf("insert demo pipeline %s: %w", job.JobName, err)
-			}
-		}
+	if _, err := session.Insert(&workflowRow); err != nil {
+		return 0, fmt.Errorf("insert demo workflow %s/%s: %w", appName, env, err)
 	}
-
-	combination := entity.PipelinesJobCombination{
-		DescriptionCN:   fmt.Sprintf("%s Demo 流水线组合", packageType),
-		CiJobName:       ciJob,
-		CdJobName:       cdJob,
-		CodePackageType: packageType,
+	versionRow := entity.ReleaseWorkflowVersion{
+		WorkflowID: workflowRow.WorkflowID,
+		Version:    1,
+		Spec:       specJSON,
+		Checksum:   hex.EncodeToString(digest[:]),
+		CreatedBy:  "demo-seed",
 	}
-	if _, err := session.Insert(&combination); err != nil {
-		return "", "", fmt.Errorf("insert demo pipeline combination %s: %w", packageType, err)
+	if _, err := session.Insert(&versionRow); err != nil {
+		return 0, fmt.Errorf("insert demo workflow version %s/%s: %w", appName, env, err)
 	}
-	return ciJob, cdJob, nil
+	binding := entity.AppConfigWorkflow{
+		AppConfigID: configID,
+		WorkflowID:  workflowRow.WorkflowID,
+		VersionID:   versionRow.VersionID,
+		Revision:    1,
+	}
+	if _, err := session.Insert(&binding); err != nil {
+		return 0, fmt.Errorf("bind demo workflow %s/%s: %w", appName, env, err)
+	}
+	return versionRow.VersionID, nil
 }
 
 func demoAppConfig(appID int, envName, packageType, baseImage string) entity.AppConfigs {
@@ -283,6 +326,7 @@ func demoAppConfig(appID int, envName, packageType, baseImage string) entity.App
 type demoTaskSeed struct {
 	appIndex int
 	env      string
+	branch   string
 	status   string
 	message  string
 	age      time.Duration
@@ -290,24 +334,19 @@ type demoTaskSeed struct {
 
 func demoTaskSeeds() []demoTaskSeed {
 	return []demoTaskSeed{
-		{0, "dev", entity.StatusDeployed, "Demo 发布成功", 45 * time.Minute},
-		{1, "test", entity.StatusDeployed, "Demo 发布成功", 2 * time.Hour},
-		{2, "dev", entity.StatusPackageFailed, "Demo 构建失败记录", 4 * time.Hour},
-		{0, "moni", entity.StatusDeployFailed, "Demo 部署失败记录", 8 * time.Hour},
+		{0, "dev", "main", workflow.TaskSucceeded, "Demo 发布成功", 45 * time.Minute},
+		{1, "test", "main", workflow.TaskSucceeded, "Demo 发布成功", 2 * time.Hour},
+		{2, "preview", "feature/demo", workflow.TaskFailed, "Demo 步骤失败记录", 4 * time.Hour},
+		{0, "moni", "release_demo", workflow.TaskSucceededWithWarnings, "Demo 带告警完成记录", 8 * time.Hour},
 	}
 }
 
-func insertDemoTasks(session *xorm.Session, apps []demoApplication, jobs map[string][2]string) error {
+func insertDemoTasks(session *xorm.Session, apps []demoApplication, workflowVersions map[string]map[string]int64) error {
 	for i, item := range demoTaskSeeds() {
 		app := apps[item.appIndex]
-		jobPair := jobs[app.PackageType]
-		branch := "main"
-		if item.env == "moni" {
-			branch = "release_demo"
-		}
 		params, err := json.Marshal(map[string]string{
 			"app_name": app.App.AppName,
-			"branch":   branch,
+			"branch":   item.branch,
 			"env":      item.env,
 		})
 		if err != nil {
@@ -315,24 +354,72 @@ func insertDemoTasks(session *xorm.Session, apps []demoApplication, jobs map[str
 		}
 		createdAt := time.Now().Add(-item.age)
 		task := entity.TaskRecord{
-			AppName:       app.App.AppName,
-			Branch:        branch,
-			Env:           item.env,
-			Publisher:     "Demo 用户",
-			CiBuildId:     int64(100 + i),
-			CdBuildId:     int64(200 + i),
-			PipelineParam: params,
-			Status:        item.status,
-			Message:       item.message,
-			CiJobName:     jobPair[0],
-			CdJobName:     jobPair[1],
-			AutoDeploy:    1,
-			Products:      fmt.Sprintf("registry.example.local/ares-demo/%s:demo", app.App.AppName),
-			CreatedTime:   createdAt,
-			UpdatedTime:   createdAt,
+			AppName:           app.App.AppName,
+			Branch:            item.branch,
+			Env:               item.env,
+			Publisher:         "Demo 用户",
+			PipelineParam:     params,
+			Status:            item.status,
+			Message:           item.message,
+			EngineVersion:     2,
+			WorkflowVersionID: workflowVersions[app.App.AppName][item.env],
+			Products:          fmt.Sprintf("registry.example.local/ares-demo/%s:demo", app.App.AppName),
+			CreatedTime:       createdAt,
+			UpdatedTime:       createdAt,
 		}
-		if _, err := session.NoAutoTime().Insert(&task); err != nil {
+		if _, err := session.NoAutoTime().Nullable("rundeck_app_name", "ci_job_name", "cd_job_name").Insert(&task); err != nil {
 			return fmt.Errorf("insert demo task %s/%s: %w", app.App.AppName, item.env, err)
+		}
+		if err := insertDemoTaskSteps(session, task, item, i); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func insertDemoTaskSteps(session *xorm.Session, task entity.TaskRecord, seed demoTaskSeed, index int) error {
+	createdAt := task.CreatedTime
+	steps := []entity.TaskStepRecord{
+		{
+			TaskID: task.TaskId, WorkflowVersionID: task.WorkflowVersionID,
+			StepKey: "prepare", Name: "准备发布上下文", Uses: workflow.NoopUses, Category: "prepare", Position: 0,
+			Config: json.RawMessage(`{"message":"发布上下文已准备"}`), TimeoutSeconds: 60,
+			OnFailure: workflow.FailureStop, Status: workflow.StepSucceeded, Attempt: 1,
+			Output: json.RawMessage(`{}`), Message: "发布上下文已准备",
+			StartedTime: &createdAt, FinishedTime: &createdAt, CreatedTime: createdAt, UpdatedTime: createdAt,
+		},
+		{
+			TaskID: task.TaskId, WorkflowVersionID: task.WorkflowVersionID,
+			StepKey: "release", Name: "模拟发布", Uses: workflow.NoopUses, Category: "deploy", Position: 1,
+			Config: json.RawMessage(`{"message":"Demo 发布完成","output":{"demo":true}}`), TimeoutSeconds: 60,
+			OnFailure: workflow.FailureStop, Status: workflow.StepSucceeded, Attempt: 1,
+			Output: json.RawMessage(`{"demo":true}`), Message: seed.message,
+			StartedTime: &createdAt, FinishedTime: &createdAt, CreatedTime: createdAt, UpdatedTime: createdAt,
+		},
+	}
+	if seed.status == workflow.TaskFailed {
+		steps[0].Status = workflow.StepFailed
+		steps[0].Message = seed.message
+		steps[1].Status = workflow.StepSkipped
+		steps[1].Message = "前置步骤失败，流程已停止"
+		steps[1].Output = nil
+		steps[1].StartedTime = nil
+	}
+	if seed.status == workflow.TaskSucceededWithWarnings {
+		steps[0].Status = workflow.StepFailed
+		steps[0].OnFailure = workflow.FailureContinue
+		steps[0].Message = "Demo 非阻断检查失败"
+	}
+	for stepIndex := range steps {
+		insert := session.NoAutoTime().Nullable("external_ref")
+		if len(steps[stepIndex].Output) == 0 {
+			insert = insert.Nullable("output")
+		}
+		if steps[stepIndex].StartedTime == nil {
+			insert = insert.Nullable("started_at")
+		}
+		if _, err := insert.Insert(&steps[stepIndex]); err != nil {
+			return fmt.Errorf("insert demo task step %s/%s/%d: %w", task.AppName, task.Env, index, err)
 		}
 	}
 	return nil

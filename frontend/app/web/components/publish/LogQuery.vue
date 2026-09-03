@@ -35,9 +35,12 @@
             style="width: 120px"
           >
             <el-option label="全部" value="" />
-            <el-option label="开发环境" value="dev" />
-            <el-option label="测试环境" value="test" />
-            <el-option label="模拟环境" value="moni" />
+            <el-option
+              v-for="env in environments"
+              :key="env.code"
+              :label="labelForEnvironment(env.code)"
+              :value="env.code"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="时间范围">
@@ -132,6 +135,7 @@ import { Document, Refresh } from '@element-plus/icons-vue';
 import { useLog } from '@/composables/useLog';
 import { useDeploy } from '@/composables/useDeploy';
 import { ElMessage } from 'element-plus';
+import { useEnvironments } from '@/composables/useEnvironments';
 
 // 定义props
 interface Props {
@@ -141,6 +145,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   isActive: false,
 });
+const { environments, loadEnvironments, labelForEnvironment } = useEnvironments();
 
 // 跳转页面相关
 const jumpPageInput = ref('');
@@ -229,6 +234,7 @@ watch(
 
 // 组件挂载时，如果已经是激活状态则加载数据
 onMounted(async () => {
+  loadEnvironments().catch(error => console.error('加载环境目录失败:', error));
   // 强制重置筛选条件，避免URL参数污染
   handleResetLogFilter();
 

@@ -38,13 +38,14 @@ api.interceptors.response.use(
     // 对响应错误做点什么
     if (error.response) {
       switch (error.response.status) {
-        case 401:
+        case 401: {
           // 未授权，清除用户信息并跳转到登录页
           const userStore = useUserStore();
           userStore.clearUserInfo();
           localStorage.removeItem('token');
           router.push('/login');
           break;
+        }
         case 403:
           // 权限不足
           console.error('没有权限访问该资源');

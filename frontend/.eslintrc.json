@@ -5,8 +5,17 @@
     "node": true
   },
   "extends": ["eslint:recommended"],
-  "overrides": [],
+  "parser": "vue-eslint-parser",
+  "overrides": [
+    {
+      "files": ["*.ts", "*.tsx", "*.vue"],
+      "rules": {
+        "no-undef": "off"
+      }
+    }
+  ],
   "parserOptions": {
+    "parser": "@typescript-eslint/parser",
     "ecmaVersion": "latest",
     "sourceType": "module"
   },

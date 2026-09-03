@@ -19,10 +19,10 @@
       <el-divider content-position="left">建议的数据结构（后端接入点）</el-divider>
       <el-descriptions :column="1" border>
         <el-descriptions-item label="列表接口">
-          <code>GET /api/v1/apps/:appId/pods?env=dev</code>
+          <code>GET /api/v1/apps/:appId/pods?env=:environment</code>
         </el-descriptions-item>
         <el-descriptions-item label="单 Pod 详情">
-          <code>GET /api/v1/apps/:appId/pods/:podName?env=dev</code>
+          <code>GET /api/v1/apps/:appId/pods/:podName?env=:environment</code>
         </el-descriptions-item>
         <el-descriptions-item label="操作">
           <code>POST /api/v1/apps/:appId/pods/:podName/restart</code>

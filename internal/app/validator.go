@@ -49,7 +49,7 @@ func (v *AppValidator) ValidateCreateApp(req *CreateAppRequest) error {
 
 	// Git URL格式验证
 	if !isValidGitURL(req.GitUrl) {
-		return errors.New("git地址必须使用SSH协议，且以.git结尾。示例：git@gitlab.aaa.work:group/repo.git")
+		return errors.New("git地址必须使用SSH协议，且以.git结尾。示例：git@github.com:owner/repo.git")
 	}
 
 	// 负责人 格式校验
@@ -108,7 +108,7 @@ func (v *AppValidator) ValidatePatchApp(req *PatchAppRequest) error {
 	if req.GitUrl != nil {
 		s := strings.TrimSpace(*req.GitUrl)
 		if s == "" || !isValidGitURL(s) {
-			return errors.New("git地址必须使用SSH协议，且以.git结尾。示例：git@gitlab.aaa.work:group/repo.git")
+			return errors.New("git地址必须使用SSH协议，且以.git结尾。示例：git@github.com:owner/repo.git")
 		}
 	}
 	if req.DevLanguage != nil {
@@ -153,7 +153,7 @@ func isValidGitURL(url string) bool {
 		return false
 	}
 
-	// 进一步验证格式: git@gitlab.aaa.work:group/repo.git
+	// 进一步验证常见 SCP 风格 SSH 地址：git@host:group/repo.git
 	pattern := regexp.MustCompile(`^git@[\w\.-]+:[\w\.-]+(?:/[\w\.-]+)*\.git$`)
 	return pattern.MatchString(url)
 }

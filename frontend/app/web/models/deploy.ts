@@ -7,13 +7,7 @@ export enum DeployStatus {
   CANCELLED = 'CANCELLED', // 已取消
 }
 
-// 环境枚举
-export enum Environment {
-  DEV = 'dev',
-  TEST = 'test',
-  STAGING = 'staging',
-  PROD = 'prod',
-}
+export type Environment = string;
 
 // 发布信息接口
 export interface DeployInfo {
@@ -61,42 +55,46 @@ export interface TaskRecord {
   publisher: string;
   ci_build_id: number;
   cd_build_id: number;
-  pipeline_param: {
-    env: string;
-    image: string;
-    branch: string;
-    domain: string;
-    git_url: string;
-    app_name: string;
-    gpu_count: string;
-    pod_count: string;
-    base_image: string;
-    probe_type: string;
-    domain_path: string;
-    dev_language: string;
-    limits_memory: string;
-    pre_stop_type: string;
-    pre_stop_command: string;
-    probe_check_path: string;
-    code_package_name: string;
-    code_package_path: string;
-    code_package_type: string;
-    pre_stop_check_path: string;
-  };
   status: string;
   message: string;
   ci_job_name: string;
   cd_job_name: string;
   auto_deploy: number;
   products: string;
+  engine_version?: number;
+  workflow_version_id?: number;
+  steps?: TaskStepRecord[];
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
 }
 
+export interface TaskStepRecord {
+  step_record_id: number;
+  task_id: number;
+  workflow_version_id: number;
+  step_key: string;
+  name: string;
+  uses: string;
+  category?: string;
+  position: number;
+  timeout_seconds: number;
+  on_failure: 'stop' | 'continue';
+  status: string;
+  attempt: number;
+  message?: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // 任务记录结果接口
 export interface TaskRecordResult {
-  task_record: TaskRecord;
+  request_index: number;
+  app_name: string;
+  env: string;
+  task_record: TaskRecord | null;
   error: string;
   success: boolean;
 }
@@ -169,28 +167,6 @@ export interface PublishLogTaskRecord {
   deleted_at: string | null;
   env: string;
   message: string;
-  pipeline_param: {
-    env: string;
-    image: string;
-    branch: string;
-    domain: string;
-    git_url: string;
-    app_name: string;
-    gpu_count: string;
-    pod_count: string;
-    base_image: string;
-    probe_type: string;
-    domain_path: string;
-    dev_language: string;
-    limits_memory: string;
-    pre_stop_type: string;
-    pre_stop_command: string;
-    probe_check_path: string;
-    code_package_name: string;
-    code_package_path: string;
-    code_package_type: string;
-    pre_stop_check_path: string;
-  };
   products: string;
   publisher: string;
   status: string;

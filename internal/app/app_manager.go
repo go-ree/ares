@@ -70,9 +70,6 @@ func (am *AppManager) CreateApp(ctx context.Context, req CreateAppRequest) (*Cre
 		App:     appResult,
 	}
 
-	// 异步触发后续流程
-	go am.TriggerPostCreateHooks(appResult)
-
 	return &result, nil
 }
 
@@ -167,99 +164,6 @@ func (am *AppManager) checkAppExists(ctx context.Context, appName string) (bool,
 		return false, err
 	}
 	return count > 0, nil
-}
-
-// TriggerPostCreateHooks 触发应用创建后的钩子函数
-func (am *AppManager) TriggerPostCreateHooks(app *entity.Apps) {
-	slog.Info("触发应用创建后处理", "app_id", app.AppId, "app_name", app.AppName)
-
-	// 可以在这里实现各种后续处理逻辑
-	// 1. 创建默认配置
-	am.createDefaultConfig(app)
-
-	// 2. 初始化CI/CD流水线
-	//am.initCIPipeline(app)
-
-	// 3. 发送通知
-	//am.sendNotification(app)
-}
-
-// 创建默认配置
-func (am *AppManager) createDefaultConfig(app *entity.Apps) {
-	slog.Info("为应用创建默认配置", "app_id", app.AppId, "app_name", app.AppName)
-	// 实现创建默认配置的逻辑
-	environments := []string{"dev", "test", "moni"}
-
-	// 优先使用 DB 规则表的 default；若缺失则回退老逻辑
-	defaultCodePackageType := getDefaultPackageType(app.DevLanguage)
-	if rules, err := loadDevLanguageRules(context.Background(), app.DevLanguage); err == nil && rules != nil {
-		defaultCodePackageType = rules.Default
-	}
-
-	// 为每个环境创建默认配置
-	for _, env := range environments {
-		// 创建应用环境配置
-		appConfig := &entity.AppConfigs{
-			AppID:                  app.AppId,
-			Env:                    env,
-			CodePackageType:        defaultCodePackageType,
-			CodePackageName:        "",
-			CodePackagePath:        "",
-			BaseImage:              "",
-			PodCount:               1,
-			LimitsMemory:           2,
-			GpuCount:               0,
-			ProbeType:              "HTTP",
-			ProbeCheckPath:         "/inside/checkup",
-			ProbeCheckTcpPort:      8080,
-			ProbeCheckHttpPort:     8080,
-			ProbeStopCheckHttpPort: 8080,
-			ContainerPort:          8080,
-			PreStopType:            "HTTP",
-			PreStopCheckPath:       "/inside/prestop",
-			PreStopCommand:         "",
-		}
-		if tool.IsEmptyLikeText(appConfig.CodePackageType) {
-			slog.Error("无法创建默认应用配置：开发语言缺少默认代码包类型",
-				"app_id", app.AppId,
-				"dev_language", app.DevLanguage)
-			return
-		}
-
-		session := db.Engine.NewSession()
-		defer session.Close()
-
-		// 开启事务
-		if err := session.Begin(); err != nil {
-			slog.Error("开启事务失败", "error", err)
-			continue
-		}
-
-		// 创建应用配置
-		if _, err := session.Nullable(
-			"code_package_name",
-			"code_package_path",
-			"base_image",
-			"pre_stop_command",
-		).Insert(appConfig); err != nil {
-			slog.Error("创建应用配置失败",
-				"app_id", app.AppId,
-				"env", env,
-				"error", err)
-			session.Rollback()
-			continue
-		}
-
-		if err := session.Commit(); err != nil {
-			slog.Error("提交事务失败", "error", err)
-			continue
-		}
-
-		slog.Info("创建应用环境配置成功",
-			"app_id", app.AppId,
-			"app_name", app.AppName,
-			"env", env)
-	}
 }
 
 // initCIPipeline 初始化CI流水线

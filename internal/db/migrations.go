@@ -26,6 +26,8 @@ type schemaMigration struct {
 
 var schemaMigrations = []schemaMigration{
 	{version: legacyNullStringMigrationVersion, up: migrateLegacyNullStrings},
+	{version: pluggableCICDMigrationVersion, up: migratePluggableCICD},
+	{version: cicdRuntimeHardeningMigrationVersion, up: migrateCICDRuntimeHardening},
 }
 
 // RunSchemaMigrations applies versioned, resumable data migrations after the
@@ -64,7 +66,11 @@ func RunSchemaMigrations() error {
 			}
 			slog.Info("database migration applied", "version", migration.version)
 		}
-		return nil
+		// Version markers say a data migration completed; they cannot guarantee
+		// a later schema synchronizer or manual DDL kept every invariant. These
+		// cheap idempotent checks also repair installations that briefly ran a
+		// build where Xorm removed model-external indexes during restart.
+		return ensureCICDSchemaPostconditions()
 	})
 }
 

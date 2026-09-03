@@ -1,7 +1,7 @@
-import config from '../../config'
+import config from '../../config';
 
 export class BaseService {
-  protected config = config
+  protected config = config;
 
   protected async request<T>(url: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(`${this.config.apiBaseUrl}${url}`, {
@@ -10,12 +10,12 @@ export class BaseService {
         'Content-Type': 'application/json',
         ...options.headers,
       },
-    })
+    });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    return response.json()
+    return response.json();
   }
-} 
+}

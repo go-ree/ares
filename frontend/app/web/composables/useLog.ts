@@ -4,8 +4,10 @@ import { queryPublishLogs, queryTaskLogs } from '@/services/deploy';
 import api from '@/config/api';
 import type { LogItem, DeployingService, LogFilter } from '@/types/deploy';
 import { normalizeLegacyNullableText } from '@/utils/legacy-nullable-text';
+import { useEnvironments } from '@/composables/useEnvironments';
 
 export function useLog() {
+  const { labelForEnvironment } = useEnvironments();
   const LOG_BATCH_FLUSH_MS = 200; // 100~300ms 批量追加，避免频繁重排
 
   // 日志筛选条件
@@ -42,6 +44,61 @@ export function useLog() {
   // SSE断线续传 offset（服务端会在每条消息带 id，浏览器会自动用 Last-Event-ID 重连；
   // 这里额外缓存 last offset，用于“手动重建连接/重试”时可带 start 提升体验）
   const lastOffsetMap = ref<Map<string, number>>(new Map());
+  const connectionTimeouts = new Set<ReturnType<typeof setTimeout>>();
+  const connectionIntervals = new Set<ReturnType<typeof setInterval>>();
+  let logSessionGeneration = 0;
+
+  const isLogSessionCurrent = (generation: number, taskId: number) =>
+    generation === logSessionGeneration && currentLog.value.taskId === taskId;
+
+  const setConnectionTimeout = (
+    callback: () => void,
+    delay: number,
+    generation: number,
+    taskId: number
+  ) => {
+    const timer = setTimeout(() => {
+      connectionTimeouts.delete(timer);
+      if (isLogSessionCurrent(generation, taskId)) callback();
+    }, delay);
+    connectionTimeouts.add(timer);
+    return timer;
+  };
+
+  const clearConnectionTimeout = (timer: ReturnType<typeof setTimeout>) => {
+    clearTimeout(timer);
+    connectionTimeouts.delete(timer);
+  };
+
+  const setConnectionInterval = (
+    callback: () => void,
+    delay: number,
+    generation: number,
+    taskId: number
+  ) => {
+    const timer = setInterval(() => {
+      if (!isLogSessionCurrent(generation, taskId)) {
+        clearInterval(timer);
+        connectionIntervals.delete(timer);
+        return;
+      }
+      callback();
+    }, delay);
+    connectionIntervals.add(timer);
+    return timer;
+  };
+
+  const clearConnectionInterval = (timer: ReturnType<typeof setInterval>) => {
+    clearInterval(timer);
+    connectionIntervals.delete(timer);
+  };
+
+  const clearConnectionTimers = () => {
+    connectionTimeouts.forEach(timer => clearTimeout(timer));
+    connectionIntervals.forEach(timer => clearInterval(timer));
+    connectionTimeouts.clear();
+    connectionIntervals.clear();
+  };
 
   // 生成连接ID
   const generateConnectionId = (type: 'ci' | 'cd', jobName: string, buildId: number) => {
@@ -69,6 +126,7 @@ export function useLog() {
     eventSourceMap.value.clear();
     streamingStatus.value.clear();
     lastOffsetMap.value.clear();
+    clearConnectionTimers();
   };
 
   // 工具函数
@@ -84,6 +142,11 @@ export function useLog() {
       已取消: 'warning',
       超时: 'warning',
       未知状态: 'info',
+      排队中: 'info',
+      执行中: 'primary',
+      执行成功: 'success',
+      执行失败: 'danger',
+      成功但有警告: 'warning',
     };
     return statusMap[status] || 'info';
   };
@@ -100,26 +163,21 @@ export function useLog() {
       cancelled: '已取消',
       timeout: '超时',
       unknown: '未知状态',
+      queued: '排队中',
+      running: '执行中',
+      succeeded: '执行成功',
+      failed: '执行失败',
+      succeeded_with_warnings: '成功但有警告',
     };
     return statusMap[status] || status;
   };
 
-  const getEnvLabel = (env: string): string => {
-    const envMap: Record<string, string> = {
-      dev: '开发环境',
-      test: '测试环境',
-      moni: '模拟环境',
-    };
-    return envMap[env] || env;
-  };
+  const getEnvLabel = (env: string): string => labelForEnvironment(env);
 
   const getEnvType = (env: string): string => {
-    const envMap: Record<string, string> = {
-      dev: 'info',
-      test: 'warning',
-      moni: 'success',
-    };
-    return envMap[env] || 'info';
+    const tagTypes = ['info', 'warning', 'success', 'primary'] as const;
+    const hash = Array.from(env).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    return tagTypes[hash % tagTypes.length];
   };
 
   const formatDateTime = (dateTime: string): string => {
@@ -380,8 +438,15 @@ export function useLog() {
   };
 
   // 使用SSE获取CI日志
-  const fetchCiLogsStream = async (jobName: string, buildId: number, retryCount = 0) => {
+  const fetchCiLogsStream = async (
+    jobName: string,
+    buildId: number,
+    retryCount = 0,
+    taskId = currentLog.value.taskId,
+    sessionGeneration = logSessionGeneration
+  ) => {
     const maxRetries = 5; // 增加重试次数，提高连接稳定性
+    if (!taskId || !isLogSessionCurrent(sessionGeneration, taskId)) return;
 
     return new Promise<void>((resolve, reject) => {
       // 检查是否已经存在相同的活跃连接
@@ -397,7 +462,7 @@ export function useLog() {
       const connectionId = generateConnectionId('ci', jobName, buildId);
       const start = lastOffsetMap.value.get(connectionId);
       const url =
-        `/api/v1/job/stream/log?job_name=${encodeURIComponent(jobName)}&build_id=${buildId}` +
+        `/api/v1/job/stream/log?task_id=${taskId}&log_type=ci` +
         (typeof start === 'number' && !Number.isNaN(start) ? `&start=${start}` : '');
 
       console.log(`开始获取CI日志 (重试次数: ${retryCount}):`, { jobName, buildId, url });
@@ -408,7 +473,6 @@ export function useLog() {
 
       let hasReceivedData = false;
       let isResolved = false;
-      let messageCount = 0; // 添加消息计数器
       let is404Error = false; // 添加404错误标志
       let handledServerErrorEvent = false; // event: error（服务端推送）已处理标志，避免与 onerror 重复处理
 
@@ -427,6 +491,11 @@ export function useLog() {
       };
 
       eventSource.onmessage = (event: MessageEvent) => {
+        if (!isLogSessionCurrent(sessionGeneration, taskId)) {
+          eventSource.close();
+          resolveOnce();
+          return;
+        }
         try {
           console.log('CI日志SSE收到数据:', event.data);
           hasReceivedData = true;
@@ -491,6 +560,11 @@ export function useLog() {
       });
 
       eventSource.onerror = error => {
+        if (!isLogSessionCurrent(sessionGeneration, taskId)) {
+          eventSource.close();
+          resolveOnce();
+          return;
+        }
         // 如果已收到服务端 error 事件并处理，避免重复走网络错误逻辑
         if (handledServerErrorEvent) return;
         console.error('CI日志SSE连接错误:', error);
@@ -520,7 +594,7 @@ export function useLog() {
               eventSource.close();
               eventSourceMap.value.delete(connectionId);
               streamingStatus.value.set(connectionId, false);
-              clearTimeout(timeout);
+              clearConnectionTimeout(timeout);
               cleanupCiHeartbeat();
               rejectOnce(new Error(`任务不存在: ${errorData.error}`));
               return;
@@ -536,7 +610,7 @@ export function useLog() {
           eventSource.close();
           eventSourceMap.value.delete(connectionId);
           streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
+          clearConnectionTimeout(timeout);
           cleanupCiHeartbeat();
           return;
         }
@@ -547,7 +621,7 @@ export function useLog() {
           eventSource.close();
           eventSourceMap.value.delete(connectionId);
           streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
+          clearConnectionTimeout(timeout);
           resolveOnce();
           return;
         }
@@ -559,16 +633,20 @@ export function useLog() {
           eventSource.close();
           eventSourceMap.value.delete(connectionId);
           streamingStatus.value.set(connectionId, false);
+          clearConnectionTimeout(timeout);
+          cleanupCiHeartbeat();
 
-          setTimeout(
+          setConnectionTimeout(
             () => {
               // 强制清理现有连接，确保重试能成功
               cleanupConnection(connectionId);
-              fetchCiLogsStream(jobName, buildId, retryCount + 1)
+              fetchCiLogsStream(jobName, buildId, retryCount + 1, taskId, sessionGeneration)
                 .then(resolveOnce)
                 .catch(rejectOnce);
             },
-            3000 * (retryCount + 1)
+            3000 * (retryCount + 1),
+            sessionGeneration,
+            taskId
           ); // 增加重试延迟，给服务器更多时间恢复
         } else {
           // 超过重试次数，清理连接
@@ -576,12 +654,17 @@ export function useLog() {
           eventSource.close();
           eventSourceMap.value.delete(connectionId);
           streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
+          clearConnectionTimeout(timeout);
           rejectOnce(new Error('CI日志SSE连接失败，已重试' + maxRetries + '次'));
         }
       };
 
       eventSource.onopen = () => {
+        if (!isLogSessionCurrent(sessionGeneration, taskId)) {
+          eventSource.close();
+          resolveOnce();
+          return;
+        }
         console.log('=== CI日志SSE连接已建立 ===');
         console.log('连接ID:', connectionId);
         console.log('URL:', url);
@@ -598,61 +681,73 @@ export function useLog() {
       };
 
       // 设置超时处理
-      const timeout = setTimeout(() => {
-        console.log(
-          'CI日志SSE超时，hasReceivedData:',
-          hasReceivedData,
-          'retryCount:',
-          retryCount,
-          'readyState:',
-          eventSource.readyState
-        );
+      const timeout = setConnectionTimeout(
+        () => {
+          console.log(
+            'CI日志SSE超时，hasReceivedData:',
+            hasReceivedData,
+            'retryCount:',
+            retryCount,
+            'readyState:',
+            eventSource.readyState
+          );
 
-        // 如果连接已经关闭且收到过数据，认为日志已经完成，不再重试
-        if (eventSource.readyState === EventSource.CLOSED && hasReceivedData) {
-          console.log('CI日志SSE超时但连接已关闭且收到过数据，认为日志已完成');
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          resolveOnce();
-          return;
-        }
+          // 如果连接已经关闭且收到过数据，认为日志已经完成，不再重试
+          if (eventSource.readyState === EventSource.CLOSED && hasReceivedData) {
+            console.log('CI日志SSE超时但连接已关闭且收到过数据，认为日志已完成');
+            eventSource.close();
+            eventSourceMap.value.delete(connectionId);
+            streamingStatus.value.set(connectionId, false);
+            resolveOnce();
+            return;
+          }
 
-        if (retryCount < maxRetries) {
-          // 超时且未超过重试次数，尝试重试（无论是否收到过数据）
-          console.log(`CI日志SSE超时，${retryCount + 1}秒后重试...`);
-          // 清理当前连接
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          cleanupCiHeartbeat();
+          if (retryCount < maxRetries) {
+            // 超时且未超过重试次数，尝试重试（无论是否收到过数据）
+            console.log(`CI日志SSE超时，${retryCount + 1}秒后重试...`);
+            // 清理当前连接
+            eventSource.close();
+            eventSourceMap.value.delete(connectionId);
+            streamingStatus.value.set(connectionId, false);
+            cleanupCiHeartbeat();
 
-          setTimeout(
-            () => {
-              // 强制清理现有连接，确保重试能成功
-              cleanupConnection(connectionId);
-              fetchCiLogsStream(jobName, buildId, retryCount + 1)
-                .then(resolveOnce)
-                .catch(rejectOnce);
-            },
-            3000 * (retryCount + 1)
-          ); // 增加重试延迟，给服务器更多时间恢复
-        } else {
-          // 超过重试次数，清理连接
-          console.log('CI日志SSE超时，已超过重试次数');
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
-          cleanupCiHeartbeat();
-          rejectOnce(new Error('CI日志获取超时，已重试' + maxRetries + '次'));
-        }
-      }, 60000); // 增加到60秒超时，给CI日志更多时间
+            setConnectionTimeout(
+              () => {
+                // 强制清理现有连接，确保重试能成功
+                cleanupConnection(connectionId);
+                fetchCiLogsStream(jobName, buildId, retryCount + 1, taskId, sessionGeneration)
+                  .then(resolveOnce)
+                  .catch(rejectOnce);
+              },
+              3000 * (retryCount + 1),
+              sessionGeneration,
+              taskId
+            ); // 增加重试延迟，给服务器更多时间恢复
+          } else {
+            // 超过重试次数，清理连接
+            console.log('CI日志SSE超时，已超过重试次数');
+            eventSource.close();
+            eventSourceMap.value.delete(connectionId);
+            streamingStatus.value.set(connectionId, false);
+            clearConnectionTimeout(timeout);
+            cleanupCiHeartbeat();
+            rejectOnce(new Error('CI日志获取超时，已重试' + maxRetries + '次'));
+          }
+        },
+        60000,
+        sessionGeneration,
+        taskId
+      ); // 增加到60秒超时，给CI日志更多时间
 
       // 监听日志流结束事件（event: end）
       eventSource.addEventListener('end', (event: MessageEvent) => {
+        if (!isLogSessionCurrent(sessionGeneration, taskId)) {
+          eventSource.close();
+          resolveOnce();
+          return;
+        }
         console.log('收到SSE end事件，日志流结束');
-        clearTimeout(timeout);
+        clearConnectionTimeout(timeout);
         cleanupCiHeartbeat();
         if (updateTimer.value) {
           clearTimeout(updateTimer.value);
@@ -667,6 +762,11 @@ export function useLog() {
 
       // 监听错误事件（event: error）- 这是服务端主动推送的错误事件
       eventSource.addEventListener('error', (event: MessageEvent) => {
+        if (!isLogSessionCurrent(sessionGeneration, taskId)) {
+          eventSource.close();
+          resolveOnce();
+          return;
+        }
         console.log('收到SSE error事件，处理错误');
         handledServerErrorEvent = true;
         try {
@@ -679,7 +779,7 @@ export function useLog() {
           }
 
           // 清理资源
-          clearTimeout(timeout);
+          clearConnectionTimeout(timeout);
           cleanupCiHeartbeat();
           if (updateTimer.value) {
             clearTimeout(updateTimer.value);
@@ -702,14 +802,16 @@ export function useLog() {
           } else {
             console.log('CI日志SSE其他错误，尝试重试');
             if (retryCount < maxRetries) {
-              setTimeout(
+              setConnectionTimeout(
                 () => {
                   cleanupConnection(connectionId);
-                  fetchCiLogsStream(jobName, buildId, retryCount + 1)
+                  fetchCiLogsStream(jobName, buildId, retryCount + 1, taskId, sessionGeneration)
                     .then(resolveOnce)
                     .catch(rejectOnce);
                 },
-                3000 * (retryCount + 1)
+                3000 * (retryCount + 1),
+                sessionGeneration,
+                taskId
               );
             } else {
               rejectOnce(
@@ -720,7 +822,7 @@ export function useLog() {
         } catch (parseError) {
           console.error('解析CI日志SSE错误事件失败:', parseError);
           // 如果解析失败，按普通错误处理
-          clearTimeout(timeout);
+          clearConnectionTimeout(timeout);
           cleanupCiHeartbeat();
           eventSource.close();
           eventSourceMap.value.delete(connectionId);
@@ -731,8 +833,13 @@ export function useLog() {
 
       // 监听连接关闭事件
       eventSource.addEventListener('close', event => {
+        if (!isLogSessionCurrent(sessionGeneration, taskId)) {
+          eventSource.close();
+          resolveOnce();
+          return;
+        }
         console.log('CI日志SSE连接关闭事件触发');
-        clearTimeout(timeout);
+        clearConnectionTimeout(timeout);
         cleanupCiHeartbeat();
         eventSourceMap.value.delete(connectionId);
         streamingStatus.value.set(connectionId, false);
@@ -745,36 +852,50 @@ export function useLog() {
 
       // 添加心跳检测机制，在日志流暂停期间保持连接
       let ciHeartbeatCount = 0;
-      const ciHeartbeatInterval = setInterval(() => {
-        ciHeartbeatCount++;
-        console.log(`CI日志SSE心跳检测 #${ciHeartbeatCount} - 连接状态: ${eventSource.readyState}`);
+      const ciHeartbeatInterval = setConnectionInterval(
+        () => {
+          ciHeartbeatCount++;
+          console.log(
+            `CI日志SSE心跳检测 #${ciHeartbeatCount} - 连接状态: ${eventSource.readyState}`
+          );
 
-        // 如果连接已关闭，清理心跳定时器
-        if (eventSource.readyState === EventSource.CLOSED) {
-          console.log('CI日志SSE连接已关闭，停止心跳检测');
-          clearInterval(ciHeartbeatInterval);
-          return;
-        }
+          // 如果连接已关闭，清理心跳定时器
+          if (eventSource.readyState === EventSource.CLOSED) {
+            console.log('CI日志SSE连接已关闭，停止心跳检测');
+            clearConnectionInterval(ciHeartbeatInterval);
+            return;
+          }
 
-        // 如果长时间没有收到数据，可能是连接问题
-        if (ciHeartbeatCount > 60) {
-          // 60秒没有数据
-          console.log('CI日志SSE心跳检测超时，连接可能有问题');
-          clearInterval(ciHeartbeatInterval);
-          // 不主动关闭连接，让错误处理逻辑处理
-        }
-      }, 1000); // 每秒检测一次
+          // 如果长时间没有收到数据，可能是连接问题
+          if (ciHeartbeatCount > 60) {
+            // 60秒没有数据
+            console.log('CI日志SSE心跳检测超时，连接可能有问题');
+            clearConnectionInterval(ciHeartbeatInterval);
+            // 不主动关闭连接，让错误处理逻辑处理
+          }
+        },
+        1000,
+        sessionGeneration,
+        taskId
+      ); // 每秒检测一次
 
       // 在连接关闭时清理心跳定时器
       const cleanupCiHeartbeat = () => {
-        clearInterval(ciHeartbeatInterval);
+        clearConnectionInterval(ciHeartbeatInterval);
       };
     });
   };
 
   // 使用SSE获取CD日志
-  const fetchCdLogsStream = async (jobName: string, buildId: number, retryCount = 0) => {
+  const fetchCdLogsStream = async (
+    jobName: string,
+    buildId: number,
+    retryCount = 0,
+    taskId = currentLog.value.taskId,
+    sessionGeneration = logSessionGeneration
+  ) => {
     const maxRetries = 5; // 增加重试次数，提高CD日志连接稳定性
+    if (!taskId || !isLogSessionCurrent(sessionGeneration, taskId)) return;
 
     return new Promise<void>((resolve, reject) => {
       // 检查是否已经存在相同的活跃连接
@@ -790,7 +911,7 @@ export function useLog() {
       const connectionId = generateConnectionId('cd', jobName, buildId);
       const start = lastOffsetMap.value.get(connectionId);
       const url =
-        `/api/v1/job/stream/log?job_name=${encodeURIComponent(jobName)}&build_id=${buildId}` +
+        `/api/v1/job/stream/log?task_id=${taskId}&log_type=cd` +
         (typeof start === 'number' && !Number.isNaN(start) ? `&start=${start}` : '');
 
       console.log(`开始获取CD日志 (重试次数: ${retryCount}):`, { jobName, buildId, url });
@@ -820,6 +941,11 @@ export function useLog() {
       };
 
       eventSource.onmessage = (event: MessageEvent) => {
+        if (!isLogSessionCurrent(sessionGeneration, taskId)) {
+          eventSource.close();
+          resolveOnce();
+          return;
+        }
         try {
           messageCount++;
           console.log(`CD日志SSE收到第${messageCount}条数据:`, event.data);
@@ -891,6 +1017,11 @@ export function useLog() {
       });
 
       eventSource.onerror = error => {
+        if (!isLogSessionCurrent(sessionGeneration, taskId)) {
+          eventSource.close();
+          resolveOnce();
+          return;
+        }
         if (handledServerErrorEvent) return;
         console.error('CD日志SSE连接错误:', error);
         console.log(
@@ -919,7 +1050,7 @@ export function useLog() {
               eventSource.close();
               eventSourceMap.value.delete(connectionId);
               streamingStatus.value.set(connectionId, false);
-              clearTimeout(timeout);
+              clearConnectionTimeout(timeout);
               cleanupHeartbeat();
               rejectOnce(new Error(`任务不存在: ${errorData.error}`));
               return;
@@ -935,7 +1066,7 @@ export function useLog() {
           eventSource.close();
           eventSourceMap.value.delete(connectionId);
           streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
+          clearConnectionTimeout(timeout);
           cleanupHeartbeat();
           return;
         }
@@ -946,7 +1077,7 @@ export function useLog() {
           eventSource.close();
           eventSourceMap.value.delete(connectionId);
           streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
+          clearConnectionTimeout(timeout);
           cleanupHeartbeat();
           resolveOnce();
           return;
@@ -969,18 +1100,20 @@ export function useLog() {
           streamingStatus.value.set(connectionId, false);
 
           // 强制清理超时定时器
-          clearTimeout(timeout);
+          clearConnectionTimeout(timeout);
           cleanupHeartbeat();
 
-          setTimeout(
+          setConnectionTimeout(
             () => {
               // 强制清理现有连接，确保重试能成功
               cleanupConnection(connectionId);
-              fetchCdLogsStream(jobName, buildId, retryCount + 1)
+              fetchCdLogsStream(jobName, buildId, retryCount + 1, taskId, sessionGeneration)
                 .then(resolveOnce)
                 .catch(rejectOnce);
             },
-            3000 * (retryCount + 1)
+            3000 * (retryCount + 1),
+            sessionGeneration,
+            taskId
           ); // 增加重试延迟，给服务器更多时间恢复
         } else {
           // 超过重试次数，清理连接
@@ -988,13 +1121,18 @@ export function useLog() {
           eventSource.close();
           eventSourceMap.value.delete(connectionId);
           streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
+          clearConnectionTimeout(timeout);
           cleanupHeartbeat();
           rejectOnce(new Error('CD日志SSE连接失败，已重试' + maxRetries + '次'));
         }
       };
 
       eventSource.onopen = () => {
+        if (!isLogSessionCurrent(sessionGeneration, taskId)) {
+          eventSource.close();
+          resolveOnce();
+          return;
+        }
         console.log('=== CD日志SSE连接已建立 ===');
         console.log('连接ID:', connectionId);
         console.log('URL:', url);
@@ -1010,63 +1148,75 @@ export function useLog() {
       };
 
       // 设置超时处理
-      const timeout = setTimeout(() => {
-        console.log(
-          'CD日志SSE超时，hasReceivedData:',
-          hasReceivedData,
-          'retryCount:',
-          retryCount,
-          'readyState:',
-          eventSource.readyState
-        );
+      const timeout = setConnectionTimeout(
+        () => {
+          console.log(
+            'CD日志SSE超时，hasReceivedData:',
+            hasReceivedData,
+            'retryCount:',
+            retryCount,
+            'readyState:',
+            eventSource.readyState
+          );
 
-        // 如果连接已经关闭且收到过数据，认为日志已经完成，不再重试
-        if (eventSource.readyState === EventSource.CLOSED && hasReceivedData) {
-          console.log('CD日志SSE超时但连接已关闭且收到过数据，认为日志已完成');
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
-          cleanupHeartbeat();
-          resolveOnce();
-          return;
-        }
+          // 如果连接已经关闭且收到过数据，认为日志已经完成，不再重试
+          if (eventSource.readyState === EventSource.CLOSED && hasReceivedData) {
+            console.log('CD日志SSE超时但连接已关闭且收到过数据，认为日志已完成');
+            eventSource.close();
+            eventSourceMap.value.delete(connectionId);
+            streamingStatus.value.set(connectionId, false);
+            clearConnectionTimeout(timeout);
+            cleanupHeartbeat();
+            resolveOnce();
+            return;
+          }
 
-        if (retryCount < maxRetries) {
-          // 超时且未超过重试次数，尝试重试（无论是否收到过数据）
-          console.log(`CD日志SSE超时，${retryCount + 1}秒后重试...`);
-          // 清理当前连接
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          cleanupHeartbeat();
+          if (retryCount < maxRetries) {
+            // 超时且未超过重试次数，尝试重试（无论是否收到过数据）
+            console.log(`CD日志SSE超时，${retryCount + 1}秒后重试...`);
+            // 清理当前连接
+            eventSource.close();
+            eventSourceMap.value.delete(connectionId);
+            streamingStatus.value.set(connectionId, false);
+            cleanupHeartbeat();
 
-          setTimeout(
-            () => {
-              // 强制清理现有连接，确保重试能成功
-              cleanupConnection(connectionId);
-              fetchCdLogsStream(jobName, buildId, retryCount + 1)
-                .then(resolveOnce)
-                .catch(rejectOnce);
-            },
-            3000 * (retryCount + 1)
-          ); // 增加重试延迟，给服务器更多时间恢复
-        } else {
-          // 超过重试次数，清理连接
-          console.log('CD日志SSE超时，已超过重试次数');
-          eventSource.close();
-          eventSourceMap.value.delete(connectionId);
-          streamingStatus.value.set(connectionId, false);
-          clearTimeout(timeout);
-          cleanupHeartbeat();
-          rejectOnce(new Error('CD日志获取超时，已重试' + maxRetries + '次'));
-        }
-      }, 120000); // 增加到120秒超时，给CD日志更多时间处理暂停期
+            setConnectionTimeout(
+              () => {
+                // 强制清理现有连接，确保重试能成功
+                cleanupConnection(connectionId);
+                fetchCdLogsStream(jobName, buildId, retryCount + 1, taskId, sessionGeneration)
+                  .then(resolveOnce)
+                  .catch(rejectOnce);
+              },
+              3000 * (retryCount + 1),
+              sessionGeneration,
+              taskId
+            ); // 增加重试延迟，给服务器更多时间恢复
+          } else {
+            // 超过重试次数，清理连接
+            console.log('CD日志SSE超时，已超过重试次数');
+            eventSource.close();
+            eventSourceMap.value.delete(connectionId);
+            streamingStatus.value.set(connectionId, false);
+            clearConnectionTimeout(timeout);
+            cleanupHeartbeat();
+            rejectOnce(new Error('CD日志获取超时，已重试' + maxRetries + '次'));
+          }
+        },
+        120000,
+        sessionGeneration,
+        taskId
+      ); // 增加到120秒超时，给CD日志更多时间处理暂停期
 
       // 监听日志流结束事件（event: end）
       eventSource.addEventListener('end', (event: MessageEvent) => {
+        if (!isLogSessionCurrent(sessionGeneration, taskId)) {
+          eventSource.close();
+          resolveOnce();
+          return;
+        }
         console.log('收到SSE end事件，日志流结束');
-        clearTimeout(timeout);
+        clearConnectionTimeout(timeout);
         cleanupHeartbeat();
         if (updateTimer.value) {
           clearTimeout(updateTimer.value);
@@ -1081,6 +1231,11 @@ export function useLog() {
 
       // 监听错误事件（event: error）
       eventSource.addEventListener('error', (event: MessageEvent) => {
+        if (!isLogSessionCurrent(sessionGeneration, taskId)) {
+          eventSource.close();
+          resolveOnce();
+          return;
+        }
         console.log('收到SSE error事件，处理错误');
         handledServerErrorEvent = true;
         try {
@@ -1093,7 +1248,7 @@ export function useLog() {
           }
 
           // 清理资源
-          clearTimeout(timeout);
+          clearConnectionTimeout(timeout);
           cleanupHeartbeat();
           if (updateTimer.value) {
             clearTimeout(updateTimer.value);
@@ -1116,14 +1271,16 @@ export function useLog() {
           } else {
             console.log('CD日志SSE其他错误，尝试重试');
             if (retryCount < maxRetries) {
-              setTimeout(
+              setConnectionTimeout(
                 () => {
                   cleanupConnection(connectionId);
-                  fetchCdLogsStream(jobName, buildId, retryCount + 1)
+                  fetchCdLogsStream(jobName, buildId, retryCount + 1, taskId, sessionGeneration)
                     .then(resolveOnce)
                     .catch(rejectOnce);
                 },
-                3000 * (retryCount + 1)
+                3000 * (retryCount + 1),
+                sessionGeneration,
+                taskId
               );
             } else {
               rejectOnce(
@@ -1134,7 +1291,7 @@ export function useLog() {
         } catch (parseError) {
           console.error('解析CD日志SSE错误事件失败:', parseError);
           // 如果解析失败，按普通错误处理
-          clearTimeout(timeout);
+          clearConnectionTimeout(timeout);
           cleanupHeartbeat();
           eventSource.close();
           eventSourceMap.value.delete(connectionId);
@@ -1145,8 +1302,13 @@ export function useLog() {
 
       // 监听连接关闭事件
       eventSource.addEventListener('close', event => {
+        if (!isLogSessionCurrent(sessionGeneration, taskId)) {
+          eventSource.close();
+          resolveOnce();
+          return;
+        }
         console.log('CD日志SSE连接关闭事件触发');
-        clearTimeout(timeout);
+        clearConnectionTimeout(timeout);
         cleanupHeartbeat();
         eventSourceMap.value.delete(connectionId);
         streamingStatus.value.set(connectionId, false);
@@ -1159,29 +1321,34 @@ export function useLog() {
 
       // 添加心跳检测机制，在日志流暂停期间保持连接
       let heartbeatCount = 0;
-      const heartbeatInterval = setInterval(() => {
-        heartbeatCount++;
-        console.log(`CD日志SSE心跳检测 #${heartbeatCount} - 连接状态: ${eventSource.readyState}`);
+      const heartbeatInterval = setConnectionInterval(
+        () => {
+          heartbeatCount++;
+          console.log(`CD日志SSE心跳检测 #${heartbeatCount} - 连接状态: ${eventSource.readyState}`);
 
-        // 如果连接已关闭，清理心跳定时器
-        if (eventSource.readyState === EventSource.CLOSED) {
-          console.log('CD日志SSE连接已关闭，停止心跳检测');
-          clearInterval(heartbeatInterval);
-          return;
-        }
+          // 如果连接已关闭，清理心跳定时器
+          if (eventSource.readyState === EventSource.CLOSED) {
+            console.log('CD日志SSE连接已关闭，停止心跳检测');
+            clearConnectionInterval(heartbeatInterval);
+            return;
+          }
 
-        // 如果长时间没有收到数据，可能是连接问题
-        if (heartbeatCount > 60) {
-          // 60秒没有数据
-          console.log('CD日志SSE心跳检测超时，连接可能有问题');
-          clearInterval(heartbeatInterval);
-          // 不主动关闭连接，让错误处理逻辑处理
-        }
-      }, 1000); // 每秒检测一次
+          // 如果长时间没有收到数据，可能是连接问题
+          if (heartbeatCount > 60) {
+            // 60秒没有数据
+            console.log('CD日志SSE心跳检测超时，连接可能有问题');
+            clearConnectionInterval(heartbeatInterval);
+            // 不主动关闭连接，让错误处理逻辑处理
+          }
+        },
+        1000,
+        sessionGeneration,
+        taskId
+      ); // 每秒检测一次
 
       // 在连接关闭时清理心跳定时器
       const cleanupHeartbeat = () => {
-        clearInterval(heartbeatInterval);
+        clearConnectionInterval(heartbeatInterval);
       };
     });
   };
@@ -1592,6 +1759,8 @@ export function useLog() {
   // 真正的清理函数（用于切换不同服务时）
   const cleanupLogsAndConnections = () => {
     console.log('清理所有日志和连接');
+    // 先使旧回调失效，避免 close 后排队的事件或重试污染下一任务。
+    logSessionGeneration += 1;
     // 清理SSE连接
     cleanupAllConnections();
     // 清空日志内容

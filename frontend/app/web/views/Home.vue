@@ -63,13 +63,21 @@
 </template>
 
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
-import { Promotion, Files, Clock, Finished, Plus, Link, UploadFilled } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router';
+import {
+  Promotion,
+  Files,
+  Clock,
+  Finished,
+  Plus,
+  Link,
+  UploadFilled,
+} from '@element-plus/icons-vue';
 
-const router = useRouter()
-const goApply = () => router.push('/application/apply')
-const goMerge = () => router.push('/publish/merge')
-const goDeploy = () => router.push('/publish/deploy')
+const router = useRouter();
+const goApply = () => router.push('/application/apply');
+const goMerge = () => router.push('/publish/merge');
+const goDeploy = () => router.push('/publish/deploy');
 </script>
 
 <style scoped>
@@ -104,7 +112,7 @@ const goDeploy = () => router.push('/publish/deploy')
 }
 .welcome-icon {
   font-size: 40px;
-  color: #409EFF;
+  color: #409eff;
   margin-bottom: 12px;
 }
 .stats-list {
@@ -122,12 +130,12 @@ const goDeploy = () => router.push('/publish/deploy')
 .stats-icon {
   font-size: 22px;
   margin-right: 8px;
-  color: #409EFF;
+  color: #409eff;
 }
 .stats-value {
   margin-left: auto;
   font-weight: bold;
-  color: #409EFF;
+  color: #409eff;
   font-size: 18px;
 }
 .quick-actions {
@@ -151,4 +159,4 @@ const goDeploy = () => router.push('/publish/deploy')
   margin-left: 0 !important;
   margin-right: 8px !important;
 }
-</style> 
+</style>

@@ -29,7 +29,7 @@ func NewServiceManager() *ServiceManager {
 type ServiceRequest struct {
 	ServiceName              string             `json:"service_name" validate:"required"`
 	Namespace                string             `json:"namespace" validate:"required"`
-	Env                      string             `json:"env" validate:"required,oneof=dev test moni"`
+	Env                      string             `json:"env" validate:"required"`
 	Selector                 map[string]string  `json:"selector" validate:"required"`
 	Ports                    []ServicePort      `json:"ports" validate:"required,min=1"`
 	ServiceType              corev1.ServiceType `json:"service_type,omitempty"`
@@ -519,9 +519,8 @@ func (sm *ServiceManager) validateServiceRequest(req *ServiceRequest) error {
 		}
 	}
 
-	// 验证环境是否支持
-	if _, ok := envNameMap[req.Env]; !ok {
-		return fmt.Errorf("不支持的环境: %s", req.Env)
+	if _, err := ParseEnvironment(req.Env); err != nil {
+		return err
 	}
 
 	return nil

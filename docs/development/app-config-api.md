@@ -43,7 +43,7 @@
 ### 1.1 获取应用所有环境配置
 
 - **GET** `/apps/{app_id}/configs`
-- **说明**：返回该应用在各环境（如 dev/test/moni）下的 `app_configs` 列表；每条包含 `config_id`，用于后续多域名操作。
+- **说明**：返回该应用已有的动态环境 `app_configs` 列表；每条包含 `config_id`，用于后续多域名和发布流程操作。
 
 **示例**
 
@@ -202,7 +202,7 @@ curl -X PATCH '/api/v1/app-configs/20001' \
 
 ## 3) 多域名（Ingress host/path）配置：`app_config_domains`
 
-> 多域名以 `config_id` 绑定；发布时会额外下发 Jenkins 参数 `domains`（JSON 字符串）与 `domains_list`（按 host 聚合 paths 的 JSON 字符串）。
+> 多域名以 `config_id` 绑定；发布时会写入通用发布上下文 `domains`（JSON 字符串）与 `domains_list`（按 host 聚合 paths 的 JSON 字符串）。Jenkins 步骤只是可能消费这些输入的一种执行器。
 
 ### 3.1 查询多域名列表
 

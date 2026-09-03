@@ -31,7 +31,9 @@
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.status)">
               {{ row.status }}
-              <el-icon v-if="row.status === '发布中'" class="is-loading"><Loading /></el-icon>
+              <el-icon v-if="isServiceProcessing(row.status)" class="is-loading"
+                ><Loading
+              /></el-icon>
             </el-tag>
           </template>
         </el-table-column>
@@ -46,19 +48,9 @@
         </el-table-column>
         <el-table-column prop="startTime" label="开始时间" width="160" />
         <el-table-column prop="operator" label="操作人" width="100" />
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
-            <el-button-group>
-              <el-button
-                type="primary"
-                link
-                :disabled="row.status !== '发布中'"
-                @click="handleCancelDeploy(row)"
-              >
-                取消发布
-              </el-button>
-              <el-button type="primary" link @click="handleViewLog(row)"> 查询日志 </el-button>
-            </el-button-group>
+            <el-button type="primary" link @click="handleViewLog(row)"> 查询详情 </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -90,9 +82,9 @@ const {
   getProgressStatus,
   getEnvLabel,
   getEnvType,
+  isServiceProcessing,
 
   // 事件处理函数
-  handleCancelDeploy,
   refreshDeployingList,
 } = useDeploy();
 

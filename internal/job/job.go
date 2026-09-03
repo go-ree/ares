@@ -11,7 +11,9 @@ import (
 var jobMap = make(map[string]func())
 
 func Init() error {
-	c := cron.New()
+	// A slow external system must not create overlapping copies of the same
+	// reconciliation sweep every ten seconds.
+	c := cron.New(cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger)))
 
 	for name, job := range config.Main.Job {
 		_, err := c.AddFunc(job.Cron, jobMap[name])
