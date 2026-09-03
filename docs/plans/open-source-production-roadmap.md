@@ -1,8 +1,8 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W00 已完成，W01 实现已收口、仓库管理项阻塞
-> - 基线版本：`main@4d97008`，已合并 [PR #5：建立开源化与生产能力开发计划](https://github.com/go-ree/ares/pull/5)
+> - 当前状态：W01 仓库实现已合并、管理项阻塞，W04 开发中
+> - 基线版本：`main@e2cfd2a`，已合并 [PR #6：建立开源质量门禁与供应链基线](https://github.com/go-ree/ares/pull/6)
 > - 最后更新：2026-09-03
 
 本文承接 [可插拔 CI/CD 实施路线](pluggable-cicd-roadmap.md)。上一阶段已经完成动态环境、版本化工作流、通用串行编排和 Jenkins Adapter 的主链路；本计划负责把 Ares 从“可运行的开源 CI/CD 基础”推进到“可安全公开部署、可持续扩展、可进行生产化验证”的状态。
@@ -78,7 +78,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 | W01    | 开源工程与质量门禁           | W00                | `阻塞`   | [PR #6](https://github.com/go-ree/ares/pull/6) | 开源治理文件、Required Checks、依赖与供应链基线 |
 | W02    | 认证、RBAC 与审计            | W01                | `未开始` | 待创建                                         | 可信身份、服务端授权、真实发布人和审计记录      |
 | W03    | 通用步骤日志                 | W02                | `未开始` | 待创建                                         | 通过 `task_id + step_key` 读取任意执行器日志    |
-| W04    | 数据库迁移机制收敛           | W01                | `未开始` | 待创建                                         | 存量结构只由版本化 migration 改变               |
+| W04    | 数据库迁移机制收敛           | W01                | `开发中` | 待创建                                         | 存量结构只由版本化 migration 改变               |
 | W05    | AppConfig 核心的幂等发布     | W02、W04           | `未开始` | 待创建                                         | 预检、`config_id` 发布、`Idempotency-Key`       |
 | W06    | 多副本 Worker 与租约         | W04、W05           | `未开始` | 待创建                                         | 公平领取、lease、fencing、故障接管              |
 | W07    | 重试、取消、超时与尝试历史   | W03、W06           | `未开始` | 待创建                                         | 可控的失败恢复和执行器取消能力                  |
@@ -227,6 +227,7 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 
 范围：
 
+- [x] 形成 [ADR-0001：版本化数据库迁移与运行时兼容性检查](../architecture/decisions/0001-versioned-database-migrations.md)，固化 epoch、ledger、dirty 恢复、权限和发布边界。
 - [ ] Xorm 只创建不存在的表；已存在表不再执行自动 ALTER/DROP。
 - [ ] 把剩余字段、类型、索引、外键和字符集修复全部迁移到版本化 SQL migration。
 - [ ] 提供独立的 `migrate status`、`migrate up` 和启动时只读兼容性检查。
@@ -401,7 +402,7 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 | D-001 | 开源许可证         | `待确认` | 建议 Apache-2.0，由维护者最终确认                                          | W01           |
 | D-002 | 首个正式身份源     | `待设计` | 建议 OIDC + 本地 bootstrap 管理员                                          | W02           |
 | D-003 | 流式日志认证       | `待设计` | 建议同源 HttpOnly Cookie 或短时一次性流令牌                                | W02、W03      |
-| D-004 | migration 运行模式 | `待设计` | 建议独立 migrator，应用启动仅做兼容性检查                                  | W04           |
+| D-004 | migration 运行模式 | `已确定` | [ADR-0001](../architecture/decisions/0001-versioned-database-migrations.md)：独立 migrator、运行时只读检查、dirty 前向恢复 | W04           |
 | D-005 | 多副本交付语义     | `待固化` | Ares 提供 at-least-once；执行器必须配合幂等键，lease 使用 fencing 防陈旧写 | W05、W06、W07 |
 | D-006 | 中间件策略         | `待固化` | 默认不依赖 Redis/RabbitMQ；通知与队列能力通过可选 Adapter 扩展             | W09、W10      |
 
@@ -426,13 +427,24 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 
 ## 8. 下一步
 
-W01 的仓库内实现、本地验收和 [PR #6](https://github.com/go-ree/ares/pull/6) 的六项自动化检查均已通过，下一步是处理评审反馈和三类仓库管理条件。W01 当前被许可证、安全漏洞与行为事件两类私密报告渠道、`main` 保护规则三类仓库管理条件阻塞，全部完成并验证前不能标记为 `待验收` 或 `已完成`。W01 进入稳定状态后，W02 与 W04 可以分别开始设计。
+[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。本轮先推进 W04：在 W02 引入用户、会话和审计表之前，先将 schema 所有权、独立 migrator 与启动兼容性检查收敛，避免身份数据继续依赖 Xorm 隐式同步。W02 在 W04 数据库契约稳定后进入实现。
 
 ## 9. 进度记录
 
+### 2026-09-03：W04 设计完成并进入开发
+
+- 分支：`codex/w04-versioned-migrations`。
+- 状态：W04 从 `未开始` 经 `设计中` 进入 `开发中`；[ADR-0001](../architecture/decisions/0001-versioned-database-migrations.md) 已接受，生产代码尚未完成。
+- 顺序调整依据：W02 将新增身份、会话和只增审计事件等持久化结构；先完成 W04 可以让这些新表从第一天就进入版本化 migration，避免新增隐式 DDL 后再迁移。
+- 审计结论：当前 `serve` 会执行 Xorm `Sync2`、显式 DDL 和 migration；旧 ledger 只有 `version/applied_at`；根目录 `init.sql` 已遗漏 `integration_settings`，且 `task_record.env` 等结构与真实数据库漂移，不能继续作为 schema 真相源。
+- 设计结论：使用独立 migrator、专用连接持有数据库级锁、checksum/dirty/兼容区间和 schema manifest；运行时只做只读校验，未知状态一律 fail-closed，不提供 `down` 或 `force clean`。
+- 基线证据：已用 `main@e2cfd2a` 在隔离的 MySQL 8.4 Compose 空卷中成功启动并导出真实结构，确认 14 张业务表、三条旧 ledger 记录及 Demo 数据；临时容器、网络和卷已删除。该结构将固化为上一版升级测试 fixture。
+- 实现计划：依次完成 CLI/配置解耦、迁移 runner 与旧 ledger 收养、epoch 4 收口与 manifest、运行时去 DDL、Compose 双账号和 MySQL 8.4 验收；所有阶段证据持续回填本节。
+- 关联 PR：待创建。
+
 ### 2026-09-03：W01 PR 首轮 CI 修复
 
-- 状态：[PR #6](https://github.com/go-ree/ares/pull/6) 的六项自动化检查已通过；W01 仍受三类仓库管理条件阻塞。
+- 状态：[PR #6](https://github.com/go-ree/ares/pull/6) 已合并且六项自动化检查通过；W01 仍受三类仓库管理条件阻塞。
 - 首轮结果：工作流语法、后端测试与静态检查、关键包竞态、Go 漏洞和前端质量均通过；供应链检查在后端 Trivy 扫描步骤失败。
 - 根因：Trivy Action 的 SARIF 模式默认移除 `severity` 过滤，导致 `UNKNOWN` 且调用不可达的模块公告 `GO-2026-5932` 也触发退出码 1，与文档约定的 HIGH/CRITICAL 镜像门禁不一致；镜像本身未检出 HIGH/CRITICAL。
 - 修复：后端和前端两次 Trivy 扫描均显式设置 `limit-severities-for-sarif: true`，使 SARIF 内容、退出码与既定严重级别保持一致；没有新增忽略规则、豁免或降低门禁级别。
@@ -442,7 +454,7 @@ W01 的仓库内实现、本地验收和 [PR #6](https://github.com/go-ree/ares/
 ### 2026-09-03：W01 实现收口
 
 - 分支：`codex/open-source-quality-gates`
-- 状态：仓库内实现已完成，[PR #6](https://github.com/go-ree/ares/pull/6) 已创建并等待自动化检查；三类仓库管理条件仍阻塞 W01。
+- 状态：仓库内实现已完成，[PR #6](https://github.com/go-ree/ares/pull/6) 后续已通过自动化检查并合并；三类仓库管理条件仍阻塞 W01。
 - 本轮范围：开源协作文件、自动化质量门禁、Go/前端依赖治理、Makefile 清理、依赖更新、SBOM 与镜像扫描。
 - 已完成：中文协作模板与治理规则、固定版本 Actions、Dependabot 六类生态、统一 Makefile 门禁及工具版本一致性检查、公开仓库 Go module path、Go/前端漏洞治理、三份 SBOM 和双镜像扫描。
 - 验收证据：`make frontend-install && make verify`、双镜像 `docker compose build --pull ares web` 均通过；隔离 Compose 实例的 MySQL、API、Web 三项健康检查通过，管理端和 Swagger 均返回 HTTP 200，验证后已连同临时数据卷停止；完整 npm audit 为 0；govulncheck 可达漏洞为 0；前端 lockfile SBOM 识别 88 个 npm 包；Trivy `v0.74.0` 基于 2026-09-03 数据库复扫两个镜像均为 0 个 HIGH/CRITICAL。
