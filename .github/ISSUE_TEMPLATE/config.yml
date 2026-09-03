@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞报告说明
+    url: https://github.com/go-ree/ares/security/policy
+    about: 查看私密报告渠道的当前状态；请勿公开披露漏洞细节。

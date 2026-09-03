@@ -24,11 +24,14 @@ npm run dev
 ## 3. 提交前验证
 
 ```bash
+npm run eslint:check
+npm run prettier:check
 npm run type-check
 npm run build
+npm audit --audit-level=high
 ```
 
-`npm run lint` 会执行带自动修复的格式化与 ESLint；准备提交时应检查 diff，避免格式化无关文件。当前仓库没有有效的前端单元测试套件，涉及交互的改动还需在 Compose 页面中人工验收。
+也可以在仓库根目录运行 `make frontend-check frontend-audit`。`npm run lint` 会执行带自动修复的格式化与 ESLint；准备提交时应检查 diff，避免格式化无关文件。当前仓库没有有效的前端单元测试套件，涉及交互的改动还需在 Compose 页面中人工验收。
 
 ## 4. 发布界面约束
 

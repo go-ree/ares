@@ -1,0 +1,27 @@
+name: 私密联系渠道请求
+description: 仅提醒维护者建立私密联系，不得填写漏洞或行为事件细节
+title: "[Private contact request] 请建立私密联系渠道"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        当前仓库尚未启用正式私密报告入口。此 Issue 是公开的，只能用于提醒维护者建立渠道。
+        请勿填写漏洞类型、受影响位置、复现步骤、人员身份、凭据或其他敏感信息。
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: 联系类别
+      options:
+        - 安全漏洞报告
+        - 行为准则事件
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: 公开信息确认
+      options:
+        - label: 我确认此 Issue 不包含漏洞、事件、身份或联系方式等敏感细节。
+          required: true

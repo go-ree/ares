@@ -1,6 +1,6 @@
 # Ares
 
-Ares 是一个包含 Go 发布编排 API 与 ChaosCanvas Vue 管理端的开源 CI/CD 控制台。Ares 以应用及其环境配置为核心，通过可插拔步骤组合发布流程；Jenkins 和 Kubernetes 都是可选集成。
+Ares 是一个包含 Go 发布编排 API 与 ChaosCanvas Vue 管理端、正在推进开源化的 CI/CD 控制台。Ares 以应用及其环境配置为核心，通过可插拔步骤组合发布流程；Jenkins 和 Kubernetes 都是可选集成。
 
 ## Docker Compose 快速启动
 
@@ -43,9 +43,8 @@ docker compose down -v
 ## 本地验证
 
 ```bash
-go test ./...
-npm --prefix frontend ci
-npm --prefix frontend run type-check
-npm --prefix frontend run build:prod
-docker compose config --quiet
+make frontend-install
+make verify
 ```
+
+质量门禁、镜像扫描和固定工具版本见[质量门禁与依赖治理](docs/development/quality-gates.md)。参与开发前请阅读[贡献指南](CONTRIBUTING.md)、[行为准则](CODE_OF_CONDUCT.md)和[安全策略](SECURITY.md)。开源许可证尚待维护者确认；在 `LICENSE` 合并前，外部代码贡献的授权方式需要逐项确认。

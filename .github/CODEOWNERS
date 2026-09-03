@@ -1,0 +1,9 @@
+# 默认评审责任人
+* @bearqy
+
+# 安全边界、自动化和数据库迁移需要维护者评审
+/.github/ @bearqy
+/internal/db/ @bearqy
+/internal/integration/ @bearqy
+/internal/security/ @bearqy
+/internal/workflow/ @bearqy

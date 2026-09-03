@@ -1,212 +1,194 @@
-# 编译新版本时只需修改<VERSION>的变量值即可（格式：x.x.x）
-#
-# 常用命令：
-#
-#	make all  --->  同时编译linux、mac、windows三个环境的tar包
-#
-#	make docker --->  编译docker镜像
-#
-#	make docker_push
-#
-#	make package_push
-#
-#	make swagger
-#
+SHELL := /bin/sh
+.DEFAULT_GOAL := help
 
+APP_NAME ?= ares
+VERSION ?= dev
+IMAGE_REPOSITORY ?= ghcr.io/go-ree/ares
+IMAGE_TAG ?= $(VERSION)
+IMAGE := $(IMAGE_REPOSITORY):$(IMAGE_TAG)
+BUILD_DIR ?= build/$(VERSION)
 
+GO ?= go
+NPM ?= npm
+DOCKER ?= docker
+SYFT ?= syft
+TRIVY ?= trivy
 
+SWAG_VERSION ?= v1.16.4
+GOVULNCHECK_VERSION ?= v1.7.0
+ACTIONLINT_VERSION ?= v1.7.12
+GO_VERSION ?= 1.26.8
+NODE_VERSION ?= 24.20.0
+NPM_VERSION ?= 11.19.1
+SYFT_VERSION ?= v1.51.1
+TRIVY_VERSION ?= v0.74.0
+GO_PACKAGES ?= . ./internal/...
+RACE_PACKAGES ?= ./internal/workflow ./internal/executor/... ./internal/integration ./internal/jenkins ./internal/k8s ./internal/publish ./internal/environment ./internal/api/...
 
-######################################
-# 全局变量
-######################################
-#要编译的命令名称
-NAME := gomessage
-#版本
-VERSION := 2.3.18
-# Swagger 生成器版本（与 go.mod 保持一致）
-SWAG_VERSION := v1.16.4
-#编译输出目录
-OUTPUT_PATH := ./build/${VERSION}
-#是否开启cgo（0代表不开启，1代表开启）
-CGO_STATUS := 1
-#当前时间
-DATE_NOW := $(shell date "+%Y%m%d_%H%M%S")
+.PHONY: help all clean fmt-check mod-check test vet race vuln toolchain-check workflow-check backend-check frontend-install frontend-check frontend-audit swagger swagger-check compose-config build build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-windows-amd64 docker docker-build syft-version-check trivy-version-check sbom image-scan verify
 
+help: ## 显示可用命令
+	@awk 'BEGIN {FS = ":.*## "; printf "Ares 开发命令\n\n"} /^[a-zA-Z0-9_.-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-######################################
-# 指定缺省状态下执行哪些Target
-######################################
-all: clean start swagger build_mac_arm64 build_windows build_linux end
+all: verify build ## 执行完整检查并构建当前平台二进制
 
+clean: ## 删除仓库 build 目录下的构建产物
+	@repo_root="$$(git rev-parse --show-toplevel)"; \
+	current_dir="$$(pwd -P)"; \
+	if [ "$$current_dir" != "$$repo_root" ]; then \
+		echo "请在仓库根目录执行 make clean"; \
+		exit 1; \
+	fi; \
+	rm -rf -- "$$repo_root/build"
 
-######################################
-# Target：清理开发目录
-######################################
-.PHONY: clean
-clean:
-	mkdir -p "${OUTPUT_PATH}"
-	echo "编译输出目录为：${OUTPUT_PATH}"
-	rm -rf ./tmp
-	rm -rf ./build/*
-	rm -rf ./*.log
-	rm -rf ./*.db
-	rm -rf ./*.tar.gz
-	rm -rf ./config/*.db
-	rm -rf ./*.tgz
+fmt-check: ## 检查 Go 源码格式
+	@unformatted_files="$$(git ls-files -z '*.go' | xargs -0 gofmt -l --)"; \
+	if [ -n "$$unformatted_files" ]; then \
+		echo "以下 Go 文件需要执行 gofmt："; \
+		echo "$$unformatted_files"; \
+		exit 1; \
+	fi
 
+mod-check: ## 校验 Go 模块内容及 go.mod/go.sum 一致性
+	$(GO) mod verify
+	$(GO) mod tidy -diff
 
-######################################
-# Target：处理依赖
-######################################
-.PHONY: start
-start:
-	go mod tidy
+test: ## 运行 Go 全量测试
+	$(GO) test -count=1 $(GO_PACKAGES)
 
+vet: ## 运行 Go 静态检查
+	$(GO) vet $(GO_PACKAGES)
 
-######################################
-# Target：生成swagger文件
-######################################
-.PHONY: swagger
-swagger:
-	go run github.com/swaggo/swag/cmd/swag@$(SWAG_VERSION) init -g main.go -o internal/swagger
+race: ## 对并发和运行时关键包执行 Race Detector
+	$(GO) test -race -count=1 $(RACE_PACKAGES)
 
+vuln: ## 扫描 Go 代码中的可达漏洞
+	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) $(GO_PACKAGES)
 
-######################################
-# Target：编译为Mac的x86_64发行版（本地调试使用）
-######################################
-.PHONY: build_mac
-build_mac: packageName:=${NAME}-${VERSION}-mac-amd64
-build_mac:
-	mkdir -p "${OUTPUT_PATH}/${packageName}"
-	GOARCH=amd64 \
-	GOOS=darwin \
-	CGO_ENABLED=${CGO_STATUS} \
-	go build -ldflags='-s -w' -o "${OUTPUT_PATH}/${packageName}/${NAME}" ./main.go
-	cp -rf ./config "${OUTPUT_PATH}/${packageName}/"
-	tar -zcvf "${OUTPUT_PATH}/${packageName}.tar.gz" -C ${OUTPUT_PATH} ${packageName}
-	ls -alh "${OUTPUT_PATH}/${packageName}/"
+toolchain-check: ## 检查仓库各处固定工具版本保持一致
+	@set -eu; \
+	check_contains() { \
+		file="$$1"; expected="$$2"; \
+		if ! grep -Fq -- "$$expected" "$$file"; then \
+			echo "版本不一致：$$file 缺少 $$expected"; \
+			exit 1; \
+		fi; \
+	}; \
+	check_contains Makefile 'GO_VERSION ?= $(GO_VERSION)'; \
+	check_contains go.mod 'toolchain go$(GO_VERSION)'; \
+	check_contains Dockerfile 'FROM golang:$(GO_VERSION)-'; \
+	check_contains .github/workflows/quality-gates.yml 'GO_VERSION: "$(GO_VERSION)"'; \
+	check_contains CONTRIBUTING.md 'Go `$(GO_VERSION)`'; \
+	check_contains Makefile 'NODE_VERSION ?= $(NODE_VERSION)'; \
+	check_contains frontend/Dockerfile 'FROM node:$(NODE_VERSION)-'; \
+	check_contains frontend/package.json '"node": "$(NODE_VERSION)"'; \
+	check_contains .github/workflows/quality-gates.yml 'NODE_VERSION: "$(NODE_VERSION)"'; \
+	check_contains CONTRIBUTING.md 'Node.js `$(NODE_VERSION)`'; \
+	check_contains Makefile 'NPM_VERSION ?= $(NPM_VERSION)'; \
+	check_contains frontend/Dockerfile 'npm@$(NPM_VERSION)'; \
+	check_contains frontend/package.json '"packageManager": "npm@$(NPM_VERSION)"'; \
+	check_contains frontend/package.json '"npm": "$(NPM_VERSION)"'; \
+	check_contains .github/workflows/quality-gates.yml 'NPM_VERSION: "$(NPM_VERSION)"'; \
+	check_contains CONTRIBUTING.md 'npm `$(NPM_VERSION)`'; \
+	check_contains Makefile 'SWAG_VERSION ?= $(SWAG_VERSION)'; \
+	check_contains docs/development/quality-gates.md 'Swag `$(SWAG_VERSION)`'; \
+	check_contains Makefile 'GOVULNCHECK_VERSION ?= $(GOVULNCHECK_VERSION)'; \
+	check_contains .github/workflows/quality-gates.yml 'GOVULNCHECK_VERSION: $(GOVULNCHECK_VERSION)'; \
+	check_contains docs/development/quality-gates.md 'govulncheck `$(GOVULNCHECK_VERSION)`'; \
+	check_contains Makefile 'ACTIONLINT_VERSION ?= $(ACTIONLINT_VERSION)'; \
+	check_contains .github/workflows/quality-gates.yml 'ACTIONLINT_VERSION: $(ACTIONLINT_VERSION)'; \
+	check_contains docs/development/quality-gates.md 'actionlint `$(ACTIONLINT_VERSION)`'; \
+	check_contains Makefile 'SYFT_VERSION ?= $(SYFT_VERSION)'; \
+	check_contains .github/workflows/container-security.yml 'SYFT_VERSION: $(SYFT_VERSION)'; \
+	check_contains docs/development/quality-gates.md 'Syft `$(SYFT_VERSION)`'; \
+	check_contains Makefile 'TRIVY_VERSION ?= $(TRIVY_VERSION)'; \
+	check_contains .github/workflows/container-security.yml 'TRIVY_VERSION: $(TRIVY_VERSION)'; \
+	check_contains docs/development/quality-gates.md 'Trivy `$(TRIVY_VERSION)`'
 
+workflow-check: toolchain-check ## 检查固定工具版本与 GitHub Actions 工作流
+	$(GO) run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION)
 
-######################################
-# Target：编译为Mac的arm发行版（本地调试使用）
-######################################
-.PHONY: build_mac_arm64
-build_mac_arm64: packageName:=${NAME}-${VERSION}-mac-arm64
-build_mac_arm64:
-	mkdir -p "${OUTPUT_PATH}/${packageName}"
-	GOARCH=arm64 \
-	GOOS=darwin \
-	CGO_ENABLED=${CGO_STATUS} \
-	go build -ldflags='-s -w' -o "${OUTPUT_PATH}/${packageName}/${NAME}" ./main.go
-	cp -rf ./config "${OUTPUT_PATH}/${packageName}/"
-	tar -zcvf "${OUTPUT_PATH}/${packageName}.tar.gz" -C ${OUTPUT_PATH} ${packageName}
-	ls -alh "${OUTPUT_PATH}/${packageName}/"
+backend-check: fmt-check mod-check test vet race vuln swagger-check ## 执行后端质量门禁
 
+frontend-install: ## 按 lockfile 安装前端依赖
+	$(NPM) --prefix frontend ci
 
-######################################
-# Target：编译为Windows发行版
-######################################
-.PHONY: build_windows
-build_windows: packageName:=${NAME}-${VERSION}-windows-amd64
-build_windows:
-	mkdir -p "${OUTPUT_PATH}/${packageName}"
-	GOARCH=amd64 \
-	GOOS=windows \
-	CGO_CFLAGS="-g -O2 -Wno-return-local-addr" \
-	CC=x86_64-w64-mingw32-gcc \
-	CXX=x86_64-w64-mingw32-g++ \
-	CGO_ENABLED=${CGO_STATUS} \
-	go build -ldflags='-s -w -extldflags "-static"' -o "${OUTPUT_PATH}/${packageName}/${NAME}.exe" ./main.go
-	cp -rf ./config "${OUTPUT_PATH}/${packageName}/"
-	tar -zcvf "${OUTPUT_PATH}/${packageName}.tar.gz" -C ${OUTPUT_PATH} ${packageName}
-	ls -alh "${OUTPUT_PATH}/${packageName}/"
+frontend-check: ## 执行前端格式、Lint、类型与构建检查
+	$(NPM) --prefix frontend run eslint:check
+	$(NPM) --prefix frontend run prettier:check
+	$(NPM) --prefix frontend run type-check
+	$(NPM) --prefix frontend run build
 
+frontend-audit: ## 扫描全部前端依赖的 high/critical 漏洞
+	$(NPM) --prefix frontend audit --audit-level=high
 
-######################################
-# Target：编译为Linux发行版（实际封装到容器里的内容）
-######################################
-.PHONY: build_linux
-build_linux: packageName:=${NAME}-${VERSION}-linux-amd64
-build_linux:
-	mkdir -p "${OUTPUT_PATH}/${packageName}"
-	GOARCH=amd64 \
-	GOOS=linux \
-	CGO_LDFLAGS="-static" \
-	CC=x86_64-linux-musl-gcc \
-	CXX=x86_64-linux-musl-g++ \
-	CGO_ENABLED=${CGO_STATUS} \
-	go build -ldflags='-s -w -extldflags "-static"' -o "${OUTPUT_PATH}/${packageName}/${NAME}" ./main.go
-	cp -rf ./config "${OUTPUT_PATH}/${packageName}/"
-	tar -zcvf "${OUTPUT_PATH}/${packageName}.tar.gz" -C ${OUTPUT_PATH} ${packageName}
-	ls -alh "${OUTPUT_PATH}/${packageName}/"
+swagger: ## 重新生成 Swagger 文件
+	$(GO) run github.com/swaggo/swag/cmd/swag@$(SWAG_VERSION) init -g main.go -o internal/swagger
 
+swagger-check: swagger ## 校验 Swagger 已提交且可重复生成
+	git diff --exit-code -- internal/swagger
+	@untracked_files="$$(git ls-files --others --exclude-standard -- internal/swagger)"; \
+	if [ -n "$$untracked_files" ]; then \
+		echo "以下 Swagger 生成文件尚未纳入版本控制："; \
+		echo "$$untracked_files"; \
+		exit 1; \
+	fi
 
-######################################
-# Target：结束之前做些什么
-######################################
-.PHONY: end
-end:
-	ls -alh ${OUTPUT_PATH}
+compose-config: ## 校验 Docker Compose 配置
+	$(DOCKER) compose config --quiet
 
+build: ## 构建当前平台二进制
+	mkdir -p "$(BUILD_DIR)"
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o "$(BUILD_DIR)/$(APP_NAME)" ./main.go
 
-######################################
-# Target：编译docker镜像
-######################################
-.PHONY: docker
-docker: DOCKER_SCAN_SUGGEST := False
-docker: packageName := ${NAME}-${VERSION}-linux-amd64
-docker:
-	@echo "\n---------版本latest---------\n"
-	@docker build -t gomessage/gomessage:latest -f ./docker/Dockerfile  "${OUTPUT_PATH}/${packageName}"
-	@echo "\n---------开始制作镜像，版本${VERSION}---------\n"
-	@docker build -t gomessage/gomessage:${VERSION} -f ./docker/Dockerfile  "${OUTPUT_PATH}/${packageName}"
-	@echo "\n---------镜像制作完成，版本${VERSION}---------\n"
+build-linux-amd64: ## 构建 Linux amd64 二进制
+	mkdir -p "$(BUILD_DIR)/linux-amd64"
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o "$(BUILD_DIR)/linux-amd64/$(APP_NAME)" ./main.go
 
+build-linux-arm64: ## 构建 Linux arm64 二进制
+	mkdir -p "$(BUILD_DIR)/linux-arm64"
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o "$(BUILD_DIR)/linux-arm64/$(APP_NAME)" ./main.go
 
-######################################
-# Target：推送docker镜像
-######################################
-.PHONY: docker_push
-docker_push: DOCKER_SCAN_SUGGEST := False
-docker_push: packageName := ${NAME}-${VERSION}-linux-amd64
-docker_push:
-	#docker login --username=$(DOCKER_HUB_USERNAME)
-	#docker buildx rm mybuilder
-	#docker buildx create --name mybuilder --bootstrap --use
-	@echo "\n---------开始制作镜像，版本${VERSION}---------\n"
-	@docker buildx build --platform linux/arm64,linux/amd64 -t gomessage/gomessage:${VERSION} -f ./docker/Dockerfile  "${OUTPUT_PATH}/${packageName}" --push
-	@echo "\n---------版本latest---------\n"
-	@docker buildx build --platform linux/arm64,linux/amd64 -t gomessage/gomessage:latest -f ./docker/Dockerfile  "${OUTPUT_PATH}/${packageName}" --push
-	@echo "\n---------镜像制作完成，版本${VERSION}---------\n"
-	@echo
-	@gsed -i '/version:/c version: ${VERSION}' ./docker/helm/Chart.yaml
-	@gsed -i '/appVersion:/c appVersion: ${VERSION}' ./docker/helm/Chart.yaml
-	helm package ./docker/helm
-	helm coding-push gomessage-${VERSION}.tgz gomessage
-	rm -rf ./*.tgz
-	@echo "\n---------制作Helm Chart完成，版本${VERSION}---------\n"
+build-darwin-amd64: ## 构建 macOS amd64 二进制
+	mkdir -p "$(BUILD_DIR)/darwin-amd64"
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o "$(BUILD_DIR)/darwin-amd64/$(APP_NAME)" ./main.go
 
+build-darwin-arm64: ## 构建 macOS arm64 二进制
+	mkdir -p "$(BUILD_DIR)/darwin-arm64"
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o "$(BUILD_DIR)/darwin-arm64/$(APP_NAME)" ./main.go
 
+build-windows-amd64: ## 构建 Windows amd64 二进制
+	mkdir -p "$(BUILD_DIR)/windows-amd64"
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o "$(BUILD_DIR)/windows-amd64/$(APP_NAME).exe" ./main.go
 
-######################################
-# Target：推送docker镜像
-######################################
-.PHONY: helm_push
-helm_push: DOCKER_SCAN_SUGGEST := False
-helm_push: packageName := ${NAME}-${VERSION}-linux-amd64
-helm_push:
-	@gsed -i '/version:/c version: ${VERSION}' ./docker/helm/Chart.yaml
-	@gsed -i '/appVersion:/c appVersion: ${VERSION}' ./docker/helm/Chart.yaml
-	helm package ./docker/helm
-	helm coding-push gomessage-${VERSION}.tgz gomessage
-	rm -rf ./*.tgz
-	@echo "\n---------制作Helm Chart完成，版本${VERSION}---------\n"
+docker: docker-build ## docker-build 的兼容别名
 
+docker-build: ## 构建 Ares 后端容器镜像
+	$(DOCKER) build --pull --tag "$(IMAGE)" .
 
+syft-version-check: ## 校验本地 Syft 版本
+	@command -v "$(SYFT)" >/dev/null 2>&1 || { echo "未安装 $(SYFT)"; exit 1; }
+	@actual_version="$$("$(SYFT)" version 2>/dev/null | awk '$$1 == "Version:" { print $$2; exit }')"; \
+	expected_version="$(patsubst v%,%,$(SYFT_VERSION))"; \
+	if [ "$$actual_version" != "$$expected_version" ]; then \
+		echo "Syft 版本不一致：期望 $$expected_version，实际 $${actual_version:-未知}"; \
+		exit 1; \
+	fi
 
-######################################
-# Target：推送package到github
-######################################
-.PHONY: package_push
-package_push:
-	@go run uploads.go --version=${VERSION}
+trivy-version-check: ## 校验本地 Trivy 版本
+	@command -v "$(TRIVY)" >/dev/null 2>&1 || { echo "未安装 $(TRIVY)"; exit 1; }
+	@actual_version="$$("$(TRIVY)" --version 2>/dev/null | awk '$$1 == "Version:" { print $$2; exit }')"; \
+	expected_version="$(patsubst v%,%,$(TRIVY_VERSION))"; \
+	if [ "$$actual_version" != "$$expected_version" ]; then \
+		echo "Trivy 版本不一致：期望 $$expected_version，实际 $${actual_version:-未知}"; \
+		exit 1; \
+	fi
+
+sbom: syft-version-check ## 为已构建镜像生成 CycloneDX SBOM（需要 syft）
+	mkdir -p "$(BUILD_DIR)"
+	$(SYFT) "$(IMAGE)" -o "cyclonedx-json=$(BUILD_DIR)/sbom.cdx.json"
+
+image-scan: trivy-version-check ## 扫描镜像中的 high/critical 漏洞（需要 trivy）
+	$(TRIVY) image --exit-code 1 --severity HIGH,CRITICAL "$(IMAGE)"
+
+verify: workflow-check backend-check frontend-check frontend-audit compose-config ## 执行合并前完整质量门禁
