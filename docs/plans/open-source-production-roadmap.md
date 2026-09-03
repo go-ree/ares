@@ -75,7 +75,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 | 工作包 | 主题                         | 依赖               | 状态     | 关联 PR                                        | 主要交付结果                                    |
 | ------ | ---------------------------- | ------------------ | -------- | ---------------------------------------------- | ----------------------------------------------- |
 | W00    | 后续路线与进度机制           | PR #4              | `已完成` | [PR #5](https://github.com/go-ree/ares/pull/5) | 建立本计划、状态口径和验收规则                  |
-| W01    | 开源工程与质量门禁           | W00                | `阻塞`   | 待创建                                         | 开源治理文件、Required Checks、依赖与供应链基线 |
+| W01    | 开源工程与质量门禁           | W00                | `阻塞`   | [PR #6](https://github.com/go-ree/ares/pull/6) | 开源治理文件、Required Checks、依赖与供应链基线 |
 | W02    | 认证、RBAC 与审计            | W01                | `未开始` | 待创建                                         | 可信身份、服务端授权、真实发布人和审计记录      |
 | W03    | 通用步骤日志                 | W02                | `未开始` | 待创建                                         | 通过 `task_id + step_key` 读取任意执行器日志    |
 | W04    | 数据库迁移机制收敛           | W01                | `未开始` | 待创建                                         | 存量结构只由版本化 migration 改变               |
@@ -426,18 +426,18 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 
 ## 8. 下一步
 
-W01 的仓库内实现与本地验收已经收口，下一步是创建中文 PR 并观察六项检查。W01 当前被许可证、安全漏洞与行为事件两类私密报告渠道、`main` 保护规则三类仓库管理条件阻塞，全部完成并验证前不能标记为 `待验收` 或 `已完成`。W01 进入稳定状态后，W02 与 W04 可以分别开始设计。
+W01 的仓库内实现与本地验收已经收口，[PR #6](https://github.com/go-ree/ares/pull/6) 已创建，下一步是观察六项检查并处理评审反馈。W01 当前被许可证、安全漏洞与行为事件两类私密报告渠道、`main` 保护规则三类仓库管理条件阻塞，全部完成并验证前不能标记为 `待验收` 或 `已完成`。W01 进入稳定状态后，W02 与 W04 可以分别开始设计。
 
 ## 9. 进度记录
 
 ### 2026-09-03：W01 实现收口
 
 - 分支：`codex/open-source-quality-gates`
-- 状态：仓库内实现已完成，等待中文 PR 与三类仓库管理条件。
+- 状态：仓库内实现已完成，[PR #6](https://github.com/go-ree/ares/pull/6) 已创建并等待自动化检查；三类仓库管理条件仍阻塞 W01。
 - 本轮范围：开源协作文件、自动化质量门禁、Go/前端依赖治理、Makefile 清理、依赖更新、SBOM 与镜像扫描。
 - 已完成：中文协作模板与治理规则、固定版本 Actions、Dependabot 六类生态、统一 Makefile 门禁及工具版本一致性检查、公开仓库 Go module path、Go/前端漏洞治理、三份 SBOM 和双镜像扫描。
 - 验收证据：`make frontend-install && make verify`、双镜像 `docker compose build --pull ares web` 均通过；隔离 Compose 实例的 MySQL、API、Web 三项健康检查通过，管理端和 Swagger 均返回 HTTP 200，验证后已连同临时数据卷停止；完整 npm audit 为 0；govulncheck 可达漏洞为 0；前端 lockfile SBOM 识别 88 个 npm 包；Trivy `v0.74.0` 基于 2026-09-03 数据库复扫两个镜像均为 0 个 HIGH/CRITICAL。
 - 模块公告：govulncheck 仍报告 `GO-2026-5932` 模块级公告；项目没有导入 `golang.org/x/crypto/openpgp`、调用不可达，且公告没有可升级修复版本，因此不作为漏洞豁免。
 - 已知债务：ESLint 8 已停止维护，迁移 ESLint 10 需要同步改造 flat config；前端 Element Plus chunk 约 1.05 MB，后续按性能工作处理；基础镜像尚未固定 manifest digest，`apk upgrade` 与前端构建时间会使镜像摘要随构建时点变化，正式可复现发行在 W10 收敛。这些债务当前均不降低 W01 的漏洞门禁。
 - 阻塞项：D-001 许可证待维护者确认；GitHub Private vulnerability reporting 未启用且无公开安全邮箱；尚无独立的行为事件私密报告渠道；`main` 尚无 Ruleset/branch protection，Required Checks 尚未强制。
-- 关联 PR：待创建。
+- 关联 PR：[PR #6](https://github.com/go-ree/ares/pull/6)。
