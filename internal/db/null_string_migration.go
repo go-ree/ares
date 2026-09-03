@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"ares/internal/tool"
+	"github.com/go-ree/ares/internal/tool"
 )
 
 const (

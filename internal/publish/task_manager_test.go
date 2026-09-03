@@ -3,7 +3,7 @@ package publish
 import (
 	"testing"
 
-	"ares/internal/entity"
+	"github.com/go-ree/ares/internal/entity"
 )
 
 func TestValidateLegacyTaskAddress(t *testing.T) {

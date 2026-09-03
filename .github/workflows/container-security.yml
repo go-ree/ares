@@ -1,0 +1,122 @@
+name: 镜像与供应链
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "17 1 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  SYFT_VERSION: v1.51.1
+  TRIVY_VERSION: v0.74.0
+
+jobs:
+  images:
+    name: Compose、镜像与供应链检查
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: 校验 Compose
+        run: make compose-config
+
+      - name: 构建 Compose 镜像
+        id: build-images
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: docker compose build --pull ares web
+
+      - name: 创建报告目录
+        if: ${{ always() && steps.build-images.outcome == 'success' }}
+        run: mkdir -p artifacts
+
+      - name: 生成后端镜像 SBOM
+        if: ${{ always() && steps.build-images.outcome == 'success' }}
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        with:
+          image: ares-api:local
+          format: spdx-json
+          output-file: artifacts/ares-api-image.spdx.json
+          syft-version: ${{ env.SYFT_VERSION }}
+          dependency-snapshot: false
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: 生成前端运行时镜像 SBOM
+        if: ${{ always() && steps.build-images.outcome == 'success' }}
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        with:
+          image: ares-web:local
+          format: spdx-json
+          output-file: artifacts/ares-web-image.spdx.json
+          syft-version: ${{ env.SYFT_VERSION }}
+          dependency-snapshot: false
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: 生成前端应用依赖 SBOM
+        if: ${{ always() && steps.build-images.outcome == 'success' }}
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        with:
+          path: ./frontend
+          format: spdx-json
+          output-file: artifacts/ares-web-application.spdx.json
+          syft-version: ${{ env.SYFT_VERSION }}
+          dependency-snapshot: false
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: 扫描后端镜像漏洞
+        if: ${{ always() && steps.build-images.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ares-api:local
+          version: ${{ env.TRIVY_VERSION }}
+          format: sarif
+          output: artifacts/ares-api-image.trivy.sarif
+          exit-code: "1"
+          ignore-unfixed: false
+          scanners: vuln
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
+
+      - name: 扫描前端镜像漏洞
+        if: ${{ always() && steps.build-images.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ares-web:local
+          version: ${{ env.TRIVY_VERSION }}
+          format: sarif
+          output: artifacts/ares-web-image.trivy.sarif
+          exit-code: "1"
+          ignore-unfixed: false
+          scanners: vuln
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
+
+      - name: 上传 SBOM 与漏洞报告
+        if: ${{ always() && steps.build-images.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14

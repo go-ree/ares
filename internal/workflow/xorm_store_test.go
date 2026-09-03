@@ -1,8 +1,8 @@
 package workflow
 
 import (
-	"ares/internal/entity"
 	"encoding/json"
+	"github.com/go-ree/ares/internal/entity"
 	"strings"
 	"testing"
 )

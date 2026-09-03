@@ -11,12 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"ares/internal/db"
-	"ares/internal/entity"
-	environmentcatalog "ares/internal/environment"
-	"ares/internal/jenkins"
-	"ares/internal/k8s"
-	"ares/internal/workflow"
+	"github.com/go-ree/ares/internal/db"
+	"github.com/go-ree/ares/internal/entity"
+	environmentcatalog "github.com/go-ree/ares/internal/environment"
+	"github.com/go-ree/ares/internal/jenkins"
+	"github.com/go-ree/ares/internal/k8s"
+	"github.com/go-ree/ares/internal/workflow"
 )
 
 const (

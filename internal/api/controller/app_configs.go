@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"ares/internal/api/util"
-	"ares/internal/app"
-	"ares/internal/environment"
+	"github.com/go-ree/ares/internal/api/util"
+	"github.com/go-ree/ares/internal/app"
+	"github.com/go-ree/ares/internal/environment"
 
 	"github.com/gin-gonic/gin"
 )

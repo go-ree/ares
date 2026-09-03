@@ -1,8 +1,8 @@
 package publish
 
 import (
-	"ares/internal/security"
 	"fmt"
+	"github.com/go-ree/ares/internal/security"
 	"strings"
 	"time"
 )

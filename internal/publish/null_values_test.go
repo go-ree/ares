@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"ares/internal/entity"
+	"github.com/go-ree/ares/internal/entity"
 )
 
 func TestNormalizeLegacyPipelineParameters(t *testing.T) {

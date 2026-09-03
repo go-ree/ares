@@ -5,9 +5,9 @@ import (
 	"errors"
 	"net/http"
 
-	"ares/internal/api/util"
-	"ares/internal/config"
-	"ares/internal/integration"
+	"github.com/go-ree/ares/internal/api/util"
+	"github.com/go-ree/ares/internal/config"
+	"github.com/go-ree/ares/internal/integration"
 
 	"github.com/gin-gonic/gin"
 )

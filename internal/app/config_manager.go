@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"strings"
 
-	"ares/internal/db"
-	"ares/internal/entity"
-	"ares/internal/environment"
-	"ares/internal/tool"
+	"github.com/go-ree/ares/internal/db"
+	"github.com/go-ree/ares/internal/entity"
+	"github.com/go-ree/ares/internal/environment"
+	"github.com/go-ree/ares/internal/tool"
 
 	"github.com/go-sql-driver/mysql"
 )

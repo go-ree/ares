@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"ares/internal/app"
-	"ares/internal/environment"
+	"github.com/go-ree/ares/internal/app"
+	"github.com/go-ree/ares/internal/environment"
 
 	"github.com/gin-gonic/gin"
 )

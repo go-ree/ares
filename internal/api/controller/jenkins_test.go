@@ -3,7 +3,7 @@ package controller
 import (
 	"testing"
 
-	"ares/internal/entity"
+	"github.com/go-ree/ares/internal/entity"
 )
 
 func TestTaskBuildLogReferenceUsesPersistedTaskIdentity(t *testing.T) {

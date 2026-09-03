@@ -3,9 +3,9 @@ package api
 import (
 	"net/http"
 
-	"ares/internal/api/controller"
-	"ares/internal/release"
-	_ "ares/internal/swagger"
+	"github.com/go-ree/ares/internal/api/controller"
+	"github.com/go-ree/ares/internal/release"
+	_ "github.com/go-ree/ares/internal/swagger"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"     // swagger embed files

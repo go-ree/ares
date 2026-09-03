@@ -1,8 +1,8 @@
 package api
 
 import (
-	"ares/internal/jenkins"
-	"ares/internal/k8s"
+	"github.com/go-ree/ares/internal/jenkins"
+	"github.com/go-ree/ares/internal/k8s"
 	"net/http"
 	"net/http/httptest"
 	"strings"

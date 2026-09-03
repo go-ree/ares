@@ -1,6 +1,6 @@
 package publish
 
-import "ares/internal/entity"
+import "github.com/go-ree/ares/internal/entity"
 
 // groupDomainsListFromRows 将 app_config_domains(host/path) 聚合为 [{host,paths[]},...]（同 host 合并 paths，去重且保序）。
 func groupDomainsListFromRows(rows []entity.AppConfigDomain) []DomainsListItem {

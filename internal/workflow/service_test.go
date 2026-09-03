@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"ares/internal/entity"
+	"github.com/go-ree/ares/internal/entity"
 )
 
 type memoryDefinitionStore struct {

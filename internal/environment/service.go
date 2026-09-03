@@ -1,11 +1,11 @@
 package environment
 
 import (
-	"ares/internal/db"
-	"ares/internal/entity"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/go-ree/ares/internal/db"
+	"github.com/go-ree/ares/internal/entity"
 	"regexp"
 	"strings"
 )

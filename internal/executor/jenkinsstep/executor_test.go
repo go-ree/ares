@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"ares/internal/jenkins"
-	"ares/internal/workflow"
+	"github.com/go-ree/ares/internal/jenkins"
+	"github.com/go-ree/ares/internal/workflow"
 )
 
 type fakeJenkinsClient struct {

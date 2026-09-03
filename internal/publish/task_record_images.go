@@ -1,8 +1,8 @@
 package publish
 
 import (
-	"ares/internal/db"
-	"ares/internal/entity"
+	"github.com/go-ree/ares/internal/db"
+	"github.com/go-ree/ares/internal/entity"
 )
 
 // fetchTaskRecordImagesByTaskIDs 批量查询任务图片并按 task_id 聚合

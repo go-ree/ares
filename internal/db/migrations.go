@@ -1,10 +1,10 @@
 package db
 
 import (
-	"ares/internal/config"
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/go-ree/ares/internal/config"
 	"log/slog"
 	"sync"
 	"time"

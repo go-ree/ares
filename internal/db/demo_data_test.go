@@ -1,7 +1,7 @@
 package db
 
 import (
-	"ares/internal/entity"
+	"github.com/go-ree/ares/internal/entity"
 	"testing"
 )
 

@@ -3,6 +3,7 @@ import vue from '@vitejs/plugin-vue';
 import path from 'path';
 import fs from 'fs';
 import type { Connect } from 'vite';
+import { visualizer } from 'rollup-plugin-visualizer';
 
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
@@ -277,17 +278,15 @@ export default defineConfig(({ command, mode }) => {
 
   const plugins = [vue(), healthCheckPlugin];
 
-  // 构建分析插件 - 只在需要分析时导入
+  // 构建分析插件 - 只在显式请求时启用
   if (shouldAnalyze) {
-    import('rollup-plugin-visualizer').then(({ visualizer }) => {
-      plugins.push(
-        visualizer({
-          filename: 'dist/stats.html',
-          gzipSize: true,
-          brotliSize: true,
-        }) as any
-      );
-    });
+    plugins.push(
+      visualizer({
+        filename: 'dist/stats.html',
+        gzipSize: true,
+        brotliSize: true,
+      }) as any
+    );
   }
 
   return {
@@ -317,11 +316,11 @@ export default defineConfig(({ command, mode }) => {
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '../app/web'),
-        '@components': path.resolve(__dirname, '../app/web/components'),
-        '@assets': path.resolve(__dirname, '../app/web/assets'),
-        '@services': path.resolve(__dirname, '../app/web/services'),
-        '@utils': path.resolve(__dirname, '../app/web/utils'),
+        '@': path.resolve(import.meta.dirname, '../app/web'),
+        '@components': path.resolve(import.meta.dirname, '../app/web/components'),
+        '@assets': path.resolve(import.meta.dirname, '../app/web/assets'),
+        '@services': path.resolve(import.meta.dirname, '../app/web/services'),
+        '@utils': path.resolve(import.meta.dirname, '../app/web/utils'),
       },
     },
     build: {
@@ -337,10 +336,19 @@ export default defineConfig(({ command, mode }) => {
       rollupOptions: {
         output: {
           // 手动分包
-          manualChunks: {
-            vendor: ['vue', 'vue-router', 'pinia'],
-            elementPlus: ['element-plus', '@element-plus/icons-vue'],
-            utils: ['axios'],
+          manualChunks(moduleId) {
+            if (!moduleId.includes('/node_modules/')) {
+              return undefined;
+            }
+            if (['element-plus', '@element-plus/icons-vue'].some(name => moduleId.includes(name))) {
+              return 'elementPlus';
+            }
+            if (['vue', 'vue-router', 'pinia'].some(name => moduleId.includes(name))) {
+              return 'vendor';
+            }
+            if (moduleId.includes('axios')) {
+              return 'utils';
+            }
           },
           // 静态资源命名规则
           chunkFileNames: isProduction ? 'assets/js/[name]-[hash].js' : 'assets/js/[name].js',
