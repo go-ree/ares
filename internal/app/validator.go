@@ -1,9 +1,9 @@
 package app
 
 import (
-	"ares/internal/tool"
 	"errors"
 	"fmt"
+	"github.com/go-ree/ares/internal/tool"
 	"regexp"
 	"strings"
 )

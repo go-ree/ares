@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"ares/internal/entity"
+	"github.com/go-ree/ares/internal/entity"
 
 	"xorm.io/xorm"
 )

@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 
-	"ares/internal/jenkins"
-	"ares/internal/security"
-	"ares/internal/workflow"
+	"github.com/go-ree/ares/internal/jenkins"
+	"github.com/go-ree/ares/internal/security"
+	"github.com/go-ree/ares/internal/workflow"
 )
 
 const Uses = "jenkins.job@v1"

@@ -1,10 +1,10 @@
 package controller
 
 import (
-	"ares/internal/api/util"
-	"ares/internal/app"
 	"errors"
 	"github.com/gin-gonic/gin"
+	"github.com/go-ree/ares/internal/api/util"
+	"github.com/go-ree/ares/internal/app"
 	"log/slog"
 	"strconv"
 )

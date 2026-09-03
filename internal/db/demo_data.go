@@ -1,12 +1,12 @@
 package db
 
 import (
-	"ares/internal/entity"
-	"ares/internal/workflow"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/go-ree/ares/internal/entity"
+	"github.com/go-ree/ares/internal/workflow"
 	"log/slog"
 	"time"
 

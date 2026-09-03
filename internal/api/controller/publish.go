@@ -1,8 +1,8 @@
 package controller
 
 import (
-	"ares/internal/api/util"
-	"ares/internal/publish"
+	"github.com/go-ree/ares/internal/api/util"
+	"github.com/go-ree/ares/internal/publish"
 	"log/slog"
 	"strconv"
 

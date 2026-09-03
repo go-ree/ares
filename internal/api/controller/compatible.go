@@ -1,8 +1,8 @@
 package controller
 
 import (
-	"ares/internal/compatible"
 	"github.com/gin-gonic/gin"
+	"github.com/go-ree/ares/internal/compatible"
 )
 
 type CompatibleController struct {

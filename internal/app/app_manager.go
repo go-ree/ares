@@ -1,12 +1,12 @@
 package app
 
 import (
-	"ares/internal/api/util"
-	"ares/internal/db"
-	"ares/internal/entity"
-	"ares/internal/tool"
 	"context"
 	"fmt"
+	"github.com/go-ree/ares/internal/api/util"
+	"github.com/go-ree/ares/internal/db"
+	"github.com/go-ree/ares/internal/entity"
+	"github.com/go-ree/ares/internal/tool"
 	"log/slog"
 )
 

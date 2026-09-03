@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.26.7-alpine3.23 AS builder
+FROM golang:1.26.8-alpine3.23 AS builder
 
 ARG GOPROXY=https://proxy.golang.org,direct
 ENV CGO_ENABLED=0 \
@@ -8,15 +8,19 @@ ENV CGO_ENABLED=0 \
 
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    go mod download
 
 COPY main.go ./
 COPY internal ./internal
-RUN go build -trimpath -ldflags="-s -w" -o /out/ares ./main.go
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    go build -trimpath -ldflags="-s -w" -o /out/ares ./main.go
 
 FROM alpine:3.23.5
 
-RUN apk add --no-cache ca-certificates tzdata \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache ca-certificates tzdata \
     && addgroup -S ares \
     && adduser -S -G ares ares \
     && mkdir -p /app/config /var/log/ares \

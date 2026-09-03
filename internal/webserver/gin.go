@@ -7,9 +7,9 @@ import (
 	"os"
 	"time"
 
-	"ares/internal/config"
-	"ares/internal/db"
-	"ares/internal/logger"
+	"github.com/go-ree/ares/internal/config"
+	"github.com/go-ree/ares/internal/db"
+	"github.com/go-ree/ares/internal/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"

@@ -3,8 +3,8 @@ package publish
 import (
 	"encoding/json"
 
-	"ares/internal/entity"
-	"ares/internal/tool"
+	"github.com/go-ree/ares/internal/entity"
+	"github.com/go-ree/ares/internal/tool"
 )
 
 var nullablePipelineParameterKeys = []string{

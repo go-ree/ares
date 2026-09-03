@@ -1,7 +1,7 @@
 package job
 
 import (
-	"ares/internal/publish"
+	"github.com/go-ree/ares/internal/publish"
 )
 
 func init() {

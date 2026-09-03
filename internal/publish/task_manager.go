@@ -1,14 +1,14 @@
 package publish
 
 import (
-	"ares/internal/db"
-	"ares/internal/entity"
-	"ares/internal/jenkins"
-	"ares/internal/release"
-	"ares/internal/tool"
-	"ares/internal/workflow"
 	"context"
 	"fmt"
+	"github.com/go-ree/ares/internal/db"
+	"github.com/go-ree/ares/internal/entity"
+	"github.com/go-ree/ares/internal/jenkins"
+	"github.com/go-ree/ares/internal/release"
+	"github.com/go-ree/ares/internal/tool"
+	"github.com/go-ree/ares/internal/workflow"
 	"log/slog"
 	"strings"
 	"sync"

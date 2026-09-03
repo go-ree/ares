@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"ares/internal/config"
+	"github.com/go-ree/ares/internal/config"
 	"log/slog"
 	"os"
 	"path"

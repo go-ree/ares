@@ -6,9 +6,9 @@ package release
 import (
 	"sync"
 
-	"ares/internal/db"
-	"ares/internal/executor/jenkinsstep"
-	"ares/internal/workflow"
+	"github.com/go-ree/ares/internal/db"
+	"github.com/go-ree/ares/internal/executor/jenkinsstep"
+	"github.com/go-ree/ares/internal/workflow"
 )
 
 type Runtime struct {

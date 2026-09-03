@@ -1,9 +1,9 @@
 package controller
 
 import (
-	"ares/internal/api/util"
-	"ares/internal/home"
 	"github.com/gin-gonic/gin"
+	"github.com/go-ree/ares/internal/api/util"
+	"github.com/go-ree/ares/internal/home"
 )
 
 // Home

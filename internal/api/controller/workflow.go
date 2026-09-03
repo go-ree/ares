@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"ares/internal/api/util"
-	"ares/internal/entity"
-	"ares/internal/workflow"
+	"github.com/go-ree/ares/internal/api/util"
+	"github.com/go-ree/ares/internal/entity"
+	"github.com/go-ree/ares/internal/workflow"
 
 	"github.com/gin-gonic/gin"
 	"xorm.io/xorm"

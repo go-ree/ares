@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"ares/internal/cli"
-	"ares/internal/swagger"
+	"github.com/go-ree/ares/internal/cli"
+	"github.com/go-ree/ares/internal/swagger"
 
 	"gopkg.in/yaml.v3"
 )

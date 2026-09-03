@@ -3,7 +3,7 @@ package job
 import (
 	"log/slog"
 
-	"ares/internal/config"
+	"github.com/go-ree/ares/internal/config"
 
 	"github.com/robfig/cron/v3"
 )

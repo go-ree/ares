@@ -1,9 +1,9 @@
 package publish
 
 import (
-	"ares/internal/db"
-	"ares/internal/entity"
 	"fmt"
+	"github.com/go-ree/ares/internal/db"
+	"github.com/go-ree/ares/internal/entity"
 	"strings"
 )
 

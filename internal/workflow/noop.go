@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 
-	"ares/internal/security"
+	"github.com/go-ree/ares/internal/security"
 )
 
 const NoopUses = "builtin.noop@v1"

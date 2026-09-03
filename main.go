@@ -6,14 +6,14 @@ import (
 	"os/signal"
 	"syscall"
 
-	"ares/internal/api"
-	"ares/internal/cli"
-	"ares/internal/config"
-	"ares/internal/db"
-	"ares/internal/integration"
-	"ares/internal/job"
-	"ares/internal/logger"
-	"ares/internal/webserver"
+	"github.com/go-ree/ares/internal/api"
+	"github.com/go-ree/ares/internal/cli"
+	"github.com/go-ree/ares/internal/config"
+	"github.com/go-ree/ares/internal/db"
+	"github.com/go-ree/ares/internal/integration"
+	"github.com/go-ree/ares/internal/job"
+	"github.com/go-ree/ares/internal/logger"
+	"github.com/go-ree/ares/internal/webserver"
 )
 
 func main() {

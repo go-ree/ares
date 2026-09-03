@@ -3,7 +3,7 @@ package compatible
 import (
 	"testing"
 
-	"ares/internal/environment"
+	"github.com/go-ree/ares/internal/environment"
 )
 
 func TestResolveCompatibleEnvironmentUsesDynamicCatalog(t *testing.T) {

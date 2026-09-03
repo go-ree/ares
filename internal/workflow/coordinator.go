@@ -9,8 +9,8 @@ import (
 	"log/slog"
 	"time"
 
-	"ares/internal/entity"
-	"ares/internal/security"
+	"github.com/go-ree/ares/internal/entity"
+	"github.com/go-ree/ares/internal/security"
 )
 
 type Coordinator struct {

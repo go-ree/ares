@@ -1,11 +1,11 @@
 package compatible
 
 import (
-	"ares/internal/db"
-	"ares/internal/entity"
-	"ares/internal/environment"
 	"context"
 	"fmt"
+	"github.com/go-ree/ares/internal/db"
+	"github.com/go-ree/ares/internal/entity"
+	"github.com/go-ree/ares/internal/environment"
 	"strings"
 )
 
