@@ -426,18 +426,18 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 
 ## 8. 下一步
 
-W01 的仓库内实现与本地验收已经收口，[PR #6](https://github.com/go-ree/ares/pull/6) 已创建，下一步是观察六项检查并处理评审反馈。W01 当前被许可证、安全漏洞与行为事件两类私密报告渠道、`main` 保护规则三类仓库管理条件阻塞，全部完成并验证前不能标记为 `待验收` 或 `已完成`。W01 进入稳定状态后，W02 与 W04 可以分别开始设计。
+W01 的仓库内实现、本地验收和 [PR #6](https://github.com/go-ree/ares/pull/6) 的六项自动化检查均已通过，下一步是处理评审反馈和三类仓库管理条件。W01 当前被许可证、安全漏洞与行为事件两类私密报告渠道、`main` 保护规则三类仓库管理条件阻塞，全部完成并验证前不能标记为 `待验收` 或 `已完成`。W01 进入稳定状态后，W02 与 W04 可以分别开始设计。
 
 ## 9. 进度记录
 
 ### 2026-09-03：W01 PR 首轮 CI 修复
 
-- 状态：[PR #6](https://github.com/go-ree/ares/pull/6) 的代码质量五项检查通过，供应链检查修复后待复验；W01 仍受三类仓库管理条件阻塞。
+- 状态：[PR #6](https://github.com/go-ree/ares/pull/6) 的六项自动化检查已通过；W01 仍受三类仓库管理条件阻塞。
 - 首轮结果：工作流语法、后端测试与静态检查、关键包竞态、Go 漏洞和前端质量均通过；供应链检查在后端 Trivy 扫描步骤失败。
 - 根因：Trivy Action 的 SARIF 模式默认移除 `severity` 过滤，导致 `UNKNOWN` 且调用不可达的模块公告 `GO-2026-5932` 也触发退出码 1，与文档约定的 HIGH/CRITICAL 镜像门禁不一致；镜像本身未检出 HIGH/CRITICAL。
 - 修复：后端和前端两次 Trivy 扫描均显式设置 `limit-severities-for-sarif: true`，使 SARIF 内容、退出码与既定严重级别保持一致；没有新增忽略规则、豁免或降低门禁级别。
-- 复验：本地 Action 语法、文档格式与差异检查通过；等待新提交对应的 GitHub Actions 结果。
-- 关联运行：[失败的供应链检查](https://github.com/go-ree/ares/actions/runs/33733340715)。
+- 复验：本地 Action 语法、文档格式与差异检查通过；修复提交对应的[代码质量五项检查](https://github.com/go-ree/ares/actions/runs/33733926168)和[供应链检查](https://github.com/go-ree/ares/actions/runs/33733926122)均通过。
+- 关联运行：[首次失败的供应链检查](https://github.com/go-ree/ares/actions/runs/33733340715)、[修复后通过的供应链检查](https://github.com/go-ree/ares/actions/runs/33733926122)。
 
 ### 2026-09-03：W01 实现收口
 
