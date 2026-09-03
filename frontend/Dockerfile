@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24.20.0-alpine3.23 AS builder
+FROM node:26.8.1-alpine3.23 AS builder
 
 WORKDIR /app
 RUN --mount=type=cache,target=/root/.npm \
