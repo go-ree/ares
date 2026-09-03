@@ -42,20 +42,20 @@ curl --fail \
 
 ## 环境变量
 
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `ARES_BIND_ADDRESS` | `127.0.0.1` | Web 监听地址；确认已有网关保护后才改为 `0.0.0.0` |
-| `ARES_HTTP_PORT` | `8080` | Web 对外端口 |
-| `ARES_API_PORT` | `8081` | 仅绑定本机的后端调试端口 |
-| `MYSQL_DATABASE` | `ares` | 数据库名 |
-| `MYSQL_USER` | `ares` | 业务数据库用户 |
-| `MYSQL_PASSWORD` | `ares-demo-password` | 业务数据库密码 |
-| `MYSQL_ROOT_PASSWORD` | `ares-root-password` | MySQL root 密码 |
-| `ARES_DB_SCHEMA_MIGRATION_TIMEOUT` | `2m` | 单次版本化 schema 迁移操作的超时；大库可按 DDL / 扫描耗时调高 |
-| `ARES_DEMO_DATA_ENABLED` | `true` | 空库是否写入 Demo 数据 |
-| `ARES_SETTINGS_ADMIN_TOKEN` | `ares-local-admin-token` | Web 系统配置接口的管理员令牌；共享环境必须修改 |
-| `ARES_SETTINGS_ENCRYPTION_KEY` | 本地示例值 | 加密 Jenkins Token 与 kubeconfig；共享环境必须替换且妥善备份 |
-| `GOPROXY` | `https://proxy.golang.org,direct` | 构建后端镜像时使用的 Go 模块代理 |
+| 变量                               | 默认值                            | 说明                                                          |
+| ---------------------------------- | --------------------------------- | ------------------------------------------------------------- |
+| `ARES_BIND_ADDRESS`                | `127.0.0.1`                       | Web 监听地址；确认已有网关保护后才改为 `0.0.0.0`              |
+| `ARES_HTTP_PORT`                   | `8080`                            | Web 对外端口                                                  |
+| `ARES_API_PORT`                    | `8081`                            | 仅绑定本机的后端调试端口                                      |
+| `MYSQL_DATABASE`                   | `ares`                            | 数据库名                                                      |
+| `MYSQL_USER`                       | `ares`                            | 业务数据库用户                                                |
+| `MYSQL_PASSWORD`                   | `ares-demo-password`              | 业务数据库密码                                                |
+| `MYSQL_ROOT_PASSWORD`              | `ares-root-password`              | MySQL root 密码                                               |
+| `ARES_DB_SCHEMA_MIGRATION_TIMEOUT` | `2m`                              | 单次版本化 schema 迁移操作的超时；大库可按 DDL / 扫描耗时调高 |
+| `ARES_DEMO_DATA_ENABLED`           | `true`                            | 空库是否写入 Demo 数据                                        |
+| `ARES_SETTINGS_ADMIN_TOKEN`        | `ares-local-admin-token`          | Web 系统配置接口的管理员令牌；共享环境必须修改                |
+| `ARES_SETTINGS_ENCRYPTION_KEY`     | 本地示例值                        | 加密 Jenkins Token 与 kubeconfig；共享环境必须替换且妥善备份  |
+| `GOPROXY`                          | `https://proxy.golang.org,direct` | 构建后端镜像时使用的 Go 模块代理                              |
 
 Compose 会根据 MySQL 变量生成 `ARES_DB_CONN_STR`。如需脱离 Compose 运行后端，也可直接设置 `ARES_DB_CONN_STR`、`ARES_WEB_ADDRESS`、`ARES_LOG_LEVEL`、`ARES_LOG_ACCESS_FILE` 和 `ARES_LOG_RUNTIME_FILE`。
 
@@ -175,4 +175,4 @@ Jenkins 外部引用绑定到接收任务时的服务地址。仍有已绑定的
 - 使用 TLS，并限制 `ARES_API_PORT` 的本机绑定。
 - 使用外部托管 MySQL 时建立备份、恢复演练和监控。
 - 使用真实 Jenkins Job、镜像仓库和 kubeconfig 完成二级联调。
-- 旧 v1 Jenkins 兼容轮询器暂时没有跨实例领取或 leader election；仍有旧在途任务时只运行一个 Ares 副本。v2 步骤已有 CAS 认领，但完整多副本租约仍在后续路线中。
+- W06 多副本 Worker 与租约完成前，整个 Ares Worker 必须保持单副本运行。旧 v1 Jenkins 兼容轮询器没有跨实例领取或 leader election；v2 步骤虽然已有 pending 步骤认领 CAS，但多个实例仍可能同时 Reconcile 同一个 running 步骤，不能据此认为已经支持多副本。
