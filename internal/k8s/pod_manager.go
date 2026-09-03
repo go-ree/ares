@@ -53,7 +53,7 @@ type GetAppPodsRequest struct {
 type PodLogRequest struct {
 	PodName      string `json:"pod_name" validate:"required"`
 	Namespace    string `json:"namespace" validate:"required"`
-	Env          string `json:"env" validate:"required,oneof=dev test moni"`
+	Env          string `json:"env" validate:"required"`
 	Container    string `json:"container,omitempty"`
 	TailLines    *int64 `json:"tail_lines,omitempty"`
 	SinceSeconds *int64 `json:"since_seconds,omitempty"`
@@ -65,7 +65,7 @@ type PodLogRequest struct {
 type PodExecRequest struct {
 	PodName   string   `json:"pod_name" validate:"required"`
 	Namespace string   `json:"namespace" validate:"required"`
-	Env       string   `json:"env" validate:"required,oneof=dev test moni"`
+	Env       string   `json:"env" validate:"required"`
 	Container string   `json:"container,omitempty"`
 	Command   []string `json:"command" validate:"required"`
 }
@@ -557,9 +557,8 @@ func (pm *PodManager) validateLogRequest(req *PodLogRequest) error {
 		return fmt.Errorf("环境不能为空")
 	}
 
-	// 验证环境是否支持
-	if _, ok := envNameMap[req.Env]; !ok {
-		return fmt.Errorf("不支持的环境: %s", req.Env)
+	if _, err := ParseEnvironment(req.Env); err != nil {
+		return err
 	}
 
 	return nil

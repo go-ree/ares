@@ -1,8 +1,11 @@
 package jenkins
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -154,12 +157,29 @@ func GetJenkinsBuildLog(jobName string, buildId int64) (string, error) {
 
 // StreamJenkinsBuildLog	持续获取jenkins的构建日志
 func StreamJenkinsBuildLog(ctx context.Context, req *BuildLogQuery, logChan chan<- BuildLogChunk, errChan chan<- error) bool {
-	runtime := Current()
-	if runtime == nil {
+	snapshot := Acquire()
+	if snapshot == nil {
 		sendJenkinsStreamError(ctx, errChan, errors.New("jenkins not initialized"))
 		return false
 	}
-	job, err := runtime.Client.GetJob(ctx, req.JobName)
+	return snapshot.StreamJenkinsBuildLog(ctx, req, logChan, errChan)
+}
+
+// StreamJenkinsBuildLog streams through one immutable client snapshot. This
+// prevents a settings change between task-instance validation and the first
+// Jenkins request from redirecting a historical log query to another server.
+func (s *ClientSnapshot) StreamJenkinsBuildLog(ctx context.Context, req *BuildLogQuery, logChan chan<- BuildLogChunk, errChan chan<- error) bool {
+	if s == nil || s.runtime == nil {
+		sendJenkinsStreamError(ctx, errChan, errors.New("jenkins not initialized"))
+		return false
+	}
+	runtime := s.runtime
+	jobParts := splitJobName(req.JobName)
+	if len(jobParts) == 0 {
+		sendJenkinsStreamError(ctx, errChan, errors.New("jenkins job name is required"))
+		return false
+	}
+	job, err := clientForContext(runtime, ctx).GetJob(ctx, jobParts[len(jobParts)-1], jobParts[:len(jobParts)-1]...)
 	if err != nil {
 		slog.Error("获取Job失败", "job_name", req.JobName, "build_id", req.BuildId, "err", err)
 		sendJenkinsStreamError(ctx, errChan, err)
@@ -315,7 +335,14 @@ func StreamJenkinsBuildLog(ctx context.Context, req *BuildLogQuery, logChan chan
 		// - 构建未结束：继续轮询
 		// - 构建已结束：再拉一次确保最后增量，然后退出
 		if !moreData {
-			if !build.IsRunning(ctx) {
+			if _, err := build.Poll(ctx); err != nil {
+				if ctx.Err() != nil {
+					return true
+				}
+				sendJenkinsStreamError(ctx, errChan, fmt.Errorf("刷新 Jenkins 构建状态: %w", err))
+				return false
+			}
+			if !build.Raw.Building {
 				finalText, finalNext, _, err := getProgressiveText(ctx, runtime, req.JobName, req.BuildId, start)
 				if err == nil && finalNext >= start {
 					if finalText != "" {
@@ -431,21 +458,27 @@ func getProgressiveText(ctx context.Context, runtime *Runtime, jobName string, b
 
 // buildJobPath 将 "a/b/c" 转换为 Jenkins 的 "/job/a/job/b/job/c"
 func buildJobPath(jobName string) string {
-	jobName = strings.Trim(jobName, "/")
-	if jobName == "" {
+	parts := splitJobName(jobName)
+	if len(parts) == 0 {
 		return ""
 	}
-	parts := strings.Split(jobName, "/")
 	var b strings.Builder
 	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
 		b.WriteString("/job/")
 		b.WriteString(url.PathEscape(p))
 	}
 	return b.String()
+}
+
+func splitJobName(jobName string) []string {
+	rawParts := strings.Split(strings.Trim(jobName, "/"), "/")
+	parts := make([]string, 0, len(rawParts))
+	for _, part := range rawParts {
+		if part = strings.TrimSpace(part); part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return parts
 }
 
 // convertTimestamperToTZ 将形如 "[2026-01-12T08:14:42.716Z] xxx" 的时间戳转换到指定时区。
@@ -472,36 +505,267 @@ func convertTimestamperToTZ(line string, tz *time.Location) string {
 // 传入：管线名称、入参
 // 返回：构建id、管线名称、错误信息
 func CreateBuildTask(jobName string, params map[string]string) (int64, string, error) {
-	ctx := context.Background()
-	// 实现创建逻辑
-	runtime := Current()
-	if runtime == nil {
+	return CreateBuildTaskContext(context.Background(), jobName, params)
+}
+
+// QueueBuildState is a single Jenkins queue observation. BuildID remains zero
+// during quiet-period/agent scheduling and is filled once Jenkins assigns the
+// executable. It is deliberately safe to persist and reconcile after restart.
+type QueueBuildState struct {
+	BuildID   int64
+	Cancelled bool
+	Why       string
+}
+
+// QueueBuildTaskContext triggers a Jenkins build and returns immediately with
+// the durable queue id. New workflow executors must persist this id before any
+// attempt to discover a build number.
+func QueueBuildTaskContext(ctx context.Context, jobName string, params map[string]string) (int64, string, error) {
+	snapshot := Acquire()
+	if snapshot == nil {
 		return 0, "", errors.New("jenkins not initialized")
 	}
-	queueId, err := runtime.Client.BuildJob(ctx, jobName, params)
-	if err != nil {
-		slog.Error("任务构建失败", slog.Any("error", err))
-		return 0, "", err
+	return snapshot.QueueBuildTaskContext(ctx, jobName, params)
+}
+
+func (s *ClientSnapshot) QueueBuildTaskContext(ctx context.Context, jobName string, params map[string]string) (int64, string, error) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	if queueId == 0 {
-		return 0, "", errors.New("作业任务已在队列中。 如需优化,请将该job的静默期调整为0秒。默认为5秒,需设置为0秒即可解决。配置路径：jobName-->configure-->Quiet period  静默功能说明：https://www.jenkins.io/blog/2010/08/11/quiet-period-feature/")
+	if s == nil || s.runtime == nil {
+		return 0, "", errors.New("jenkins not initialized")
+	}
+	jobName = strings.TrimSpace(jobName)
+	jobPath := buildJobPath(jobName)
+	if jobPath == "" {
+		return 0, "", errors.New("jenkins job name is required")
 	}
 
-	// 这段代码是一个循环，检查任务的 Executable.Number 是否为 0。根据 Jenkins 的 API，任务在队列中会有一个大约 4.7 秒的静默期。
-	// 在此期间，任务的构建编号可能尚未分配。循环中每隔 1 秒调用一次 Poll 方法来更新任务状态。如果在此过程中发生错误，返回 nil 和错误信息。
-	buildInfo, err := runtime.Client.GetBuildFromQueueID(ctx, queueId)
-	if err != nil {
-		return 0, "", err
-	}
-	// job任务中的id
-	jobBuildIdStr := buildInfo.Raw.ID
-
-	jobBuildId, err := strconv.ParseInt(jobBuildIdStr, 10, 64)
+	crumb, err := s.getCrumb(ctx)
 	if err != nil {
 		return 0, "", err
 	}
+	form := make(url.Values, len(params))
+	for key, value := range params {
+		form.Set(key, value)
+	}
+	buildAction := "build"
+	if len(form) > 0 {
+		buildAction = "buildWithParameters"
+	}
+	endpoint := strings.TrimRight(s.runtime.Config.Address, "/") + jobPath + "/" + buildAction
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBufferString(form.Encode()))
+	if err != nil {
+		return 0, "", fmt.Errorf("创建 Jenkins Job %s 触发请求: %w", jobName, err)
+	}
+	request.SetBasicAuth(s.runtime.Config.Username, s.runtime.Config.Token)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if crumb.Header != "" {
+		request.Header.Set(crumb.Header, crumb.Value)
+	}
+	for _, cookie := range crumb.Cookies {
+		request.AddCookie(cookie)
+	}
 
-	return jobBuildId, jobName, nil
+	client, err := s.httpClient()
+	if err != nil {
+		return 0, "", err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		slog.Error("任务构建失败", slog.String("job", jobName), slog.Any("error", err))
+		return 0, "", fmt.Errorf("触发 Jenkins Job %s: %w", jobName, err)
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+		return 0, "", fmt.Errorf("触发 Jenkins Job %s 失败：%s", jobName, response.Status)
+	}
+	queueID, err := parseQueueID(response.Header.Get("Location"))
+	if err != nil {
+		return 0, "", fmt.Errorf("读取 Jenkins Job %s 队列引用: %w", jobName, err)
+	}
+	return queueID, jobName, nil
+}
+
+type jenkinsCrumb struct {
+	Header  string
+	Value   string
+	Cookies []*http.Cookie
+}
+
+func (s *ClientSnapshot) getCrumb(ctx context.Context) (jenkinsCrumb, error) {
+	client, err := s.httpClient()
+	if err != nil {
+		return jenkinsCrumb{}, err
+	}
+	endpoint := strings.TrimRight(s.runtime.Config.Address, "/") + "/crumbIssuer/api/json"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return jenkinsCrumb{}, fmt.Errorf("创建 Jenkins crumb 请求: %w", err)
+	}
+	request.SetBasicAuth(s.runtime.Config.Username, s.runtime.Config.Token)
+	request.Header.Set("Accept", "application/json")
+	response, err := client.Do(request)
+	if err != nil {
+		return jenkinsCrumb{}, fmt.Errorf("获取 Jenkins crumb: %w", err)
+	}
+	defer response.Body.Close()
+	// Jenkins returns 404 when CSRF protection (and therefore the crumb issuer)
+	// is disabled. In that supported configuration the build POST needs no crumb.
+	if response.StatusCode == http.StatusNotFound {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
+		return jenkinsCrumb{}, nil
+	}
+	if response.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
+		return jenkinsCrumb{}, fmt.Errorf("获取 Jenkins crumb 失败：%s", response.Status)
+	}
+	var payload struct {
+		Header string `json:"crumbRequestField"`
+		Value  string `json:"crumb"`
+	}
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 1024*1024))
+	if err := decoder.Decode(&payload); err != nil {
+		return jenkinsCrumb{}, fmt.Errorf("解析 Jenkins crumb: %w", err)
+	}
+	payload.Header = strings.TrimSpace(payload.Header)
+	payload.Value = strings.TrimSpace(payload.Value)
+	if payload.Header == "" || payload.Value == "" {
+		return jenkinsCrumb{}, errors.New("Jenkins crumb 响应缺少 crumbRequestField 或 crumb")
+	}
+	return jenkinsCrumb{Header: payload.Header, Value: payload.Value, Cookies: response.Cookies()}, nil
+}
+
+func (s *ClientSnapshot) httpClient() (*http.Client, error) {
+	if s == nil || s.runtime == nil || s.runtime.Client == nil || s.runtime.Client.Requester == nil || s.runtime.Client.Requester.Client == nil {
+		return nil, errors.New("jenkins HTTP client not initialized")
+	}
+	return s.runtime.Client.Requester.Client, nil
+}
+
+func parseQueueID(location string) (int64, error) {
+	location = strings.TrimSpace(location)
+	if location == "" {
+		return 0, errors.New("Jenkins 响应缺少 Location 队列地址")
+	}
+	parsed, err := url.Parse(location)
+	if err != nil {
+		return 0, fmt.Errorf("Jenkins Location 无效: %w", err)
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) < 3 || parts[len(parts)-3] != "queue" || parts[len(parts)-2] != "item" {
+		return 0, fmt.Errorf("Jenkins Location 不包含 queue/item：%q", location)
+	}
+	queueID, err := strconv.ParseInt(parts[len(parts)-1], 10, 64)
+	if err != nil || queueID <= 0 {
+		return 0, fmt.Errorf("Jenkins Location 队列 ID 无效：%q", location)
+	}
+	return queueID, nil
+}
+
+// GetQueueBuildStateContext performs exactly one context-aware queue poll.
+func GetQueueBuildStateContext(ctx context.Context, queueID int64) (QueueBuildState, error) {
+	snapshot := Acquire()
+	if snapshot == nil {
+		return QueueBuildState{}, errors.New("jenkins not initialized")
+	}
+	return snapshot.GetQueueBuildStateContext(ctx, queueID)
+}
+
+func (s *ClientSnapshot) GetQueueBuildStateContext(ctx context.Context, queueID int64) (QueueBuildState, error) {
+	if s == nil || s.runtime == nil {
+		return QueueBuildState{}, errors.New("jenkins not initialized")
+	}
+	if queueID <= 0 {
+		return QueueBuildState{}, errors.New("jenkins queue_id 必须大于 0")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	endpoint := strings.TrimRight(s.runtime.Config.Address, "/") + "/queue/item/" + strconv.FormatInt(queueID, 10) + "/api/json"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return QueueBuildState{}, err
+	}
+	req.SetBasicAuth(s.runtime.Config.Username, s.runtime.Config.Token)
+	response, err := s.runtime.Client.Requester.Client.Do(req)
+	if err != nil {
+		return QueueBuildState{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return QueueBuildState{}, fmt.Errorf("jenkins queue item %d 请求失败：%s", queueID, response.Status)
+	}
+	var payload struct {
+		Cancelled  bool   `json:"cancelled"`
+		Why        string `json:"why"`
+		Executable *struct {
+			Number int64 `json:"number"`
+		} `json:"executable"`
+	}
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 1024*1024))
+	if err := decoder.Decode(&payload); err != nil {
+		return QueueBuildState{}, fmt.Errorf("解析 Jenkins queue item %d: %w", queueID, err)
+	}
+	state := QueueBuildState{Cancelled: payload.Cancelled, Why: strings.TrimSpace(payload.Why)}
+	if payload.Executable != nil {
+		state.BuildID = payload.Executable.Number
+	}
+	return state, nil
+}
+
+// CreateBuildTaskContext is the v1 compatibility entry point. It keeps the
+// old build-number return contract while replacing gojenkins' uninterruptible
+// sleep loop with bounded, context-aware polling. New workflows use
+// QueueBuildTaskContext directly and never wait here.
+func CreateBuildTaskContext(ctx context.Context, jobName string, params map[string]string) (int64, string, error) {
+	snapshot := Acquire()
+	if snapshot == nil {
+		return 0, "", errors.New("jenkins not initialized")
+	}
+	return snapshot.CreateBuildTaskContext(ctx, jobName, params)
+}
+
+// CreateBuildTaskContext keeps the full v1 trigger-and-queue-poll operation on
+// one immutable runtime snapshot. The legacy worker uses this together with
+// AcquireForOperation so a settings hot-switch cannot split one transition
+// across Jenkins instances.
+func (s *ClientSnapshot) CreateBuildTaskContext(ctx context.Context, jobName string, params map[string]string) (int64, string, error) {
+	if s == nil || s.runtime == nil {
+		return 0, "", errors.New("jenkins not initialized")
+	}
+	queueID, job, err := s.QueueBuildTaskContext(ctx, jobName, params)
+	if err != nil {
+		return 0, "", err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+	}
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		state, pollErr := s.GetQueueBuildStateContext(ctx, queueID)
+		if pollErr != nil {
+			return 0, "", pollErr
+		}
+		if state.Cancelled {
+			return 0, "", fmt.Errorf("Jenkins 队列任务 %d 已取消", queueID)
+		}
+		if state.BuildID > 0 {
+			return state.BuildID, job, nil
+		}
+		select {
+		case <-ctx.Done():
+			return 0, "", ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 func BuildTask() error {
@@ -516,15 +780,33 @@ func BuildTask() error {
 // 传入：管线名称、构建id
 // 返回：构建状态（RUNNING、SUCCESS、FAILURE、ABORTED）
 func GetBuildStatus(jobName string, buildId int64) (string, error) {
-	runtime := Current()
-	if runtime == nil {
+	return GetBuildStatusContext(context.Background(), jobName, buildId)
+}
+
+// GetBuildStatusContext 查询 Jenkins 构建结果并贯穿调用方 context。
+func GetBuildStatusContext(ctx context.Context, jobName string, buildId int64) (string, error) {
+	snapshot := Acquire()
+	if snapshot == nil {
 		return "", errors.New("jenkins not initialized")
 	}
+	return snapshot.GetBuildStatusContext(ctx, jobName, buildId)
+}
 
-	ctx := context.Background()
+func (s *ClientSnapshot) GetBuildStatusContext(ctx context.Context, jobName string, buildId int64) (string, error) {
+	if s == nil || s.runtime == nil {
+		return "", errors.New("jenkins not initialized")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
-	// 获取job对象
-	job, err := runtime.Client.GetJob(ctx, jobName)
+	// 获取job对象。Jenkins folder 中的 job 必须把父级逐段传给
+	// gojenkins，否则 "folder/job" 会被错误拼成普通 URL 路径。
+	jobParts := splitJobName(jobName)
+	if len(jobParts) == 0 {
+		return "", errors.New("jenkins job name is required")
+	}
+	job, err := clientForContext(s.runtime, ctx).GetJob(ctx, jobParts[len(jobParts)-1], jobParts[:len(jobParts)-1]...)
 	if err != nil {
 		slog.Error("获取 Job 失败", slog.Any("error", err))
 		return "", err
@@ -536,24 +818,20 @@ func GetBuildStatus(jobName string, buildId int64) (string, error) {
 		return "", err
 	}
 
-	// 检查构建是否仍在运行
-	isRunning := build.IsRunning(ctx)
-	if isRunning {
+	// GetBuild 已经完成一次带错误返回的 Poll；直接使用该快照。调用
+	// IsRunning 会再次 Poll 且吞掉错误，瞬时网络失败会被误判为终态。
+	if build.Raw.Building {
 		return "RUNNING", nil
 	}
 
-	// 获取最终构建结果
-	result := build.GetResult()
-	switch result {
-	case "SUCCESS":
-		return "SUCCESS", nil
-	case "FAILURE":
-		return "FAILURE", nil
-	case "ABORTED":
-		return "ABORTED", nil
-	default:
-		return "ABNORMAL", nil
+	// Preserve every Jenkins terminal result. The executor maps known and
+	// unknown terminal values deterministically instead of treating them as an
+	// indefinitely running build.
+	result := strings.ToUpper(strings.TrimSpace(build.GetResult()))
+	if result == "" {
+		result = "ABNORMAL"
 	}
+	return result, nil
 }
 
 //// GetJob 获取 Jenkins Job

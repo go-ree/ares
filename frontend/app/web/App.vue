@@ -12,21 +12,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted } from 'vue';
 
-const isDevelopment = ref(import.meta.env.DEV)
-const isInspectorActive = ref(false)
+const isDevelopment = ref(import.meta.env.DEV);
+const isInspectorActive = ref(false);
 
 const toggleInspector = () => {
-  isInspectorActive.value = !isInspectorActive.value
+  isInspectorActive.value = !isInspectorActive.value;
   // 这里可以添加元素检查的逻辑
-}
+};
 
 onMounted(() => {
   if (isDevelopment.value) {
-    console.log('开发工具栏已启用')
+    console.log('开发工具栏已启用');
   }
-})
+});
 </script>
 
 <style>
@@ -62,4 +62,4 @@ onMounted(() => {
 .toolbar-content button:hover {
   background: #3aa876;
 }
-</style> 
+</style>

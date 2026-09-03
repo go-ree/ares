@@ -47,7 +47,9 @@ CREATE TABLE IF NOT EXISTS ares.app_configs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL,
+    active_env VARCHAR(100) GENERATED ALWAYS AS (IF(deleted_at IS NULL, env, NULL)) STORED,
     INDEX idx_app_id (app_id),
+    UNIQUE INDEX uk_app_active_env (app_id, active_env),
     FOREIGN KEY (app_id) REFERENCES apps(app_id)
 );
 
@@ -81,15 +83,19 @@ CREATE TABLE IF NOT EXISTS ares.task_record (
     message VARCHAR(255) DEFAULT NULL,
     ci_job_name VARCHAR(100) DEFAULT NULL,
     cd_job_name VARCHAR(100) DEFAULT NULL,
+	jenkins_address TEXT DEFAULT NULL,
     # 自动触发cd阶段
     auto_deploy TINYINT(1) DEFAULT 1 COMMENT '0 for false, 1 for true',
 
     # 产出物
     products varchar(255) DEFAULT NULL,
+    engine_version INT NOT NULL DEFAULT 1,
+    workflow_version_id BIGINT NOT NULL DEFAULT 0,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP NULL DEFAULT NULL
+	deleted_at TIMESTAMP NULL DEFAULT NULL,
+	INDEX idx_task_workflow_poll (engine_version, status, deleted_at, updated_at, task_id)
 );
 
 -- 任务图片表：按 task_id 存放多种渠道（type）的图片 url
@@ -150,12 +156,14 @@ CREATE TABLE IF NOT EXISTS ares.pipelines_job_combination (
 CREATE TABLE IF NOT EXISTS ares.env_configs (
     id INT(11) AUTO_INCREMENT PRIMARY KEY,
     env VARCHAR(100) NOT NULL UNIQUE,
-    cluster_name VARCHAR(255) NOT NULL,
+    cluster_name VARCHAR(255) DEFAULT NULL,
     description_cn varchar(255) NOT NULL,
-    harbor_url  VARCHAR(255) NOT NULL,
-    harbor_project_name VARCHAR(255) NOT NULL,
-    node_version VARCHAR(255) NOT NULL,
-    maven_version VARCHAR(255) NOT NULL,
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    sort_order INT NOT NULL DEFAULT 0,
+    harbor_url  VARCHAR(255) DEFAULT NULL,
+    harbor_project_name VARCHAR(255) DEFAULT NULL,
+    node_version VARCHAR(255) DEFAULT NULL,
+    maven_version VARCHAR(255) DEFAULT NULL,
 
 
 
@@ -163,6 +171,69 @@ CREATE TABLE IF NOT EXISTS ares.env_configs (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL
 );
+
+-- 可插拔发布流程：流程身份、不可变版本、应用环境绑定与任务步骤快照
+CREATE TABLE IF NOT EXISTS ares.release_workflows (
+    workflow_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(120) NOT NULL,
+    description VARCHAR(500) DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ares.release_workflow_versions (
+    version_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    workflow_id BIGINT NOT NULL,
+    version INT NOT NULL,
+    spec JSON NOT NULL,
+    checksum CHAR(64) NOT NULL,
+    created_by VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_workflow_version (workflow_id, version),
+    INDEX idx_workflow_versions_workflow (workflow_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ares.app_config_workflows (
+    binding_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    app_config_id INT NOT NULL,
+    workflow_id BIGINT NOT NULL,
+    version_id BIGINT NOT NULL,
+    revision INT NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_app_config_workflow (app_config_id),
+    INDEX idx_app_config_workflow (workflow_id),
+    INDEX idx_app_config_workflow_version (version_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ares.task_step_records (
+    step_record_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id INT NOT NULL,
+    workflow_version_id BIGINT NOT NULL,
+    step_key VARCHAR(63) NOT NULL,
+    name VARCHAR(120) NOT NULL,
+    uses VARCHAR(120) NOT NULL,
+    category VARCHAR(32) DEFAULT NULL,
+    position INT NOT NULL,
+    config JSON NOT NULL,
+    timeout_seconds INT NOT NULL DEFAULT 3600,
+    on_failure VARCHAR(16) NOT NULL DEFAULT 'stop',
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    attempt INT NOT NULL DEFAULT 1,
+    external_ref JSON NULL,
+    output JSON NULL,
+    message VARCHAR(1000) DEFAULT NULL,
+    started_at TIMESTAMP NULL DEFAULT NULL,
+    finished_at TIMESTAMP NULL DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_task_step_key (task_id, step_key),
+    INDEX idx_task_position (task_id, position),
+    INDEX idx_task_status (task_id, status),
+	INDEX idx_step_status_uses (status, uses, task_id),
+    INDEX idx_task_workflow_version (workflow_version_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- dev_language 与 code_package_type 规则（单表 JSON）
 -- rules 示例：{"allowed":["jar","war"],"default":"jar"}

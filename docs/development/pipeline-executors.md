@@ -43,19 +43,22 @@ type Executor interface {
 - 应用与 AppConfig 的只读快照；
 - 环境代码；
 - 发布 ref/branch、发布者和显式 inputs；
-- 已完成步骤的非敏感输出。
+- 已完成步骤的内部输出（只供后续步骤使用，不通过公开任务 API 返回）。
 
 执行结果必须映射到通用状态。外部引用使用 JSON，例如 Jenkins 可以保存：
 
 ```json
-{"job":"demo-ci","queue_id":123,"build_number":456,"integration":"jenkins/default"}
+{"integration":"jenkins/default","address":"https://jenkins.example","job":"demo-ci","queue_id":123,"build_id":456}
 ```
 
 不要让工作流引擎解析该结构。只有拥有它的执行器可以解释 external reference。
 
+`Result.Message` 会进入公开任务接口，只能返回稳定、可公开的状态说明，不能透传上游响应正文、Header、URL 或原始网络错误。执行器返回的 `error` 默认会被引擎转换成通用公开文案。`Result.Output` 只用于步骤间内部传递，虽不通过 API 返回，仍会持久化；引擎会在落库前递归拒绝常见敏感键，执行器自身也必须先校验并避免把凭据放入普通字段。
+
 ## 5. 配置和 Secret
 
 - 为配置提供严格 JSON Schema；保存流程时同时调用 `Validate`。
+- 在 Secret Resolver 上线前，执行器配置不得保存明文凭据。`jenkins.job@v1` 会拒绝常见 token/password/secret/credential 参数名；凭据应放在 Jenkins Credentials 中并由 Job 自行引用。
 - 未知字段默认拒绝，防止拼写错误静默生效。
 - Secret 只允许引用，如 `secret://integrations/jenkins/default/token`。
 - 不要将解析后的 Secret 写入 Result、日志、错误或输出。
@@ -68,8 +71,9 @@ Ares 能保证数据库状态转移只被一个 Worker 认领，但无法跨数�
 1. 将 `task_id/step_key/attempt` 传给外部系统作为幂等键。
 2. 如果外部系统支持按幂等键查询，`Start` 超时后先查询再决定是否重试。
 3. 网络、限流和 5xx 返回可重试错误；配置或业务失败返回不可重试错误。
-4. 对未知结果保持 `unknown/running` 并交给 `Reconcile`，不要盲目再次执行部署。
+4. 已取得外部引用时，对未知结果保持 `unknown/running` 并交给 `Reconcile`，不要盲目再次执行部署；触发请求在取得引用前结果不明确仍是首版限制，执行器应依赖外部平台幂等能力降低重复风险。
 5. 外部引用必须包含配置实例或版本标识，避免集成设置热更新后查询到另一套系统。
+6. 只有在能够证明尚未产生任何外部副作用时，`Start` 才能包装返回 `workflow.ErrExecutorUnavailable`。引擎收到该错误会释放步骤 claim 并在后续轮询重新调用 `Start`；请求已经发出、结果不明或已经取得外部引用后绝不能使用它，否则会造成重复执行。
 
 ## 7. 注册步骤
 

@@ -1,13 +1,18 @@
 package app
 
 import (
-	"ares/internal/db"
-	"ares/internal/entity"
-	"ares/internal/tool"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+
+	"ares/internal/db"
+	"ares/internal/entity"
+	"ares/internal/environment"
+	"ares/internal/tool"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 type devLanguageRulesJSON struct {
@@ -68,7 +73,7 @@ func validateCodePackageTypeForApp(ctx context.Context, appID int, codePackageTy
 		return err
 	}
 	if !has {
-		return fmt.Errorf("未找到应用，app_id=%d", appID)
+		return NewAppNotFoundError(int64(appID), "")
 	}
 	rules, err := loadDevLanguageRules(ctx, appRow.DevLanguage)
 	if err != nil {
@@ -76,14 +81,14 @@ func validateCodePackageTypeForApp(ctx context.Context, appID int, codePackageTy
 	}
 	cpt := strings.TrimSpace(codePackageType)
 	if cpt == "" || strings.EqualFold(cpt, "NULL") {
-		return fmt.Errorf("code_package_type 不能为空")
+		return NewValidationError("code_package_type 不能为空")
 	}
 	for _, a := range rules.Allowed {
 		if a == cpt {
 			return nil
 		}
 	}
-	return fmt.Errorf("code_package_type=%s 不允许用于 dev_language=%s（允许：%s）", cpt, strings.ToLower(appRow.DevLanguage), strings.Join(rules.Allowed, ","))
+	return NewValidationError(fmt.Sprintf("code_package_type=%s 不允许用于 dev_language=%s（允许：%s）", cpt, strings.ToLower(appRow.DevLanguage), strings.Join(rules.Allowed, ",")))
 }
 
 // CreateAppConfigRequest 创建应用环境配置（app_id + env）
@@ -162,13 +167,17 @@ func (cm *ConfigManager) ListAppConfigs(ctx context.Context, appID int) ([]entit
 
 func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int, req CreateAppConfigRequest) (*entity.AppConfigs, error) {
 	if appID <= 0 {
-		return nil, fmt.Errorf("无效的 app_id")
+		return nil, NewValidationError("无效的 app_id")
 	}
-	env := strings.TrimSpace(req.Env)
-	if env == "" {
-		return nil, fmt.Errorf("env 不能为空")
+	normalizedEnv, err := environment.NormalizeCode(req.Env)
+	if err != nil {
+		return nil, NewValidationError(err.Error())
 	}
-	env = strings.ToLower(env)
+	envRow, err := environment.NewService().RequireEnabled(ctx, normalizedEnv)
+	if err != nil {
+		return nil, err
+	}
+	env := envRow.Env
 
 	// 校验 app 是否存在
 	var appRow entity.Apps
@@ -179,24 +188,13 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 		return nil, err
 	}
 	if !has {
-		return nil, fmt.Errorf("未找到应用，app_id=%d", appID)
+		return nil, NewAppNotFoundError(int64(appID), "")
 	}
 
 	// 读取语言规则（用于 default 与 code_package_type 校验）
 	rules, err := loadDevLanguageRules(ctx, appRow.DevLanguage)
 	if err != nil {
 		return nil, err
-	}
-
-	// 校验 env 是否存在（避免写入未知环境）
-	cntEnv, err := db.Engine.Context(ctx).
-		Where("env = ? AND deleted_at IS NULL", env).
-		Count(&entity.EnvConfigs{})
-	if err != nil {
-		return nil, err
-	}
-	if cntEnv == 0 {
-		return nil, fmt.Errorf("环境不存在：%s", env)
 	}
 
 	// 判重：同 app_id + env 只能一条
@@ -207,10 +205,10 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 		return nil, err
 	}
 	if cnt > 0 {
-		return nil, fmt.Errorf("配置已存在：app_id=%d env=%s", appID, env)
+		return nil, NewDuplicateAppConfigError(appID, env)
 	}
 
-	// 默认值：对齐 createDefaultConfig
+	// 默认值：新配置显式创建，使用应用语言规则提供的包类型默认值。
 	row := &entity.AppConfigs{
 		AppID:                  appID,
 		Env:                    env,
@@ -243,7 +241,7 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 			}
 		}
 		if !ok {
-			return nil, fmt.Errorf("code_package_type=%s 不允许用于 dev_language=%s（允许：%s）", cpt, strings.ToLower(appRow.DevLanguage), strings.Join(rules.Allowed, ","))
+			return nil, NewValidationError(fmt.Sprintf("code_package_type=%s 不允许用于 dev_language=%s（允许：%s）", cpt, strings.ToLower(appRow.DevLanguage), strings.Join(rules.Allowed, ",")))
 		}
 		row.CodePackageType = cpt
 	}
@@ -271,7 +269,7 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 	if req.ProbeCheckPath != nil {
 		p := strings.TrimSpace(*req.ProbeCheckPath)
 		if p != "" && !strings.HasPrefix(p, "/") {
-			return nil, fmt.Errorf("probe_check_path 必须以 / 开头")
+			return nil, NewValidationError("probe_check_path 必须以 / 开头")
 		}
 		if p != "" {
 			row.ProbeCheckPath = p
@@ -280,28 +278,28 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 	if req.ProbeCheckTcpPort != nil {
 		port := *req.ProbeCheckTcpPort
 		if port <= 0 || port > 65535 {
-			return nil, fmt.Errorf("probe_check_tcp_port 必须在 1-65535 之间")
+			return nil, NewValidationError("probe_check_tcp_port 必须在 1-65535 之间")
 		}
 		row.ProbeCheckTcpPort = port
 	}
 	if req.ProbeCheckHttpPort != nil {
 		port := *req.ProbeCheckHttpPort
 		if port <= 0 || port > 65535 {
-			return nil, fmt.Errorf("probe_check_http_port 必须在 1-65535 之间")
+			return nil, NewValidationError("probe_check_http_port 必须在 1-65535 之间")
 		}
 		row.ProbeCheckHttpPort = port
 	}
 	if req.ProbeStopCheckHttpPort != nil {
 		port := *req.ProbeStopCheckHttpPort
 		if port <= 0 || port > 65535 {
-			return nil, fmt.Errorf("probe_stop_check_http_port 必须在 1-65535 之间")
+			return nil, NewValidationError("probe_stop_check_http_port 必须在 1-65535 之间")
 		}
 		row.ProbeStopCheckHttpPort = port
 	}
 	if req.ContainerPort != nil {
 		port := *req.ContainerPort
 		if port <= 0 || port > 65535 {
-			return nil, fmt.Errorf("container_port 必须在 1-65535 之间")
+			return nil, NewValidationError("container_port 必须在 1-65535 之间")
 		}
 		row.ContainerPort = port
 	}
@@ -311,7 +309,7 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 	if req.PreStopCheckPath != nil {
 		p := strings.TrimSpace(*req.PreStopCheckPath)
 		if p != "" && !strings.HasPrefix(p, "/") {
-			return nil, fmt.Errorf("pre_stop_check_path 必须以 / 开头")
+			return nil, NewValidationError("pre_stop_check_path 必须以 / 开头")
 		}
 		if p != "" {
 			row.PreStopCheckPath = p
@@ -327,21 +325,29 @@ func (cm *ConfigManager) CreateAppConfigByAppEnv(ctx context.Context, appID int,
 		"base_image",
 		"pre_stop_command",
 	).Insert(row); err != nil {
+		var mysqlErr *mysql.MySQLError
+		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+			return nil, NewDuplicateAppConfigError(appID, env)
+		}
 		return nil, err
 	}
 	return row, nil
 }
 
 func (cm *ConfigManager) GetAppConfigByAppEnv(ctx context.Context, appID int, env string) (*entity.AppConfigs, error) {
+	normalizedEnv, err := environment.NormalizeCode(env)
+	if err != nil {
+		return nil, NewValidationError(err.Error())
+	}
 	var row entity.AppConfigs
 	has, err := db.Engine.Context(ctx).
-		Where("app_id = ? AND env = ? AND deleted_at IS NULL", appID, env).
+		Where("app_id = ? AND env = ? AND deleted_at IS NULL", appID, normalizedEnv).
 		Get(&row)
 	if err != nil {
 		return nil, err
 	}
 	if !has {
-		return nil, fmt.Errorf("未找到配置，app_id=%d env=%s", appID, env)
+		return nil, NewAppConfigNotFoundErrorByAppEnv(appID, normalizedEnv)
 	}
 	return &row, nil
 }
@@ -353,7 +359,7 @@ func (cm *ConfigManager) GetAppConfigByID(ctx context.Context, configID int) (*e
 		return nil, err
 	}
 	if !has {
-		return nil, fmt.Errorf("未找到配置，config_id=%d", configID)
+		return nil, NewAppConfigNotFoundErrorByID(configID)
 	}
 	return &row, nil
 }
@@ -386,7 +392,7 @@ func buildUpdateMap(req UpdateAppConfigRequest) (map[string]any, error) {
 	if req.CodePackageType != nil {
 		codePackageType := tool.NormalizeNullableText(*req.CodePackageType)
 		if codePackageType == "" {
-			return nil, fmt.Errorf("code_package_type 不能为空")
+			return nil, NewValidationError("code_package_type 不能为空")
 		}
 		m["code_package_type"] = codePackageType
 	}
@@ -402,28 +408,28 @@ func buildUpdateMap(req UpdateAppConfigRequest) (map[string]any, error) {
 	if req.ProbeCheckTcpPort != nil {
 		port := *req.ProbeCheckTcpPort
 		if port <= 0 || port > 65535 {
-			return nil, fmt.Errorf("probe_check_tcp_port 必须在 1-65535 之间")
+			return nil, NewValidationError("probe_check_tcp_port 必须在 1-65535 之间")
 		}
 		setInt("probe_check_tcp_port", req.ProbeCheckTcpPort)
 	}
 	if req.ProbeCheckHttpPort != nil {
 		port := *req.ProbeCheckHttpPort
 		if port <= 0 || port > 65535 {
-			return nil, fmt.Errorf("probe_check_http_port 必须在 1-65535 之间")
+			return nil, NewValidationError("probe_check_http_port 必须在 1-65535 之间")
 		}
 		setInt("probe_check_http_port", req.ProbeCheckHttpPort)
 	}
 	if req.ProbeStopCheckHttpPort != nil {
 		port := *req.ProbeStopCheckHttpPort
 		if port <= 0 || port > 65535 {
-			return nil, fmt.Errorf("probe_stop_check_http_port 必须在 1-65535 之间")
+			return nil, NewValidationError("probe_stop_check_http_port 必须在 1-65535 之间")
 		}
 		setInt("probe_stop_check_http_port", req.ProbeStopCheckHttpPort)
 	}
 	if req.ContainerPort != nil {
 		port := *req.ContainerPort
 		if port <= 0 || port > 65535 {
-			return nil, fmt.Errorf("container_port 必须在 1-65535 之间")
+			return nil, NewValidationError("container_port 必须在 1-65535 之间")
 		}
 		setInt("container_port", req.ContainerPort)
 	}
@@ -432,25 +438,22 @@ func buildUpdateMap(req UpdateAppConfigRequest) (map[string]any, error) {
 	setNullableText("pre_stop_command", req.PreStopCommand)
 
 	if len(m) == 0 {
-		return nil, fmt.Errorf("没有需要更新的字段")
+		return nil, NewValidationError("没有需要更新的字段")
 	}
 	return m, nil
 }
 
 func (cm *ConfigManager) PatchAppConfigByID(ctx context.Context, configID int, req UpdateAppConfigRequest) error {
+	cur, err := cm.GetAppConfigByID(ctx, configID)
+	if err != nil {
+		return err
+	}
+	if _, err := environment.NewService().RequireEnabled(ctx, cur.Env); err != nil {
+		return err
+	}
+
 	// 若更新 code_package_type，则需要按 app.dev_language 规则校验
 	if req.CodePackageType != nil {
-		// 先取 config 获取 app_id
-		var cur entity.AppConfigs
-		has, err := db.Engine.Context(ctx).
-			Where("config_id = ? AND deleted_at IS NULL", configID).
-			Get(&cur)
-		if err != nil {
-			return err
-		}
-		if !has {
-			return fmt.Errorf("未找到配置，config_id=%d", configID)
-		}
 		if err := validateCodePackageTypeForApp(ctx, cur.AppID, strings.TrimSpace(*req.CodePackageType)); err != nil {
 			return err
 		}
@@ -464,15 +467,28 @@ func (cm *ConfigManager) PatchAppConfigByID(ctx context.Context, configID int, r
 		return err
 	}
 	if affected == 0 {
-		return fmt.Errorf("未更新任何记录，config_id=%d", configID)
+		// MySQL 默认只统计实际发生变化的行；相同值 PATCH 也应保持幂等。
+		_, err := cm.GetAppConfigByID(ctx, configID)
+		return err
 	}
 	return nil
 }
 
 func (cm *ConfigManager) PatchAppConfigByAppEnv(ctx context.Context, appID int, env string, req UpdateAppConfigRequest) error {
+	normalizedEnv, err := environment.NormalizeCode(env)
+	if err != nil {
+		return NewValidationError(err.Error())
+	}
+	if _, err := environment.NewService().RequireEnabled(ctx, normalizedEnv); err != nil {
+		return err
+	}
+	cur, err := cm.GetAppConfigByAppEnv(ctx, appID, normalizedEnv)
+	if err != nil {
+		return err
+	}
 	// 若更新 code_package_type，则需要按 app.dev_language 规则校验
 	if req.CodePackageType != nil {
-		if err := validateCodePackageTypeForApp(ctx, appID, strings.TrimSpace(*req.CodePackageType)); err != nil {
+		if err := validateCodePackageTypeForApp(ctx, cur.AppID, strings.TrimSpace(*req.CodePackageType)); err != nil {
 			return err
 		}
 	}
@@ -480,12 +496,13 @@ func (cm *ConfigManager) PatchAppConfigByAppEnv(ctx context.Context, appID int, 
 	if err != nil {
 		return err
 	}
-	affected, err := db.Engine.Context(ctx).Table("app_configs").Where("app_id = ? AND env = ? AND deleted_at IS NULL", appID, env).Update(updates)
+	affected, err := db.Engine.Context(ctx).Table("app_configs").Where("config_id = ? AND deleted_at IS NULL", cur.ConfigID).Update(updates)
 	if err != nil {
 		return err
 	}
 	if affected == 0 {
-		return fmt.Errorf("未更新任何记录，app_id=%d env=%s", appID, env)
+		_, err := cm.GetAppConfigByAppEnv(ctx, appID, normalizedEnv)
+		return err
 	}
 	return nil
 }

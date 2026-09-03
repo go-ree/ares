@@ -3,7 +3,6 @@ package controller
 import (
 	"ares/internal/api/util"
 	"ares/internal/publish"
-	"errors"
 	"log/slog"
 	"strconv"
 
@@ -16,7 +15,7 @@ type PublishController struct {
 
 func NewPublishController() *PublishController {
 	return &PublishController{
-		publishManager: publish.PublishManager{},
+		publishManager: *publish.NewPublishManager(),
 	}
 }
 
@@ -34,13 +33,9 @@ func (pc *PublishController) CreateBuildTask(c *gin.Context) {
 		c.JSON(400, util.ResponseFailure("请求数据格式错误", err.Error()))
 		return
 	}
-	publishResult, err := pc.publishManager.CreatePublish(&req)
+	publishResult, err := pc.publishManager.CreatePublish(c.Request.Context(), &req)
 	if err != nil {
-		if errors.Is(err, publish.ErrJenkinsDisabled) {
-			c.JSON(503, util.ResponseFailure("Jenkins 集成未启用", err.Error()))
-			return
-		}
-		c.JSON(500, util.ResponseFailure("", err.Error()))
+		c.JSON(422, util.ResponseFailure("发布任务创建失败", err.Error()))
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("发布任务创建成功", publishResult))
@@ -60,17 +55,16 @@ func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
 		c.JSON(400, util.ResponseFailure("请求数据格式错误", err.Error()))
 		return
 	}
-	publishBatchResult, err := pc.publishManager.CreateBatchPublish(&req)
+	publishBatchResult, err := pc.publishManager.CreateBatchPublish(c.Request.Context(), &req)
 	if err != nil {
-		if errors.Is(err, publish.ErrJenkinsDisabled) {
-			c.JSON(503, util.ResponseFailure("Jenkins 集成未启用", err.Error()))
-			return
-		}
-		c.JSON(500, util.ResponseFailure("", err.Error()))
+		c.JSON(422, util.ResponseFailure("批量发布任务创建失败", err.Error()))
 		return
 	}
 	if publishBatchResult.FailureCount != 0 {
-		c.JSON(200, util.ResponseFailure("部分任务创建失败", publishBatchResult))
+		// The batch request itself succeeded and the per-item result is the
+		// contract. Keep it in result even for partial failure so clients do not
+		// discard task IDs that were successfully created.
+		c.JSON(200, util.ResponseSuccessful("批量发布完成，部分任务创建失败", publishBatchResult))
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("发布任务创建成功", publishBatchResult))

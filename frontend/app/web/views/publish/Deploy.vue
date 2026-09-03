@@ -5,7 +5,7 @@
 </template>
 
 <script setup lang="ts">
-import ServiceDeploy from '@/components/publish/ServiceDeploy.vue'
+import ServiceDeploy from '@/components/publish/ServiceDeploy.vue';
 </script>
 
 <style scoped>
@@ -13,4 +13,4 @@ import ServiceDeploy from '@/components/publish/ServiceDeploy.vue'
   min-height: 100%;
   background: #f5f7fa;
 }
-</style> 
+</style>

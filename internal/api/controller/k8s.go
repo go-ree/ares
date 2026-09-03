@@ -199,16 +199,17 @@ func (pc *PodController) GetK8sDebugInfo(c *gin.Context) {
 	envStatus := k8s.GetAllEnvsStatus()
 	debugInfo["env_status"] = envStatus
 
-	// 检查全局客户端状态
-	clientStatus := map[string]bool{
-		"dev_client":  k8s.DefaultClient(k8s.EnvDev) != nil,
-		"test_client": k8s.DefaultClient(k8s.EnvTest) != nil,
-		"moni_client": k8s.DefaultClient(k8s.EnvStage) != nil,
+	// 检查运行时实际配置的客户端，不假设固定环境集合。
+	clientStatus := make(map[string]bool)
+	for _, environment := range k8s.ListEnvironments() {
+		code := string(environment)
+		clientStatus[code] = k8s.DefaultClient(environment) != nil
 	}
 	debugInfo["client_status"] = clientStatus
 
 	// 详细的环境检查
-	for _, env := range []string{"dev", "test", "moni"} {
+	for _, environment := range k8s.ListEnvironments() {
+		env := string(environment)
 		available := k8s.IsEnvAvailable(env)
 		debugInfo[fmt.Sprintf("%s_available", env)] = available
 

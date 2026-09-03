@@ -12,6 +12,9 @@
         <el-tab-pane v-for="env in envOptions" :key="env.value" :name="env.value">
           <template #label>
             <span>{{ env.label }}</span>
+            <el-tag v-if="!env.enabled" size="small" type="warning" class="ml-8">
+              {{ env.known ? '已停用' : '历史环境' }}
+            </el-tag>
             <el-tag
               v-if="configsByEnv[env.value]?.config_id"
               size="small"
@@ -29,7 +32,7 @@
               <el-button
                 type="primary"
                 :loading="creatingEnv === env.value"
-                :disabled="loading || saving || domainsLoading"
+                :disabled="loading || saving || domainsLoading || !env.enabled"
                 @click="createEnvConfig(env.value)"
               >
                 创建该环境配置
@@ -133,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -144,48 +147,52 @@ import {
   getAppConfigs,
   upsertAppConfigDomains,
 } from '@/services/application';
+import { useEnvironments } from '@/composables/useEnvironments';
 
 const route = useRoute();
 const appId = ref<number>(Number(route.params.appId));
 
-const envOptions: Array<{ label: string; value: AppEnv }> = [
-  { label: '开发(dev)', value: 'dev' },
-  { label: '测试(test)', value: 'test' },
-  { label: '模拟(moni)', value: 'moni' },
-];
+const { environments, loadEnvironments, labelForEnvironment } = useEnvironments();
+const discoveredEnvironments = ref<AppEnv[]>([]);
+const envOptions = computed(() => {
+  const codes = new Set<AppEnv>(environments.value.map(item => item.code));
+  discoveredEnvironments.value.forEach(code => codes.add(code));
+  return Array.from(codes).map(value => {
+    const catalog = environments.value.find(item => item.code === value);
+    return {
+      label: labelForEnvironment(value),
+      value,
+      known: Boolean(catalog),
+      enabled: catalog?.enabled === true,
+    };
+  });
+});
 
-const activeEnv = ref<AppEnv>('dev');
+const activeEnv = ref<AppEnv>('');
 const loading = ref(false);
 const saving = ref(false);
 const domainsLoading = ref(false);
 const creatingEnv = ref<AppEnv | null>(null);
 
-const configsByEnv = reactive<Record<AppEnv, AppConfig | null>>({
-  dev: null,
-  test: null,
-  moni: null,
-});
+const configsByEnv = reactive<Record<AppEnv, AppConfig | null>>({});
+const domainsByEnv = reactive<Record<AppEnv, DomainItem[]>>({});
+const originalDomainsByEnv = reactive<Record<AppEnv, DomainItem[]>>({});
+const isEditingByEnv = reactive<Record<AppEnv, boolean>>({});
 
-const domainsByEnv = reactive<Record<AppEnv, DomainItem[]>>({
-  dev: [],
-  test: [],
-  moni: [],
-});
+const ensureEnvState = (env: AppEnv) => {
+  if (!(env in configsByEnv)) configsByEnv[env] = null;
+  if (!(env in domainsByEnv)) domainsByEnv[env] = [];
+  if (!(env in originalDomainsByEnv)) originalDomainsByEnv[env] = [];
+  if (!(env in isEditingByEnv)) isEditingByEnv[env] = false;
+};
 
-const originalDomainsByEnv = reactive<Record<AppEnv, DomainItem[]>>({
-  dev: [],
-  test: [],
-  moni: [],
-});
-
-const isEditingByEnv = reactive<Record<AppEnv, boolean>>({
-  dev: false,
-  test: false,
-  moni: false,
+watch(envOptions, options => options.forEach(option => ensureEnvState(option.value)), {
+  immediate: true,
 });
 
 const reset = () => {
-  envOptions.forEach(env => {
+  envOptions.value.forEach(env => {
+    ensureEnvState(env.value);
     configsByEnv[env.value] = null;
     domainsByEnv[env.value] = [];
     originalDomainsByEnv[env.value] = [];
@@ -200,12 +207,16 @@ const fetchConfigs = async () => {
     const resp = await getAppConfigs(appId.value);
     if (resp.data.code !== 1) throw new Error(resp.data.message || '获取应用配置失败');
     reset();
+    discoveredEnvironments.value = (resp.data.result || []).map(cfg => cfg.env);
+    envOptions.value.forEach(option => ensureEnvState(option.value));
     for (const cfg of resp.data.result || []) {
-      if (cfg.env === 'dev' || cfg.env === 'test' || cfg.env === 'moni') {
-        configsByEnv[cfg.env] = cfg;
-      }
+      ensureEnvState(cfg.env);
+      configsByEnv[cfg.env] = cfg;
     }
-    await loadDomains(activeEnv.value, true);
+    if (!activeEnv.value || !envOptions.value.some(option => option.value === activeEnv.value)) {
+      activeEnv.value = envOptions.value[0]?.value || '';
+    }
+    if (activeEnv.value) await loadDomains(activeEnv.value, true);
   } catch (e) {
     console.error(e);
     ElMessage.error(e instanceof Error ? e.message : '获取应用配置失败');
@@ -335,6 +346,11 @@ watch(
 );
 
 onMounted(async () => {
+  try {
+    await loadEnvironments();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '获取环境目录失败');
+  }
   await fetchConfigs();
 });
 </script>

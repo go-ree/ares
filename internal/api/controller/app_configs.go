@@ -1,11 +1,16 @@
 package controller
 
 import (
+	"errors"
+	"log/slog"
+	"net/http"
+	"strconv"
+
 	"ares/internal/api/util"
 	"ares/internal/app"
+	"ares/internal/environment"
+
 	"github.com/gin-gonic/gin"
-	"log/slog"
-	"strconv"
 )
 
 type AppConfigsController struct {
@@ -25,6 +30,8 @@ func NewAppConfigsController() *AppConfigsController {
 // @Param request body app.CreateAppConfigRequest true "创建参数"
 // @Success 200 {object} util.ResponseTemplate{code=int,result=entity.AppConfigs} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 404 {object} util.ResponseTemplate{code=int} "应用或环境不存在"
+// @Failure 409 {object} util.ResponseTemplate{code=int} "环境已停用或配置已存在"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router /api/v1/apps/{app_id}/configs [post]
 func (cc *AppConfigsController) CreateAppConfig(c *gin.Context) {
@@ -44,7 +51,7 @@ func (cc *AppConfigsController) CreateAppConfig(c *gin.Context) {
 
 	row, err := cc.cfgManager.CreateAppConfigByAppEnv(ctx, appID, req)
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("创建失败", err.Error()))
+		writeAppConfigError(c, "创建失败", err, "app_id", appID, "env", req.Env)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("创建成功", row))
@@ -79,9 +86,10 @@ func (cc *AppConfigsController) ListAppConfigs(c *gin.Context) {
 // @Tags AppConfig
 // @Summary 获取应用指定环境配置
 // @Param app_id path int true "应用ID"
-// @Param env path string true "环境（dev/test/moni...）"
+// @Param env path string true "环境目录中的环境代码"
 // @Success 200 {object} util.ResponseTemplate{code=int,result=entity.AppConfigs} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 404 {object} util.ResponseTemplate{code=int} "配置不存在"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router /api/v1/apps/{app_id}/configs/{env} [get]
 func (cc *AppConfigsController) GetAppConfigByEnv(c *gin.Context) {
@@ -100,7 +108,7 @@ func (cc *AppConfigsController) GetAppConfigByEnv(c *gin.Context) {
 
 	row, err := cc.cfgManager.GetAppConfigByAppEnv(ctx, appID, env)
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("查询失败", err.Error()))
+		writeAppConfigError(c, "查询失败", err, "app_id", appID, "env", env)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("查询成功", row))
@@ -110,10 +118,12 @@ func (cc *AppConfigsController) GetAppConfigByEnv(c *gin.Context) {
 // @Tags AppConfig
 // @Summary 更新应用指定环境配置（PATCH：只更新传入字段）
 // @Param app_id path int true "应用ID"
-// @Param env path string true "环境（dev/test/moni...）"
+// @Param env path string true "环境目录中的环境代码"
 // @Param request body app.UpdateAppConfigRequest true "更新字段（指针语义）"
 // @Success 200 {object} util.ResponseTemplate{code=int} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 404 {object} util.ResponseTemplate{code=int} "配置或环境不存在"
+// @Failure 409 {object} util.ResponseTemplate{code=int} "环境已停用"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router /api/v1/apps/{app_id}/configs/{env} [patch]
 func (cc *AppConfigsController) PatchAppConfigByEnv(c *gin.Context) {
@@ -137,8 +147,7 @@ func (cc *AppConfigsController) PatchAppConfigByEnv(c *gin.Context) {
 	}
 
 	if err := cc.cfgManager.PatchAppConfigByAppEnv(ctx, appID, env, req); err != nil {
-		c.JSON(500, util.ResponseFailure("更新失败", err.Error()))
-		slog.Error("更新应用环境配置失败", "app_id", appID, "env", env, "error", err)
+		writeAppConfigError(c, "更新失败", err, "app_id", appID, "env", env)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("更新成功", nil))
@@ -150,6 +159,7 @@ func (cc *AppConfigsController) PatchAppConfigByEnv(c *gin.Context) {
 // @Param config_id path int true "配置ID"
 // @Success 200 {object} util.ResponseTemplate{code=int,result=entity.AppConfigs} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 404 {object} util.ResponseTemplate{code=int} "配置不存在"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router /api/v1/app-configs/{config_id} [get]
 func (cc *AppConfigsController) GetAppConfigByID(c *gin.Context) {
@@ -163,7 +173,7 @@ func (cc *AppConfigsController) GetAppConfigByID(c *gin.Context) {
 
 	row, err := cc.cfgManager.GetAppConfigByID(ctx, id)
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("查询失败", err.Error()))
+		writeAppConfigError(c, "查询失败", err, "config_id", id)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("查询成功", row))
@@ -176,6 +186,8 @@ func (cc *AppConfigsController) GetAppConfigByID(c *gin.Context) {
 // @Param request body app.UpdateAppConfigRequest true "更新字段（指针语义）"
 // @Success 200 {object} util.ResponseTemplate{code=int} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 404 {object} util.ResponseTemplate{code=int} "配置或环境不存在"
+// @Failure 409 {object} util.ResponseTemplate{code=int} "环境已停用"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router /api/v1/app-configs/{config_id} [patch]
 func (cc *AppConfigsController) PatchAppConfigByID(c *gin.Context) {
@@ -194,11 +206,39 @@ func (cc *AppConfigsController) PatchAppConfigByID(c *gin.Context) {
 	}
 
 	if err := cc.cfgManager.PatchAppConfigByID(ctx, id, req); err != nil {
-		c.JSON(500, util.ResponseFailure("更新失败", err.Error()))
-		slog.Error("更新配置失败", "config_id", id, "error", err)
+		writeAppConfigError(c, "更新失败", err, "config_id", id)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("更新成功", nil))
+}
+
+// writeAppConfigError 将可预期的领域错误与基础设施故障区分开。
+// 只有未知错误返回 500 并记录错误日志，避免把正常的客户端冲突当作服务故障。
+func writeAppConfigError(c *gin.Context, message string, err error, logArgs ...any) {
+	status := http.StatusInternalServerError
+	var validationError *app.ValidationError
+	var appNotFoundError *app.AppNotFoundError
+	var configNotFoundError *app.AppConfigNotFoundError
+	var duplicateConfigError *app.DuplicateAppConfigError
+
+	switch {
+	case errors.As(err, &validationError):
+		status = http.StatusBadRequest
+	case errors.Is(err, environment.ErrNotFound),
+		errors.As(err, &appNotFoundError),
+		errors.As(err, &configNotFoundError):
+		status = http.StatusNotFound
+	case errors.Is(err, environment.ErrDisabled), errors.As(err, &duplicateConfigError):
+		status = http.StatusConflict
+	}
+
+	if status == http.StatusInternalServerError {
+		args := append([]any{"error", err}, logArgs...)
+		slog.Error("应用环境配置操作失败", args...)
+		c.JSON(status, util.ResponseFailure(message, "内部服务错误"))
+		return
+	}
+	c.JSON(status, util.ResponseFailure(message, err.Error()))
 }
 
 // ListDomainsByConfigID

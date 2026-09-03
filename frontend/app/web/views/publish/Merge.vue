@@ -11,8 +11,7 @@
   </div>
 </template>
 
-<script setup lang="ts">
-</script>
+<script setup lang="ts"></script>
 
 <style scoped>
 .merge {
@@ -24,4 +23,4 @@
   color: #909399;
   padding: 40px 0;
 }
-</style> 
+</style>

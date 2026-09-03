@@ -100,3 +100,33 @@ func TestIntegrationSettingsRejectsOversizedRequest(t *testing.T) {
 		t.Fatalf("oversized settings request returned %d, want %d: %s", recorder.Code, http.StatusRequestEntityTooLarge, recorder.Body.String())
 	}
 }
+
+func TestWorkflowSettingsRoutesRequireAdminToken(t *testing.T) {
+	originalToken := config.Main.Settings.AdminToken
+	config.Main.Settings.AdminToken = "server-side-admin-token"
+	t.Cleanup(func() { config.Main.Settings.AdminToken = originalToken })
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	Router(router)
+
+	tests := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodGet, path: "/api/v1/app-configs/1/workflow"},
+		{method: http.MethodPut, path: "/api/v1/app-configs/1/workflow", body: `{"revision":0,"spec":{"schema_version":1,"name":"demo","steps":[]}}`},
+	}
+	for _, test := range tests {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
+		if test.body != "" {
+			request.Header.Set("Content-Type", "application/json")
+		}
+		router.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s returned %d, want %d: %s", test.method, test.path, recorder.Code, http.StatusUnauthorized, recorder.Body.String())
+		}
+	}
+}

@@ -85,7 +85,20 @@ export interface PatchAppRequest {
 // AppConfig（应用环境配置）
 // =========================
 
-export type AppEnv = 'dev' | 'test' | 'moni';
+// 环境代码由服务端环境目录管理，不在前端枚举。
+export type AppEnv = string;
+
+export interface EnvironmentCatalogItem {
+  id?: number;
+  code: AppEnv;
+  name: string;
+  description?: string;
+  /** 兼容旧字段，页面统一使用 code/name。 */
+  env?: AppEnv;
+  description_cn?: string;
+  enabled: boolean;
+  sort_order: number;
+}
 
 // 应用环境配置（与后端 AppConfigs 对齐）
 export interface AppConfig {
@@ -180,4 +193,42 @@ export interface UpsertDomainsRequest {
 export interface PatchDomainRequest {
   host?: string;
   path?: string;
+}
+
+export type WorkflowFailurePolicy = 'stop' | 'continue';
+
+export interface PipelineStepType {
+  uses: string;
+  name: string;
+  description?: string;
+  category?: string;
+  config_schema?: Record<string, unknown>;
+  available?: boolean;
+  unavailable_reason?: string;
+  capabilities?: { logs: boolean; cancel: boolean };
+}
+
+export interface WorkflowStep {
+  key: string;
+  name: string;
+  uses: string;
+  category?: string;
+  with: Record<string, unknown>;
+  timeout_seconds?: number;
+  on_failure: WorkflowFailurePolicy;
+}
+
+export interface WorkflowSpec {
+  schema_version: number;
+  name: string;
+  steps: WorkflowStep[];
+}
+
+export interface AppConfigWorkflow {
+  config_id?: number;
+  workflow_id?: number;
+  workflow_version_id?: number;
+  version?: number;
+  revision: number;
+  spec: WorkflowSpec;
 }

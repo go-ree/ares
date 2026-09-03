@@ -2,34 +2,39 @@
   <div class="deploy-tool">
     <!-- 环境选择区域 -->
     <div class="env-selector">
-      <el-radio-group v-model="deployForm.environment" size="large" @change="handleEnvChange">
-        <el-radio-button :value="'dev'">开发环境</el-radio-button>
-        <el-radio-button :value="'test'">测试环境</el-radio-button>
-        <el-radio-button :value="'moni'">模拟环境</el-radio-button>
-      </el-radio-group>
-      <div v-if="deployForm.environment === 'moni'" class="global-branch-input">
+      <el-select
+        v-model="deployForm.environment"
+        placeholder="请选择环境"
+        style="width: 220px"
+        @change="handleEnvChange"
+      >
+        <el-option
+          v-for="env in enabledEnvironments"
+          :key="env.code"
+          :label="labelForEnvironment(env.code)"
+          :value="env.code"
+        />
+      </el-select>
+      <div class="global-branch-input">
         <span class="branch-label">统一发布分支：</span>
         <div class="branch-input-wrapper">
           <el-input
             v-model="globalBranchSuffix"
-            placeholder="请输入分支后缀"
+            placeholder="完整 Git 分支或 ref"
             style="width: 240px"
             @input="handleGlobalBranchChange"
           >
-            <template #prefix>
-              <span class="branch-prefix">release_</span>
-            </template>
           </el-input>
         </div>
         <!-- 调试信息 -->
         <div v-if="selectedServices.length > 0" class="debug-info">
-          <small style="color: #909399; margin-left: 10px;">
-            当前服务数量: {{ selectedServices.length }}，全局分支: release_{{ globalBranchSuffix }}
+          <small style="color: #909399; margin-left: 10px">
+            当前服务数量: {{ selectedServices.length }}，统一分支: {{ globalBranchSuffix || '-' }}
           </small>
         </div>
         <!-- 服务列表调试信息 -->
         <div class="debug-info">
-          <small style="color: #909399; margin-left: 10px;">
+          <small style="color: #909399; margin-left: 10px">
             可用服务数量: {{ availableServices.length }}
           </small>
         </div>
@@ -60,30 +65,16 @@
           </el-table-column>
           <el-table-column prop="branch" label="发布分支" min-width="200">
             <template #default="{ row }">
-              <template v-if="deployForm.environment === 'moni'">
-                <div class="branch-input-wrapper">
-                  <el-input
-                    v-model="row.branchSuffix"
-                    placeholder="请输入分支后缀"
-                    style="width: 240px"
-                    @input="(val: string) => handleBranchSuffixChange(val, row)"
-                  >
-                    <template #prefix>
-                      <span class="branch-prefix">release_</span>
-                    </template>
-                  </el-input>
-                </div>
-              </template>
-              <template v-else>
-                <span class="branch-text">{{ deployForm.environment }}</span>
-              </template>
+              <el-input v-model="row.branch" placeholder="完整 Git 分支或 ref" />
             </template>
           </el-table-column>
           <el-table-column prop="status" label="发布状态" width="120">
             <template #default="{ row }">
               <el-tag :type="getStatusType(row.status)">
                 {{ row.status }}
-                <el-icon v-if="row.status === '发布中'" class="is-loading"><Loading /></el-icon>
+                <el-icon v-if="isServiceProcessing(row.status)" class="is-loading"
+                  ><Loading
+                /></el-icon>
               </el-tag>
             </template>
           </el-table-column>
@@ -93,7 +84,7 @@
               <span v-else class="text-muted">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="280" fixed="right">
+          <el-table-column label="操作" width="200" fixed="right">
             <template #default="{ row, $index }">
               <el-button-group>
                 <el-button
@@ -102,13 +93,6 @@
                   @click="handleDeploySingle(row, $index)"
                 >
                   编译并发布
-                </el-button>
-                <el-button
-                  type="warning"
-                  :disabled="!row.serviceName || !row.branch || isServiceProcessing(row.status)"
-                  @click="handleRedeploySingle(row, $index)"
-                >
-                  仅重发
                 </el-button>
                 <el-button
                   type="danger"
@@ -125,12 +109,7 @@
 
       <!-- 添加服务按钮 -->
       <div class="table-actions">
-        <el-button 
-          type="primary" 
-          plain 
-          class="add-service-btn"
-          @click="handleAddService"
-        >
+        <el-button type="primary" plain class="add-service-btn" @click="handleAddService">
           <el-icon><Plus /></el-icon>
           添加服务
         </el-button>
@@ -138,23 +117,14 @@
 
       <!-- 批量操作按钮 -->
       <div class="batch-actions">
-        <el-button 
-          type="primary" 
-          size="large" 
+        <el-button
+          type="primary"
+          size="large"
           :disabled="!hasDeployableServices"
           @click="handleBatchDeploy"
         >
           <el-icon><Upload /></el-icon>
           一键编译并发布
-        </el-button>
-        <el-button 
-          type="warning" 
-          size="large"
-          :disabled="!hasDeployableServices"
-          @click="handleBatchRedeploy"
-        >
-          <el-icon><RefreshRight /></el-icon>
-          一键重发
         </el-button>
       </div>
     </div>
@@ -162,18 +132,21 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, watch } from 'vue'
-import { Loading, Plus, Upload, RefreshRight } from '@element-plus/icons-vue'
-import { useDeploy } from '@/composables/useDeploy'
+import { onMounted, watch } from 'vue';
+import { Loading, Plus, Upload } from '@element-plus/icons-vue';
+import { useDeploy } from '@/composables/useDeploy';
+import { useEnvironments } from '@/composables/useEnvironments';
 
 // 定义props
 interface Props {
-  isActive?: boolean
+  isActive?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  isActive: false
-})
+  isActive: false,
+});
+
+const { enabledEnvironments, loadEnvironments, labelForEnvironment } = useEnvironments();
 
 const {
   // 响应式数据
@@ -181,43 +154,45 @@ const {
   globalBranchSuffix,
   availableServices,
   selectedServices,
-  
+
   // 计算属性
   hasDeployableServices,
-  
+
   // 工具函数
   isServiceProcessing,
   getStatusType,
-  
+
   // 事件处理函数
   handleEnvChange,
   handleGlobalBranchChange,
   handleServiceSelect,
-  handleBranchSuffixChange,
   handleAddService,
   handleRemoveService,
   handleDeploySingle,
-  handleRedeploySingle,
   handleBatchDeploy,
-  handleBatchRedeploy,
-  loadAvailableServices
-} = useDeploy()
+  loadAvailableServices,
+} = useDeploy();
 
 // 监听标签页激活状态
-watch(() => props.isActive, (isActive) => {
-  if (isActive && availableServices.value.length === 0) {
-    console.log('DeployTool: 工具页激活，加载服务列表')
-    loadAvailableServices()
-  }
-}, { immediate: true })
+watch(
+  () => props.isActive,
+  isActive => {
+    if (isActive && availableServices.value.length === 0) {
+      console.log('DeployTool: 工具页激活，加载服务列表');
+      loadAvailableServices();
+    }
+  },
+  { immediate: true }
+);
 
 // 组件挂载时，如果已经是激活状态则加载服务列表
 onMounted(() => {
+  loadEnvironments().catch(error => console.error('加载环境目录失败:', error));
   if (props.isActive && availableServices.value.length === 0) {
-    console.log('DeployTool: 组件挂载且工具页激活，加载服务列表')
-    loadAvailableServices()
+    console.log('DeployTool: 组件挂载且工具页激活，加载服务列表');
+    loadAvailableServices();
   }
-})
+});
 </script>
 
 <style scoped>
@@ -257,7 +232,7 @@ onMounted(() => {
 }
 
 .branch-text {
-  color: #409EFF;
+  color: #409eff;
   font-weight: 500;
 }
 
@@ -360,4 +335,4 @@ onMounted(() => {
   max-height: 400px !important;
   overflow-y: auto !important;
 }
-</style> 
+</style>

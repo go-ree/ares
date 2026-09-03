@@ -13,8 +13,10 @@ import (
 
 	"ares/internal/db"
 	"ares/internal/entity"
+	environmentcatalog "ares/internal/environment"
 	"ares/internal/jenkins"
 	"ares/internal/k8s"
+	"ares/internal/workflow"
 )
 
 const (
@@ -151,6 +153,18 @@ func UpdateJenkins(ctx context.Context, req UpdateJenkinsRequest) (JenkinsView, 
 		}
 	}
 	identityChanged := normalizedJenkinsAddress(next.Address) != normalizedJenkinsAddress(current.Address) || next.Username != strings.TrimSpace(current.Username)
+	addressChanged := normalizedJenkinsAddress(next.Address) != normalizedJenkinsAddress(current.Address)
+	// The first Web configuration after upgrading from file-based settings must
+	// remain possible so operators can point Ares back at the original Jenkins.
+	// Once an address is stored, do not switch it while either generation has
+	// active work. A v2 external reference is intentionally pinned to the
+	// Jenkins instance that accepted it.
+	requiresDrain := strings.TrimSpace(current.Address) != "" && (addressChanged || (current.Enabled && !next.Enabled))
+	if requiresDrain {
+		if err := ensureNoActiveJenkinsRuns(ctx); err != nil {
+			return JenkinsView{}, err
+		}
+	}
 	if current.TokenCiphertext != "" && req.Token == nil && identityChanged {
 		return JenkinsView{}, fmt.Errorf("Jenkins token must be provided when address or username changes")
 	}
@@ -194,13 +208,23 @@ func UpdateJenkins(ctx context.Context, req UpdateJenkinsRequest) (JenkinsView, 
 	if err := ctx.Err(); err != nil {
 		return JenkinsView{}, err
 	}
-	if err := saveProvider(providerJenkins, next); err != nil {
+	if err := jenkins.CommitRuntime(func() (*jenkins.Runtime, error) {
+		// Re-check while executor Start/Reconcile operations are excluded. A
+		// step claimed during the earlier network probe is now visible here.
+		if requiresDrain {
+			if guardErr := ensureNoActiveJenkinsRuns(ctx); guardErr != nil {
+				return nil, guardErr
+			}
+		}
+		if err := saveProvider(providerJenkins, next); err != nil {
+			return nil, err
+		}
+		if !next.Enabled {
+			return nil, nil
+		}
+		return candidate, nil
+	}); err != nil {
 		return JenkinsView{}, err
-	}
-	if next.Enabled {
-		jenkins.Activate(candidate)
-	} else {
-		jenkins.Disable()
 	}
 	runtimeSettings.Lock()
 	runtimeSettings.jenkins = next
@@ -208,6 +232,43 @@ func UpdateJenkins(ctx context.Context, req UpdateJenkinsRequest) (JenkinsView, 
 	runtimeSettings.jenkinsRevision++
 	runtimeSettings.Unlock()
 	return SnapshotView().Jenkins, nil
+}
+
+func ensureNoActiveJenkinsRuns(ctx context.Context) error {
+	activeLegacyTasks, activeWorkflowSteps, err := countActiveJenkinsRuns(ctx)
+	if err != nil {
+		return fmt.Errorf("检查 Jenkins 在途任务失败: %w", err)
+	}
+	if activeLegacyTasks == 0 && activeWorkflowSteps == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"仍有 Jenkins 在途任务（旧版任务 %d 个、工作流步骤 %d 个），完成或处置后才能更换地址或停用 Jenkins",
+		activeLegacyTasks, activeWorkflowSteps,
+	)
+}
+
+func countActiveJenkinsRuns(ctx context.Context) (legacyTasks, workflowSteps int64, err error) {
+	legacyTasks, err = db.Engine.Context(ctx).
+		Where(`engine_version < ? AND deleted_at IS NULL AND (
+			status IN (?, ?) OR (status = ? AND auto_deploy = 1)
+		)`, 2, entity.StatusPackaging, entity.StatusDeploying, entity.StatusPackaged).
+		Count(new(entity.TaskRecord))
+	if err != nil {
+		return 0, 0, err
+	}
+	err = db.Engine.DB().DB.QueryRowContext(ctx, `SELECT COUNT(*)
+		FROM task_step_records step
+		JOIN task_record task ON task.task_id = step.task_id
+		WHERE step.status = ? AND step.uses = ?
+			AND task.engine_version >= ? AND task.status IN (?, ?)
+			AND task.deleted_at IS NULL`,
+		workflow.StepRunning, "jenkins.job@v1", 2, workflow.TaskQueued, workflow.TaskRunning,
+	).Scan(&workflowSteps)
+	if err != nil {
+		return 0, 0, err
+	}
+	return legacyTasks, workflowSteps, nil
 }
 
 func UpdateKubernetes(ctx context.Context, req UpdateKubernetesRequest) (KubernetesView, error) {
@@ -227,10 +288,15 @@ func UpdateKubernetes(ctx context.Context, req UpdateKubernetesRequest) (Kuberne
 
 	next := storedKubernetesConfig{Enabled: req.Enabled, TimeoutSeconds: timeout, Clusters: make([]storedKubernetesCluster, 0, len(req.Clusters))}
 	seenEnvironments := make(map[string]struct{}, len(req.Clusters))
+	environmentService := environmentcatalog.NewService()
 	for _, input := range req.Clusters {
-		environment := strings.ToLower(strings.TrimSpace(input.Environment))
-		if !validEnvironment(environment) {
-			return KubernetesView{}, fmt.Errorf("unsupported Kubernetes environment %q", input.Environment)
+		runtimeEnv, err := k8s.ParseEnvironment(input.Environment)
+		if err != nil {
+			return KubernetesView{}, err
+		}
+		environment := string(runtimeEnv)
+		if _, err := environmentService.Get(ctx, environment); err != nil {
+			return KubernetesView{}, fmt.Errorf("Kubernetes 环境 %s 不在环境目录中: %w", environment, err)
 		}
 		if _, exists := seenEnvironments[environment]; exists {
 			return KubernetesView{}, fmt.Errorf("only one Kubernetes cluster can be configured for environment %s", environment)
@@ -400,30 +466,15 @@ func runtimeKubernetesConfigs(stored storedKubernetesConfig, cipher *secretCiphe
 		if err := k8s.ValidateKubeconfig([]byte(content)); err != nil {
 			return nil, fmt.Errorf("validate kubeconfig for %s: %w", cluster.Environment, err)
 		}
-		environment, _ := runtimeEnvironment(cluster.Environment)
+		environment, err := k8s.ParseEnvironment(cluster.Environment)
+		if err != nil {
+			return nil, err
+		}
 		configs = append(configs, k8s.ClusterConfig{
 			Name: cluster.Name, Environment: environment, Kubeconfig: []byte(content), Timeout: timeout,
 		})
 	}
 	return configs, nil
-}
-
-func runtimeEnvironment(environment string) (k8s.Environment, bool) {
-	switch environment {
-	case "dev":
-		return k8s.EnvDev, true
-	case "test":
-		return k8s.EnvTest, true
-	case "moni":
-		return k8s.EnvStage, true
-	default:
-		return "", false
-	}
-}
-
-func validEnvironment(environment string) bool {
-	_, ok := runtimeEnvironment(environment)
-	return ok
 }
 
 func normalizedJenkinsAddress(address string) string {

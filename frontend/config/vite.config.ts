@@ -243,7 +243,7 @@ export default defineConfig(({ command, mode }) => {
         try {
           const htmlPath = path.join(process.cwd(), 'dist', 'index.html');
           if (fs.existsSync(htmlPath)) {
-            let html = fs.readFileSync(htmlPath, 'utf-8');
+            const html = fs.readFileSync(htmlPath, 'utf-8');
             // 使用 Vite 的 transformIndexHtml 方法来处理 HTML
             if (server.transformIndexHtml) {
               server
@@ -305,22 +305,10 @@ export default defineConfig(({ command, mode }) => {
       // 添加调试信息
       strictPort: true,
       cors: true,
-      // 允许的主机名
-      allowedHosts: [
-        'localhost',
-        '127.0.0.1',
-        'chaoscanvas.aaa.top',
-        '.aaa.top', // 允许所有aaa.top子域名
-        '.aaa.fun',
-        '.aaa.xyz',
-        'all', // 允许所有主机（生产环境推荐）
-      ],
       proxy: {
         '/api': {
-          // dev 默认走 ares.aaa.top，模拟环境(moni)默认走 ares.aaa.fun
-          target:
-            env.VITE_API_BASE_URL ||
-            (mode === 'moni' ? 'http://ares.aaa.fun' : 'http://ares.aaa.top'),
+          // 本地默认连接后端调试端口，其他环境通过显式变量配置。
+          target: env.VITE_API_BASE_URL || 'http://127.0.0.1:8081',
           changeOrigin: true,
           secure: false,
           rewrite: path => path,

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -30,7 +31,15 @@ type Runtime struct {
 	Config RuntimeConfig
 }
 
+// ClientSnapshot pins one immutable runtime for a complete executor operation.
+// Hot-reloading Jenkins swaps the global pointer, but an already acquired
+// snapshot never mixes the old trigger with a new server address/status call.
+type ClientSnapshot struct {
+	runtime *Runtime
+}
+
 var activeRuntime atomic.Pointer[Runtime]
+var runtimeGate sync.RWMutex
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
@@ -91,15 +100,89 @@ func NormalizeAddress(address string) (string, error) {
 }
 
 func Activate(runtime *Runtime) {
+	runtimeGate.Lock()
+	defer runtimeGate.Unlock()
 	activeRuntime.Store(runtime)
 }
 
 func Disable() {
+	runtimeGate.Lock()
+	defer runtimeGate.Unlock()
 	activeRuntime.Store(nil)
+}
+
+// CommitRuntime serializes a configuration commit against executor operations.
+// The callback runs while new Start/Reconcile calls are paused; callers may
+// perform a final database guard and only return the runtime after persistence
+// succeeds. A nil runtime disables Jenkins.
+func CommitRuntime(commit func() (*Runtime, error)) error {
+	runtimeGate.Lock()
+	defer runtimeGate.Unlock()
+	next, err := commit()
+	if err != nil {
+		return err
+	}
+	activeRuntime.Store(next)
+	return nil
 }
 
 func Current() *Runtime {
 	return activeRuntime.Load()
+}
+
+func Acquire() *ClientSnapshot {
+	runtimeGate.RLock()
+	defer runtimeGate.RUnlock()
+	runtime := Current()
+	if runtime == nil {
+		return nil
+	}
+	return &ClientSnapshot{runtime: runtime}
+}
+
+// AcquireForOperation pins the active runtime and prevents an address switch
+// until the returned release function is called. Callers must always defer it.
+func AcquireForOperation() (*ClientSnapshot, func()) {
+	runtimeGate.RLock()
+	runtime := Current()
+	if runtime == nil {
+		runtimeGate.RUnlock()
+		return nil, func() {}
+	}
+	return &ClientSnapshot{runtime: runtime}, runtimeGate.RUnlock
+}
+
+func (s *ClientSnapshot) Address() string {
+	if s == nil || s.runtime == nil {
+		return ""
+	}
+	return s.runtime.Config.Address
+}
+
+// clientForContext creates a lightweight gojenkins client whose transport
+// binds every request to ctx. gojenkins v1.1.0 accepts context parameters but
+// builds requests with http.NewRequest, so the transport is the only reliable
+// place to propagate cancellation without mutating the shared hot-reload
+// runtime client.
+func clientForContext(runtime *Runtime, ctx context.Context) *gojenkins.Jenkins {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	baseClient := runtime.Client.Requester.Client
+	client := *baseClient
+	transport := baseClient.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	client.Transport = roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		return transport.RoundTrip(request.Clone(ctx))
+	})
+	return gojenkins.CreateJenkins(
+		&client,
+		runtime.Config.Address,
+		runtime.Config.Username,
+		runtime.Config.Token,
+	)
 }
 
 func IsConfigured() bool {

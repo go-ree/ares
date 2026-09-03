@@ -59,6 +59,24 @@
                             ]
                         }
                     },
+                    "404": {
+                        "description": "配置不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
                     "500": {
                         "description": "内部错误",
                         "schema": {
@@ -123,6 +141,42 @@
                     },
                     "400": {
                         "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "配置或环境不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "环境已停用",
                         "schema": {
                             "allOf": [
                                 {
@@ -553,6 +607,161 @@
                     },
                     "500": {
                         "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/app-configs/{config_id}/workflow": {
+            "get": {
+                "tags": [
+                    "Pipeline"
+                ],
+                "summary": "获取应用环境配置当前绑定的工作流",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "应用环境配置 ID",
+                        "name": "config_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "系统设置管理员令牌",
+                        "name": "X-Ares-Admin-Token",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/workflow.WorkflowView"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Pipeline"
+                ],
+                "summary": "发布新的不可变工作流版本并切换应用环境绑定",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "应用环境配置 ID",
+                        "name": "config_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "系统设置管理员令牌",
+                        "name": "X-Ares-Admin-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "工作流与当前 revision",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.putWorkflowRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/workflow.WorkflowView"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "allOf": [
                                 {
@@ -1430,6 +1639,42 @@
                             ]
                         }
                     },
+                    "404": {
+                        "description": "应用或环境不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "环境已停用或配置已存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
                     "500": {
                         "description": "内部错误",
                         "schema": {
@@ -1467,7 +1712,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "环境（dev/test/moni...）",
+                        "description": "环境目录中的环境代码",
                         "name": "env",
                         "in": "path",
                         "required": true
@@ -1497,6 +1742,24 @@
                     },
                     "400": {
                         "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "配置不存在",
                         "schema": {
                             "allOf": [
                                 {
@@ -1548,7 +1811,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "环境（dev/test/moni...）",
+                        "description": "环境目录中的环境代码",
                         "name": "env",
                         "in": "path",
                         "required": true
@@ -1600,6 +1863,42 @@
                             ]
                         }
                     },
+                    "404": {
+                        "description": "配置或环境不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "环境已停用",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
                     "500": {
                         "description": "内部错误",
                         "schema": {
@@ -1631,7 +1930,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "环境（不传默认 dev）",
+                        "description": "环境代码或展示名（不传时使用排序第一的已启用环境）",
                         "name": "env",
                         "in": "query"
                     }
@@ -2041,6 +2340,49 @@
                 }
             }
         },
+        "/api/v1/deploy/publish/query/{task_id}/steps": {
+            "get": {
+                "tags": [
+                    "Publish"
+                ],
+                "summary": "获取发布任务的通用步骤快照",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/entity.TaskStepRecord"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/deploy/publish/status": {
             "get": {
                 "tags": [
@@ -2111,26 +2453,85 @@
                 }
             }
         },
+        "/api/v1/environments": {
+            "get": {
+                "description": "返回启用与停用环境，供发布选择和历史记录统一展示；发起发布时仍会校验 enabled。",
+                "tags": [
+                    "Environment"
+                ],
+                "summary": "获取完整环境目录",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/environment.View"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/job/stream/log": {
             "get": {
                 "tags": [
                     "Publish"
                 ],
-                "summary": "获取流式的构建日志 (SSE格式)",
+                "summary": "按 Ares 任务获取旧版 Jenkins 流式日志 (SSE格式)",
                 "parameters": [
                     {
+                        "type": "integer",
+                        "description": "Ares 发布任务 ID",
+                        "name": "task_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
                         "type": "string",
-                        "description": "执行job名称",
-                        "name": "job_name",
+                        "description": "日志阶段：ci 或 cd",
+                        "name": "log_type",
                         "in": "query",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "构建ID",
-                        "name": "build_id",
-                        "in": "query",
-                        "required": true
+                        "description": "Jenkins progressiveText 起始 offset",
+                        "name": "start",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -2519,6 +2920,40 @@
                 }
             }
         },
+        "/api/v1/pipeline-step-types": {
+            "get": {
+                "tags": [
+                    "Pipeline"
+                ],
+                "summary": "获取流水线步骤类型目录",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/workflow.Descriptor"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/status/nodes": {
             "get": {
                 "tags": [
@@ -2588,6 +3023,206 @@
                     },
                     "502": {
                         "description": "调用链异常",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/system/environments": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "获取系统环境目录",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "系统设置管理员令牌",
+                        "name": "X-Ares-Admin-Token",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/environment.View"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "创建环境",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "系统设置管理员令牌",
+                        "name": "X-Ares-Admin-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "环境信息",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/environment.CreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/environment.View"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/system/environments/{code}": {
+            "patch": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "更新环境",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "环境代码",
+                        "name": "code",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "系统设置管理员令牌",
+                        "name": "X-Ares-Admin-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "待更新字段",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/environment.UpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/environment.View"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "allOf": [
                                 {
@@ -3134,6 +3769,17 @@
                 }
             }
         },
+        "controller.putWorkflowRequest": {
+            "type": "object",
+            "properties": {
+                "revision": {
+                    "type": "integer"
+                },
+                "spec": {
+                    "$ref": "#/definitions/workflow.WorkflowSpec"
+                }
+            }
+        },
         "entity.AppConfigDomain": {
             "type": "object",
             "properties": {
@@ -3328,13 +3974,13 @@
                     "type": "string",
                     "format": "date-time"
                 },
+                "engine_version": {
+                    "type": "integer"
+                },
                 "env": {
                     "type": "string"
                 },
                 "message": {
-                    "type": "string"
-                },
-                "pipeline_param": {
                     "type": "string"
                 },
                 "products": {
@@ -3349,12 +3995,131 @@
                 "status": {
                     "type": "string"
                 },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.TaskStepRecord"
+                    }
+                },
                 "task_id": {
                     "type": "integer"
                 },
                 "updated_at": {
                     "type": "string",
                     "format": "date-time"
+                },
+                "workflow_version_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "entity.TaskStepRecord": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "on_failure": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "step_key": {
+                    "type": "string"
+                },
+                "step_record_id": {
+                    "type": "integer"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "uses": {
+                    "type": "string"
+                },
+                "workflow_version_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "environment.CreateRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                }
+            }
+        },
+        "environment.UpdateRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                }
+            }
+        },
+        "environment.View": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
                 }
             }
         },
@@ -3636,7 +4401,8 @@
                     "type": "string"
                 },
                 "extra_data": {
-                    "description": "新增：接口类型"
+                    "type": "object",
+                    "additionalProperties": {}
                 },
                 "is_rundeck": {
                     "type": "boolean"
@@ -3649,8 +4415,17 @@
         "publish.CreatePublishResult": {
             "type": "object",
             "properties": {
+                "app_name": {
+                    "type": "string"
+                },
+                "env": {
+                    "type": "string"
+                },
                 "error": {
                     "type": "string"
+                },
+                "request_index": {
+                    "type": "integer"
                 },
                 "success": {
                     "type": "boolean"
@@ -3770,6 +4545,109 @@
                 "field": {
                     "description": "排序字段",
                     "type": "string"
+                }
+            }
+        },
+        "workflow.Capabilities": {
+            "type": "object",
+            "properties": {
+                "cancel": {
+                    "type": "boolean"
+                },
+                "logs": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "workflow.Descriptor": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "capabilities": {
+                    "$ref": "#/definitions/workflow.Capabilities"
+                },
+                "config_schema": {
+                    "type": "object"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "unavailable_reason": {
+                    "type": "string"
+                },
+                "uses": {
+                    "type": "string"
+                }
+            }
+        },
+        "workflow.StepSpec": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "on_failure": {
+                    "type": "string"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                },
+                "uses": {
+                    "type": "string"
+                },
+                "with": {
+                    "type": "object"
+                }
+            }
+        },
+        "workflow.WorkflowSpec": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "integer"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/workflow.StepSpec"
+                    }
+                }
+            }
+        },
+        "workflow.WorkflowView": {
+            "type": "object",
+            "properties": {
+                "config_id": {
+                    "type": "integer"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "spec": {
+                    "$ref": "#/definitions/workflow.WorkflowSpec"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "workflow_id": {
+                    "type": "integer"
+                },
+                "workflow_version_id": {
+                    "type": "integer"
                 }
             }
         }

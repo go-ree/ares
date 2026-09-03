@@ -27,17 +27,17 @@ func BuildManager(ctx context.Context, configs []ClusterConfig) (*ClientManager,
 		ctx = context.Background()
 	}
 	next := &ClientManager{clients: make(map[Environment]map[string]*kubernetes.Clientset)}
-	for _, env := range []Environment{EnvDev, EnvTest, EnvStage} {
-		next.clients[env] = make(map[string]*kubernetes.Clientset)
-	}
-
-	seen := make(map[Environment]map[string]struct{}, len(next.clients))
-	for env := range next.clients {
-		seen[env] = make(map[string]struct{})
-	}
+	seen := make(map[Environment]map[string]struct{})
+	normalizedConfigs := make([]ClusterConfig, 0, len(configs))
 	for _, cfg := range configs {
-		if _, ok := seen[cfg.Environment]; !ok {
-			return nil, fmt.Errorf("unknown Kubernetes environment %q", cfg.Environment)
+		environment, err := ParseEnvironment(string(cfg.Environment))
+		if err != nil {
+			return nil, err
+		}
+		cfg.Environment = environment
+		if _, ok := seen[environment]; !ok {
+			seen[environment] = make(map[string]struct{})
+			next.clients[environment] = make(map[string]*kubernetes.Clientset)
 		}
 		if cfg.Name == "" {
 			return nil, fmt.Errorf("Kubernetes cluster name is required for %s", cfg.Environment)
@@ -46,6 +46,7 @@ func BuildManager(ctx context.Context, configs []ClusterConfig) (*ClientManager,
 			return nil, fmt.Errorf("duplicate Kubernetes cluster %s/%s", cfg.Environment, cfg.Name)
 		}
 		seen[cfg.Environment][cfg.Name] = struct{}{}
+		normalizedConfigs = append(normalizedConfigs, cfg)
 	}
 
 	type buildResult struct {
@@ -53,15 +54,15 @@ func BuildManager(ctx context.Context, configs []ClusterConfig) (*ClientManager,
 		client *kubernetes.Clientset
 		err    error
 	}
-	results := make(chan buildResult, len(configs))
-	for _, cfg := range configs {
+	results := make(chan buildResult, len(normalizedConfigs))
+	for _, cfg := range normalizedConfigs {
 		cfg := cfg
 		go func() {
 			client, err := createClient(ctx, cfg)
 			results <- buildResult{config: cfg, client: client, err: err}
 		}()
 	}
-	for range configs {
+	for range normalizedConfigs {
 		result := <-results
 		if result.err != nil {
 			return nil, fmt.Errorf("initialize Kubernetes cluster %s/%s: %w", result.config.Environment, result.config.Name, result.err)
@@ -187,6 +188,22 @@ func ListClusters(env Environment) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// ListEnvironments returns every environment currently configured in the
+// immutable runtime registry. An empty list is valid when Kubernetes is disabled.
+func ListEnvironments() []Environment {
+	registry.RLock()
+	defer registry.RUnlock()
+	if registry.manager == nil {
+		return nil
+	}
+	environments := make([]Environment, 0, len(registry.manager.clients))
+	for environment := range registry.manager.clients {
+		environments = append(environments, environment)
+	}
+	sort.Slice(environments, func(i, j int) bool { return environments[i] < environments[j] })
+	return environments
 }
 
 func DefaultClient(env Environment) *kubernetes.Clientset {

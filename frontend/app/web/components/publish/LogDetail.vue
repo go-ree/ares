@@ -12,9 +12,13 @@
       <div class="log-header">
         <div class="log-info">
           <el-descriptions :column="3" border>
-            <el-descriptions-item label="服务名称">{{ currentLog.serviceName }}</el-descriptions-item>
+            <el-descriptions-item label="服务名称">{{
+              currentLog.serviceName
+            }}</el-descriptions-item>
             <el-descriptions-item label="发布分支">{{ currentLog.branch }}</el-descriptions-item>
-            <el-descriptions-item label="环境">{{ getEnvLabel(currentLog.environment) }}</el-descriptions-item>
+            <el-descriptions-item label="环境">{{
+              getEnvLabel(currentLog.environment)
+            }}</el-descriptions-item>
             <el-descriptions-item label="发布状态">
               <el-tag :type="getStatusType(currentLog.status)">{{ currentLog.status }}</el-tag>
             </el-descriptions-item>
@@ -25,8 +29,12 @@
                 {{ currentLog.auto_deploy ? '是' : '否' }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="CI Job">{{ currentLog.ciJobName || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="CD Job">{{ currentLog.cdJobName || '-' }}</el-descriptions-item>
+            <el-descriptions-item v-if="currentLog.ciJobName" label="CI Job">{{
+              currentLog.ciJobName
+            }}</el-descriptions-item>
+            <el-descriptions-item v-if="currentLog.cdJobName" label="CD Job">{{
+              currentLog.cdJobName
+            }}</el-descriptions-item>
             <el-descriptions-item label="镜像地址" v-if="currentLog.products">
               <el-tooltip :content="currentLog.products" placement="top">
                 <span class="truncate-text">{{ currentLog.products }}</span>
@@ -39,7 +47,7 @@
             </el-descriptions-item>
           </el-descriptions>
         </div>
-        
+
         <!-- 连接状态指示器 -->
         <div v-if="activeConnections.length > 0" class="connection-status">
           <el-tag type="info" size="small">
@@ -55,13 +63,73 @@
           </div>
         </div>
       </div>
-      
+
       <div class="log-tabs">
         <el-tabs v-model="activeLogTab">
-          <el-tab-pane label="CI 日志" name="ci">
+          <el-tab-pane label="流程步骤" name="steps">
+            <div class="steps-toolbar">
+              <span class="steps-hint">展示任务创建时保存的不可变步骤快照与执行结果。</span>
+              <el-button
+                type="primary"
+                link
+                :loading="taskStepsLoading"
+                @click="loadTaskSteps(currentLog.taskId)"
+                >刷新状态</el-button
+              >
+            </div>
+            <el-alert
+              v-if="taskStepsError"
+              :title="taskStepsError"
+              type="error"
+              :closable="false"
+              show-icon
+            />
+            <el-table
+              v-else
+              v-loading="taskStepsLoading"
+              :data="taskSteps"
+              border
+              stripe
+              empty-text="该任务没有通用步骤快照（可能是旧版任务）"
+            >
+              <el-table-column label="#" width="60">
+                <template #default="{ row }">{{ row.position + 1 }}</template>
+              </el-table-column>
+              <el-table-column prop="name" label="步骤" min-width="150" />
+              <el-table-column prop="uses" label="执行器" min-width="180" show-overflow-tooltip />
+              <el-table-column label="状态" width="120">
+                <template #default="{ row }">
+                  <el-tag :type="stepStatusType(row.status)">{{
+                    stepStatusLabel(row.status)
+                  }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="失败策略" width="100">
+                <template #default="{ row }">{{
+                  row.on_failure === 'continue' ? '继续' : '停止'
+                }}</template>
+              </el-table-column>
+              <el-table-column label="执行时间" min-width="175">
+                <template #default="{ row }">{{ stepTimeText(row) }}</template>
+              </el-table-column>
+              <el-table-column label="消息" min-width="260">
+                <template #default="{ row }">
+                  <div v-if="row.message" class="step-message">{{ row.message }}</div>
+                  <span v-if="!row.message" class="steps-hint">-</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+          <el-tab-pane
+            v-if="currentLog.ciJobName && currentLog.ciBuildId"
+            label="CI 日志"
+            name="ci"
+          >
             <template #label>
               <span>CI 日志</span>
-              <el-tag v-if="isStreamingCi" type="success" size="small" style="margin-left: 8px;">实时</el-tag>
+              <el-tag v-if="isStreamingCi" type="success" size="small" style="margin-left: 8px"
+                >实时</el-tag
+              >
             </template>
             <div class="log-container">
               <div class="log-detail-content" v-loading="ciLogLoading" ref="ciLogContainer">
@@ -78,9 +146,7 @@
                     <el-icon><Warning /></el-icon>
                     <span>{{ ciLog }}</span>
                   </div>
-                  <el-button @click="retryFetchLogs" type="primary" size="small">
-                    重试
-                  </el-button>
+                  <el-button @click="retryFetchLogs" type="primary" size="small"> 重试 </el-button>
                 </div>
                 <pre v-else-if="ciLog" class="log-text">{{ getDisplayLog(ciLog) }}</pre>
                 <div v-else class="empty-log">
@@ -94,10 +160,16 @@
               </div>
             </div>
           </el-tab-pane>
-          <el-tab-pane label="CD 日志" name="cd">
+          <el-tab-pane
+            v-if="currentLog.cdJobName && currentLog.cdBuildId"
+            label="CD 日志"
+            name="cd"
+          >
             <template #label>
               <span>CD 日志</span>
-              <el-tag v-if="isStreamingCd" type="success" size="small" style="margin-left: 8px;">实时</el-tag>
+              <el-tag v-if="isStreamingCd" type="success" size="small" style="margin-left: 8px"
+                >实时</el-tag
+              >
             </template>
             <div class="log-container">
               <div class="log-detail-content" v-loading="cdLogLoading" ref="cdLogContainer">
@@ -114,9 +186,7 @@
                     <el-icon><Warning /></el-icon>
                     <span>{{ cdLog }}</span>
                   </div>
-                  <el-button @click="retryFetchLogs" type="primary" size="small">
-                    重试
-                  </el-button>
+                  <el-button @click="retryFetchLogs" type="primary" size="small"> 重试 </el-button>
                 </div>
                 <pre v-else-if="cdLog" class="log-text">{{ getDisplayLog(cdLog) }}</pre>
                 <div v-else class="empty-log">
@@ -137,10 +207,12 @@
 </template>
 
 <script setup lang="ts">
-import { watch, computed, ref, onUnmounted } from 'vue'
-import { Loading, Warning } from '@element-plus/icons-vue'
-import { useLog } from '@/composables/useLog'
-import type { DeployingService } from '@/types/deploy'
+import { watch, computed, ref, onUnmounted } from 'vue';
+import { Loading, Warning } from '@element-plus/icons-vue';
+import { useLog } from '@/composables/useLog';
+import type { DeployingService } from '@/types/deploy';
+import type { TaskStepRecord } from '@/models/deploy';
+import { getTaskDetail } from '@/services/deploy';
 
 const {
   // 响应式数据
@@ -153,7 +225,7 @@ const {
   cdLogLoading,
   ciLogContainer,
   cdLogContainer,
-  
+
   // 工具函数
   getStatusType,
   getEnvLabel,
@@ -161,120 +233,197 @@ const {
   scrollToBottomPrecise,
   getCurrentStreamingStatus,
   getDisplayLog,
-  
+
   // 事件处理函数
   fetchLogs,
   handleLogDialogClose,
   handleLogDialogOpen,
   retryFetchLogs,
-  
+
   // 连接管理
   getActiveConnections,
-  
+
   // 清理函数
   cleanupLogsAndConnections,
-  
+
   // 连接检查相关
-  stopConnectionCheck
-} = useLog()
+  stopConnectionCheck,
+} = useLog();
 
 // 计算属性：获取当前连接状态
-const isStreamingCi = computed(() => getCurrentStreamingStatus('ci'))
-const isStreamingCd = computed(() => getCurrentStreamingStatus('cd'))
+const isStreamingCi = computed(() => getCurrentStreamingStatus('ci'));
+const isStreamingCd = computed(() => getCurrentStreamingStatus('cd'));
 
 // 计算属性：获取活跃连接列表
-const activeConnections = computed(() => getActiveConnections())
+const activeConnections = computed(() => getActiveConnections());
+const taskSteps = ref<TaskStepRecord[]>([]);
+const taskStepsLoading = ref(false);
+const taskStepsError = ref('');
+const taskStepsLoadingTaskId = ref<number | null>(null);
+let taskStepsRequestVersion = 0;
+
+const loadTaskSteps = async (taskId: number) => {
+  if (!taskId) return;
+  if (taskStepsLoading.value && taskStepsLoadingTaskId.value === taskId) return;
+  const requestVersion = ++taskStepsRequestVersion;
+  taskStepsLoading.value = true;
+  taskStepsLoadingTaskId.value = taskId;
+  taskStepsError.value = '';
+  try {
+    const response = await getTaskDetail(taskId);
+    if (requestVersion !== taskStepsRequestVersion || currentLog.value.taskId !== taskId) return;
+    if (response.data.code !== 1) {
+      throw new Error(response.data.error || response.data.message || '获取任务步骤失败');
+    }
+    taskSteps.value = [...(response.data.result?.steps || [])].sort(
+      (left, right) => left.position - right.position
+    );
+  } catch (error) {
+    if (requestVersion !== taskStepsRequestVersion || currentLog.value.taskId !== taskId) return;
+    taskSteps.value = [];
+    taskStepsError.value = error instanceof Error ? error.message : '获取任务步骤失败';
+  } finally {
+    if (requestVersion === taskStepsRequestVersion) {
+      taskStepsLoading.value = false;
+      taskStepsLoadingTaskId.value = null;
+    }
+  }
+};
+
+const stepStatusLabel = (status: string) =>
+  ({
+    pending: '等待中',
+    running: '执行中',
+    succeeded: '成功',
+    failed: '失败',
+    skipped: '已跳过',
+    cancelled: '已取消',
+  })[status] || status;
+
+const stepStatusType = (status: string) => {
+  if (status === 'succeeded') return 'success';
+  if (status === 'failed') return 'danger';
+  if (status === 'running') return 'primary';
+  if (status === 'cancelled' || status === 'skipped') return 'warning';
+  return 'info';
+};
+
+const formatDateTime = (value?: string | null) =>
+  value ? new Date(value).toLocaleString('zh-CN') : '';
+
+const stepTimeText = (step: TaskStepRecord) => {
+  const started = formatDateTime(step.started_at);
+  const finished = formatDateTime(step.finished_at);
+  if (started && finished) return `${started} → ${finished}`;
+  return started || finished || '-';
+};
 
 // 记录上一次的服务信息
-const lastServiceInfo = ref<string>('')
+const lastServiceInfo = ref<string>('');
 
 // 检查是否是同一个服务
 const isSameService = (newService: DeployingService) => {
-  const newServiceInfo = `${newService.serviceName}_${newService.ciJobName}_${newService.ciBuildId}_${newService.cdJobName}_${newService.cdBuildId}`
-  return newServiceInfo === lastServiceInfo.value
-}
+  const newServiceInfo = `${newService.taskId}_${newService.serviceName}_${newService.ciJobName}_${newService.ciBuildId}_${newService.cdJobName}_${newService.cdBuildId}`;
+  return newServiceInfo === lastServiceInfo.value;
+};
 
 // 定义props
 interface Props {
-  visible: boolean
-  logData?: DeployingService
+  visible: boolean;
+  logData?: DeployingService;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   visible: false,
-  logData: undefined
-})
+  logData: undefined,
+});
 
 // 定义事件
 const emit = defineEmits<{
-  'update:visible': [value: boolean]
-  'close': []
-}>()
+  'update:visible': [value: boolean];
+  close: [];
+}>();
 
 // 监听visible变化
-watch(() => props.visible, (newVal) => {
-  if (newVal) {
-    logDialogVisible.value = true
-    if (props.logData) {
-      // 检查是否是同一个服务
-      if (!isSameService(props.logData)) {
-        // 如果是不同的服务，先清理之前的日志和连接
-        console.log('切换到不同服务，清理之前的日志和连接')
-        cleanupLogsAndConnections()
+watch(
+  () => props.visible,
+  newVal => {
+    if (newVal) {
+      logDialogVisible.value = true;
+      if (props.logData) {
+        // 检查是否是同一个服务
+        if (!isSameService(props.logData)) {
+          // 如果是不同的服务，先清理之前的日志和连接
+          console.log('切换到不同服务，清理之前的日志和连接');
+          cleanupLogsAndConnections();
+          taskSteps.value = [];
+          taskStepsError.value = '';
+        }
+
+        currentLog.value = props.logData;
+        // 更新服务信息
+        lastServiceInfo.value = `${props.logData.taskId}_${props.logData.serviceName}_${props.logData.ciJobName}_${props.logData.ciBuildId}_${props.logData.cdJobName}_${props.logData.cdBuildId}`;
+
+        activeLogTab.value = 'steps';
+        void loadTaskSteps(props.logData.taskId);
       }
-      
-      currentLog.value = props.logData
-      // 更新服务信息
-      lastServiceInfo.value = `${props.logData.serviceName}_${props.logData.ciJobName}_${props.logData.ciBuildId}_${props.logData.cdJobName}_${props.logData.cdBuildId}`
-      
-      fetchLogs(props.logData)
+    } else {
+      taskStepsRequestVersion += 1;
+      taskStepsLoading.value = false;
+      taskStepsLoadingTaskId.value = null;
+      logDialogVisible.value = false;
     }
-  } else {
-    logDialogVisible.value = false
   }
-})
+);
 
 // 监听logDialogVisible变化
-watch(logDialogVisible, (newVal) => {
-  emit('update:visible', newVal)
+watch(logDialogVisible, newVal => {
+  emit('update:visible', newVal);
   if (!newVal) {
     // 对话框关闭时调用清理函数并触发close事件
-    handleLogDialogClose()
-    emit('close')
+    handleLogDialogClose();
+    emit('close');
   } else {
     // 对话框打开时调用恢复函数
-    handleLogDialogOpen()
+    handleLogDialogOpen();
   }
-})
+});
 
 // 监听日志标签页切换
-watch(activeLogTab, async (newTab) => {
+watch(activeLogTab, async newTab => {
   if (logDialogVisible.value && currentLog.value) {
-    console.log(`切换到${newTab}标签页`)
-    
+    if (newTab === 'steps') {
+      if (taskSteps.value.length === 0 && !taskStepsError.value) {
+        await loadTaskSteps(currentLog.value.taskId);
+      }
+      return;
+    }
+    console.log(`切换到${newTab}标签页`);
+
     // 检查当前标签页是否已经有日志内容
-    const hasLogContent = newTab === 'ci' ? !!ciLog.value : !!cdLog.value
-    const isConnectionActive = newTab === 'ci' ? 
-      getCurrentStreamingStatus('ci') : 
-      getCurrentStreamingStatus('cd')
-    
+    const hasLogContent = newTab === 'ci' ? !!ciLog.value : !!cdLog.value;
+    const isConnectionActive =
+      newTab === 'ci' ? getCurrentStreamingStatus('ci') : getCurrentStreamingStatus('cd');
+
     // 如果已经有日志内容或连接活跃，跳过重新获取
     if (hasLogContent || isConnectionActive) {
-      console.log(`${newTab}标签页已有日志内容或连接活跃，跳过重新获取`)
-      return
+      console.log(`${newTab}标签页已有日志内容或连接活跃，跳过重新获取`);
+      return;
     }
-    
+
     // 只有在没有日志内容且没有活跃连接时才获取
-    console.log(`${newTab}标签页需要获取日志`)
-    await fetchLogs(currentLog.value)
+    console.log(`${newTab}标签页需要获取日志`);
+    await fetchLogs(currentLog.value);
   }
-})
+});
 
 // 组件卸载时清理资源
 onUnmounted(() => {
-  console.log('LogDetail组件卸载，清理资源')
-  stopConnectionCheck()
-})
+  console.log('LogDetail组件卸载，清理资源');
+  taskStepsRequestVersion += 1;
+  cleanupLogsAndConnections();
+  stopConnectionCheck();
+});
 </script>
 
 <style scoped>
@@ -293,6 +442,25 @@ onUnmounted(() => {
 
 .log-tabs {
   margin-top: 20px;
+}
+
+.steps-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.steps-hint {
+  color: #909399;
+  font-size: 12px;
+}
+
+.step-message {
+  margin-bottom: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* 确保LogDetail中的标签页样式正确 */
@@ -481,4 +649,4 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
 }
-</style> 
+</style>

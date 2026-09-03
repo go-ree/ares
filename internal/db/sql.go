@@ -15,6 +15,11 @@ import (
 
 var Engine *xorm.Engine
 
+var migrationManagedTableSyncOptions = xorm.SyncOptions{
+	IgnoreConstrains:  true,
+	IgnoreDropIndices: true,
+}
+
 func Init() error {
 	var err error
 	Engine, err = xorm.NewEngine("mysql", config.Main.DB.ConnStr)
@@ -158,17 +163,23 @@ func InitializeDB() error {
 		return fmt.Errorf("check dev_language_rules table: %w", err)
 	}
 
-	// 检查并自动创建表
-	err = Engine.Sync2(
-		new(entity.Apps),
-		new(entity.AppConfigs),
-		new(entity.AppConfigDomain),
-		new(entity.TaskRecord),
-		new(entity.TaskRecordImage),
-		new(entity.Pipelines),
-		new(entity.EnvConfigs),
-		new(entity.IntegrationSetting),
-	)
+	// 检查并自动创建表。AppConfigs 和 TaskRecord 含有迁移维护的
+	// generated/复合索引；对这两张表禁止 Xorm 删除模型未声明的索引，
+	// 否则每次重启都会移除环境唯一约束和 Worker 调度索引。
+	err = Engine.Sync2(new(entity.Apps))
+	if err == nil {
+		_, err = Engine.SyncWithOptions(migrationManagedTableSyncOptions,
+			new(entity.AppConfigs), new(entity.TaskRecord))
+	}
+	if err == nil {
+		err = Engine.Sync2(
+			new(entity.AppConfigDomain),
+			new(entity.TaskRecordImage),
+			new(entity.Pipelines),
+			new(entity.EnvConfigs),
+			new(entity.IntegrationSetting),
+		)
+	}
 	if err != nil {
 		slog.Error("failed to sync database tables", slog.Any("error", err))
 		return err

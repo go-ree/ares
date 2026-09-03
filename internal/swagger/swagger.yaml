@@ -234,6 +234,13 @@ definitions:
       projectType:
         type: string
     type: object
+  controller.putWorkflowRequest:
+    properties:
+      revision:
+        type: integer
+      spec:
+        $ref: '#/definitions/workflow.WorkflowSpec'
+    type: object
   entity.AppConfigDomain:
     properties:
       config_id:
@@ -365,11 +372,11 @@ definitions:
       deleted_at:
         format: date-time
         type: string
+      engine_version:
+        type: integer
       env:
         type: string
       message:
-        type: string
-      pipeline_param:
         type: string
       products:
         type: string
@@ -379,11 +386,89 @@ definitions:
         type: string
       status:
         type: string
+      steps:
+        items:
+          $ref: '#/definitions/entity.TaskStepRecord'
+        type: array
       task_id:
         type: integer
       updated_at:
         format: date-time
         type: string
+      workflow_version_id:
+        type: integer
+    type: object
+  entity.TaskStepRecord:
+    properties:
+      attempt:
+        type: integer
+      category:
+        type: string
+      created_at:
+        type: string
+      finished_at:
+        type: string
+      message:
+        type: string
+      name:
+        type: string
+      on_failure:
+        type: string
+      position:
+        type: integer
+      started_at:
+        type: string
+      status:
+        type: string
+      step_key:
+        type: string
+      step_record_id:
+        type: integer
+      task_id:
+        type: integer
+      timeout_seconds:
+        type: integer
+      updated_at:
+        type: string
+      uses:
+        type: string
+      workflow_version_id:
+        type: integer
+    type: object
+  environment.CreateRequest:
+    properties:
+      code:
+        type: string
+      enabled:
+        type: boolean
+      name:
+        type: string
+      sort_order:
+        type: integer
+    type: object
+  environment.UpdateRequest:
+    properties:
+      enabled:
+        type: boolean
+      name:
+        type: string
+      sort_order:
+        type: integer
+    type: object
+  environment.View:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      name:
+        type: string
+      sort_order:
+        type: integer
     type: object
   integration.JenkinsView:
     properties:
@@ -568,7 +653,8 @@ definitions:
       env:
         type: string
       extra_data:
-        description: 新增：接口类型
+        additionalProperties: {}
+        type: object
       is_rundeck:
         type: boolean
       publisher:
@@ -576,8 +662,14 @@ definitions:
     type: object
   publish.CreatePublishResult:
     properties:
+      app_name:
+        type: string
+      env:
+        type: string
       error:
         type: string
+      request_index:
+        type: integer
       success:
         type: boolean
       task_record:
@@ -661,6 +753,73 @@ definitions:
         description: 排序字段
         type: string
     type: object
+  workflow.Capabilities:
+    properties:
+      cancel:
+        type: boolean
+      logs:
+        type: boolean
+    type: object
+  workflow.Descriptor:
+    properties:
+      available:
+        type: boolean
+      capabilities:
+        $ref: '#/definitions/workflow.Capabilities'
+      config_schema:
+        type: object
+      description:
+        type: string
+      name:
+        type: string
+      unavailable_reason:
+        type: string
+      uses:
+        type: string
+    type: object
+  workflow.StepSpec:
+    properties:
+      category:
+        type: string
+      key:
+        type: string
+      name:
+        type: string
+      on_failure:
+        type: string
+      timeout_seconds:
+        type: integer
+      uses:
+        type: string
+      with:
+        type: object
+    type: object
+  workflow.WorkflowSpec:
+    properties:
+      name:
+        type: string
+      schema_version:
+        type: integer
+      steps:
+        items:
+          $ref: '#/definitions/workflow.StepSpec'
+        type: array
+    type: object
+  workflow.WorkflowView:
+    properties:
+      config_id:
+        type: integer
+      revision:
+        type: integer
+      spec:
+        $ref: '#/definitions/workflow.WorkflowSpec'
+      version:
+        type: integer
+      workflow_id:
+        type: integer
+      workflow_version_id:
+        type: integer
+    type: object
 info:
   contact: {}
 paths:
@@ -686,6 +845,15 @@ paths:
               type: object
         "400":
           description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "404":
+          description: 配置不存在
           schema:
             allOf:
             - $ref: '#/definitions/util.ResponseTemplate'
@@ -730,6 +898,24 @@ paths:
               type: object
         "400":
           description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "404":
+          description: 配置或环境不存在
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "409":
+          description: 环境已停用
           schema:
             allOf:
             - $ref: '#/definitions/util.ResponseTemplate'
@@ -977,6 +1163,94 @@ paths:
       summary: 修改单条多域名配置（PATCH：只更新传入字段）
       tags:
       - AppConfig
+  /api/v1/app-configs/{config_id}/workflow:
+    get:
+      parameters:
+      - description: 应用环境配置 ID
+        in: path
+        name: config_id
+        required: true
+        type: integer
+      - description: 系统设置管理员令牌
+        in: header
+        name: X-Ares-Admin-Token
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/workflow.WorkflowView'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 获取应用环境配置当前绑定的工作流
+      tags:
+      - Pipeline
+    put:
+      parameters:
+      - description: 应用环境配置 ID
+        in: path
+        name: config_id
+        required: true
+        type: integer
+      - description: 系统设置管理员令牌
+        in: header
+        name: X-Ares-Admin-Token
+        required: true
+        type: string
+      - description: 工作流与当前 revision
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.putWorkflowRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/workflow.WorkflowView'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 发布新的不可变工作流版本并切换应用环境绑定
+      tags:
+      - Pipeline
   /api/v1/apps:
     post:
       parameters:
@@ -1257,6 +1531,24 @@ paths:
                 code:
                   type: integer
               type: object
+        "404":
+          description: 应用或环境不存在
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "409":
+          description: 环境已停用或配置已存在
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
         "500":
           description: 内部错误
           schema:
@@ -1277,7 +1569,7 @@ paths:
         name: app_id
         required: true
         type: integer
-      - description: 环境（dev/test/moni...）
+      - description: 环境目录中的环境代码
         in: path
         name: env
         required: true
@@ -1296,6 +1588,15 @@ paths:
               type: object
         "400":
           description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "404":
+          description: 配置不存在
           schema:
             allOf:
             - $ref: '#/definitions/util.ResponseTemplate'
@@ -1322,7 +1623,7 @@ paths:
         name: app_id
         required: true
         type: integer
-      - description: 环境（dev/test/moni...）
+      - description: 环境目录中的环境代码
         in: path
         name: env
         required: true
@@ -1345,6 +1646,24 @@ paths:
               type: object
         "400":
           description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "404":
+          description: 配置或环境不存在
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "409":
+          description: 环境已停用
           schema:
             allOf:
             - $ref: '#/definitions/util.ResponseTemplate'
@@ -1556,7 +1875,7 @@ paths:
       description: 用于替换老接口 getServiceProjectMap：按 env 查询 app_configs.code_package_type，并返回
         gitAddress/projectName/projectServiceName/projectType 映射（legacy 响应：code 为字符串）
       parameters:
-      - description: 环境（不传默认 dev）
+      - description: 环境代码或展示名（不传时使用排序第一的已启用环境）
         in: query
         name: env
         type: string
@@ -1783,6 +2102,31 @@ paths:
       summary: 查询构建任务详情
       tags:
       - Publish
+  /api/v1/deploy/publish/query/{task_id}/steps:
+    get:
+      parameters:
+      - description: 任务 ID
+        in: path
+        name: task_id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  items:
+                    $ref: '#/definitions/entity.TaskStepRecord'
+                  type: array
+              type: object
+      summary: 获取发布任务的通用步骤快照
+      tags:
+      - Publish
   /api/v1/deploy/publish/status:
     get:
       responses:
@@ -1820,18 +2164,51 @@ paths:
       summary: 获取发布中的任务列表
       tags:
       - Publish
+  /api/v1/environments:
+    get:
+      description: 返回启用与停用环境，供发布选择和历史记录统一展示；发起发布时仍会校验 enabled。
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  items:
+                    $ref: '#/definitions/environment.View'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 获取完整环境目录
+      tags:
+      - Environment
   /api/v1/job/stream/log:
     get:
       parameters:
-      - description: 执行job名称
+      - description: Ares 发布任务 ID
         in: query
-        name: job_name
+        name: task_id
+        required: true
+        type: integer
+      - description: 日志阶段：ci 或 cd
+        in: query
+        name: log_type
         required: true
         type: string
-      - description: 构建ID
+      - description: Jenkins progressiveText 起始 offset
         in: query
-        name: build_id
-        required: true
+        name: start
         type: integer
       responses:
         "200":
@@ -1874,7 +2251,7 @@ paths:
                 code:
                   type: integer
               type: object
-      summary: 获取流式的构建日志 (SSE格式)
+      summary: 按 Ares 任务获取旧版 Jenkins 流式日志 (SSE格式)
       tags:
       - Publish
   /api/v1/k8s/debug:
@@ -2049,6 +2426,25 @@ paths:
       summary: 获取应用的pod列表
       tags:
       - K8S
+  /api/v1/pipeline-step-types:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  items:
+                    $ref: '#/definitions/workflow.Descriptor'
+                  type: array
+              type: object
+      summary: 获取流水线步骤类型目录
+      tags:
+      - Pipeline
   /api/v1/status/nodes:
     get:
       responses:
@@ -2095,6 +2491,120 @@ paths:
       summary: 获取jenkins节点的状态
       tags:
       - Jenkins
+  /api/v1/system/environments:
+    get:
+      parameters:
+      - description: 系统设置管理员令牌
+        in: header
+        name: X-Ares-Admin-Token
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  items:
+                    $ref: '#/definitions/environment.View'
+                  type: array
+              type: object
+      summary: 获取系统环境目录
+      tags:
+      - System
+    post:
+      parameters:
+      - description: 系统设置管理员令牌
+        in: header
+        name: X-Ares-Admin-Token
+        required: true
+        type: string
+      - description: 环境信息
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/environment.CreateRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/environment.View'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 创建环境
+      tags:
+      - System
+  /api/v1/system/environments/{code}:
+    patch:
+      parameters:
+      - description: 环境代码
+        in: path
+        name: code
+        required: true
+        type: string
+      - description: 系统设置管理员令牌
+        in: header
+        name: X-Ares-Admin-Token
+        required: true
+        type: string
+      - description: 待更新字段
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/environment.UpdateRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/environment.View'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 更新环境
+      tags:
+      - System
   /api/v1/system/integrations:
     get:
       parameters:

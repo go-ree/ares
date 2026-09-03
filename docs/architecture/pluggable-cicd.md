@@ -2,7 +2,7 @@
 
 ## 1. 背景
 
-Ares 当前围绕应用管理发布，但发布链路把“流水线”等同于 Jenkins 的一组固定 CI/CD Job，把发布环境等同于 `dev`、`test`、`moni` 三个枚举。该模型能支撑既有场景，却会产生以下限制：
+Ares 的历史实现围绕应用管理发布，但发布链路把“流水线”等同于 Jenkins 的一组固定 CI/CD Job，把发布环境等同于 `dev`、`test`、`moni` 三个枚举。该模型能支撑既有场景，却会产生以下限制：
 
 - 未配置 Jenkins 时无法创建任何发布任务，核心业务依赖具体执行平台。
 - 一个包类型只能绑定“构建 + 部署”两个固定步骤，无法按需插入测试、扫描、审批或通知。
@@ -154,13 +154,13 @@ type LogReader interface { ReadLogs(context.Context, LogRequest) (LogChunk, erro
 type Canceller interface { Cancel(context.Context, CancelRequest) error }
 ```
 
-注册表在进程启动时按 `uses` 注册执行器，重复注册失败。保存流程和发起发布前均校验：
+注册表在进程启动时按 `uses` 注册执行器，重复注册失败。保存流程时校验结构、步骤类型和步骤配置；发起发布时再校验执行器运行可用性：
 
 - 步骤类型存在；
 - 步骤配置合法；
-- 必需的外部集成可用。
+- 必需的外部集成可用（仅发布时）。
 
-未配置 Jenkins 时，只有包含 `jenkins.job@v1` 的流程不可运行，其他功能不受影响。`builtin.noop@v1` 为同步、安全且无外部依赖的 Demo/测试执行器。
+未配置 Jenkins 时仍可预先保存包含 `jenkins.job@v1` 的流程，但该流程不可发起运行；其他功能不受影响。`builtin.noop@v1` 为同步、安全且无外部依赖的 Demo/测试执行器。
 
 ## 7. 运行状态与可靠性
 
@@ -191,18 +191,18 @@ pending -> running -> succeeded
 task_id / step_key / attempt
 ```
 
-Jenkins Adapter 将其作为构建参数传递。外部触发响应不明确时进入可协调状态，不盲目重复触发破坏性步骤。
+Jenkins Adapter 将其作为构建参数传递。取得 Queue ID 后立即持久化并交给后续协调；如果触发请求在取得 Queue ID 前结果不明确，首版无法跨系统证明 exactly-once，后续需结合 Jenkins 侧按幂等键查询或新的发布 API 去重能力继续完善。
 
 ## 8. API 边界
 
 首版新增：
 
-- `GET /api/v1/environments`：公开读取环境目录。
+- `GET /api/v1/environments`：公开读取完整环境目录（包含停用项，供历史记录显示）。
 - `POST /api/v1/system/environments`：创建环境。
 - `PATCH /api/v1/system/environments/:code`：修改名称、启停和排序。
 - `GET /api/v1/pipeline-step-types`：读取可用步骤描述符。
-- `GET /api/v1/app-configs/:config_id/workflow`：读取当前流程。
-- `PUT /api/v1/app-configs/:config_id/workflow`：校验规范、创建不可变版本并切换绑定。
+- `GET /api/v1/app-configs/:config_id/workflow`：使用系统管理员令牌读取当前流程。
+- `PUT /api/v1/app-configs/:config_id/workflow`：使用系统管理员令牌校验规范、创建不可变版本并切换绑定。
 - `GET /api/v1/deploy/publish/query/:task_id/steps`：读取通用步骤运行记录。
 
 现有发布接口保留，内部切换到通用 Release/Workflow 服务。后续新增以 `config_id` 和 `Idempotency-Key` 为主的新发布 API，旧 `app_name + env` DTO 作为兼容适配层。
@@ -215,8 +215,10 @@ Jenkins Adapter 将其作为构建参数传递。外部触发响应不明确时�
 2. 从 `env_configs`、`app_configs`、`task_record` 的环境并集补齐目录；新环境默认禁用，管理员确认后启用。
 3. 将旧 `pipelines_job_combination` 导入为两个 `jenkins.job@v1` 步骤的流程，并按包类型为 AppConfig 建绑定。
 4. 新任务写通用步骤记录；恰好匹配旧 CI/CD 的 Jenkins 流程可投影旧字段供旧前端读取。
-5. 升级时不迁移、不重触发在途旧任务。旧引擎只负责将已有任务收尾，新任务进入新引擎。
+5. 升级时不迁移、不重触发在途旧任务，新任务进入新引擎。旧 schema 未保存 Jenkins 地址，无法证明实例归属的 v1 在途任务必须在网络调用前 fail-closed；只有显式绑定且与当前运行时一致的任务才允许旧引擎收尾。
 6. 观察至少一个大版本后，才评估移除旧表、旧字段和旧日志接口。
+
+结构迁移采用前向兼容策略，但升级后的数据库不能由旧版 Xorm 进程继续写入。旧同步逻辑会删除它不认识的新索引，却保留迁移版本标记；因此回退必须使用 schema/Worker 兼容镜像，或恢复升级前数据库备份，不能只替换为旧二进制。
 
 历史环境重复或大小写碰撞必须在加唯一约束前报告并停止迁移，不得静默合并。`ceshi -> test` 等别名不得继续存在于核心发布逻辑；如确需兼容，只能放在带弃用告警的兼容 API 层。
 
@@ -224,10 +226,11 @@ Jenkins Adapter 将其作为构建参数传递。外部触发响应不明确时�
 
 - 执行器配置严格校验，未知字段按步骤规范处理。
 - 不提供任意 Shell 步骤。
-- 日志通过 `task_id + step_key` 鉴权读取，客户端不能任意指定 Jenkins Job。
+- 完整通用日志接口上线时必须通过 `task_id + step_key` 定位并纳入鉴权，客户端不能任意指定 Jenkins Job；本阶段只提供脱敏的通用步骤详情，旧 Jenkins 日志接口仍属于待迁移兼容面。
 - Secret 只保留引用，数据库快照、日志、错误消息和接口响应不得回传明文。
 - 管理环境和流程沿用系统管理鉴权；发布权限后续纳入细粒度 RBAC。
 - 批量发布采用有界并发，不创建无上限 goroutine。
+- Jenkins 步骤的外部引用绑定实例地址；已绑定的在途 v1/v2 任务存在时禁止换址，运行时切换与步骤 Start/Reconcile 通过读写门闩串行化。历史未绑定 v1 任务不猜测归属、不访问 Jenkins，并进入明确失败终态。
 
 ## 11. 架构验收
 

@@ -1,6 +1,6 @@
 # Ares
 
-Ares 是一个包含 Go 发布编排 API 与 ChaosCanvas Vue 管理端的 CI/CD 控制台。实际构建和发布由外部 Jenkins 执行，Kubernetes 集成用于查询集群资源。
+Ares 是一个包含 Go 发布编排 API 与 ChaosCanvas Vue 管理端的开源 CI/CD 控制台。Ares 以应用及其环境配置为核心，通过可插拔步骤组合发布流程；Jenkins 和 Kubernetes 都是可选集成。
 
 ## Docker Compose 快速启动
 
@@ -22,7 +22,7 @@ docker compose up -d --build --wait
 
 Jenkins 与 Kubernetes 不再是启动依赖。进入“系统设置 → 系统配置”，使用 `.env` 中的 `ARES_SETTINGS_ADMIN_TOKEN` 加载并保存集成配置；连接失败只影响对应功能，不影响 Ares 与应用管理功能运行。
 
-空数据库会自动创建表，并初始化 3 个 Demo 应用、9 份环境配置、示例域名和终态发布记录。初始化是幂等的：只要 `apps` 表已有记录，重启就不会再次写入或覆盖数据。
+空数据库会自动创建表，并初始化 3 个 Demo 应用、4 个动态环境、12 份应用环境配置、独立的 Noop 发布流程、示例域名和终态步骤记录。初始化是幂等的；任一相关业务表已经有数据时都会跳过整组 Demo 写入，避免污染已有或部分恢复的数据。
 
 常用命令：
 
@@ -38,7 +38,7 @@ docker compose down
 docker compose down -v
 ```
 
-完整配置、外部 Jenkins/Kubernetes 接入和生产注意事项见 [部署指南](docs/operations/deployment.md)。
+架构、扩展开发、实施路线和部署说明统一从 [文档入口](docs/README.md) 查阅。
 
 ## 本地验证
 

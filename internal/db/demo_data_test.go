@@ -20,8 +20,23 @@ func TestDemoDataUsesValidIDsAndTerminalTaskStatuses(t *testing.T) {
 
 	for _, task := range demoTaskSeeds() {
 		switch task.status {
-		case entity.StatusPackaging, entity.StatusPackaged, entity.StatusDeploying:
-			t.Fatalf("demo task status %s would trigger the Jenkins poller", task.status)
+		case entity.StatusPackaging, entity.StatusPackaged, entity.StatusDeploying, "queued", "running":
+			t.Fatalf("demo task status %s would trigger a release worker", task.status)
 		}
+	}
+}
+
+func TestDemoDataProvesEnvironmentsAreDataDriven(t *testing.T) {
+	foundPreview := false
+	for _, environment := range demoEnvironments() {
+		if !environment.Enabled {
+			t.Fatalf("demo environment %s should be enabled", environment.Env)
+		}
+		if environment.Env == "preview" {
+			foundPreview = true
+		}
+	}
+	if !foundPreview {
+		t.Fatal("demo environments should include a value outside the historical dev/test/moni set")
 	}
 }

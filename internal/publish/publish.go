@@ -4,13 +4,17 @@ import (
 	"ares/internal/api/util"
 	"ares/internal/db"
 	"ares/internal/entity"
-	"ares/internal/jenkins"
+	"ares/internal/environment"
+	"ares/internal/release"
 	"ares/internal/tool"
+	"ares/internal/workflow"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -19,7 +23,7 @@ type PublishManager struct {
 	utilManager *util.ParamPage
 }
 
-var ErrJenkinsDisabled = errors.New("jenkins integration is disabled")
+var ErrWorkflowNotConfigured = errors.New("应用环境尚未配置发布流程")
 
 // NewPublishManager 创建新的发布管理器
 func NewPublishManager() *PublishManager {
@@ -30,24 +34,24 @@ func NewPublishManager() *PublishManager {
 
 // CreatePublishRequest 触发发布动作所需的请求参数
 type CreatePublishRequest struct {
-	AppName   string `json:"app_name"`
-	Branch    string `json:"branch"`
-	Env       string `json:"env"`
-	Publisher string `json:"publisher"`
-	IsRundeck bool   `json:"is_rundeck"`
-	ExtraData any    `json:"extra_data,omitempty"` // 新增：接口类型
+	AppName   string         `json:"app_name"`
+	Branch    string         `json:"branch"`
+	Env       string         `json:"env"`
+	Publisher string         `json:"publisher"`
+	IsRundeck bool           `json:"is_rundeck"`
+	ExtraData map[string]any `json:"extra_data,omitempty"`
 }
 
 // PublishRequest 实际发布需要用到的参数
 type PublishRequest struct {
-	AppName         string  `json:"app_name"`
-	RundeckAppName  *string `json:"rundeck_app_name"`
-	Branch          string  `json:"branch"`
-	Env             string  `json:"env"`
-	Publisher       string  `json:"publisher"`
-	AppId           int     `json:"app_id"`
-	CodePackageType string  `json:"code_package_type"`
-	ExtraData       any     `json:"extra_data,omitempty"` // 新增：接口类型
+	AppName         string         `json:"app_name"`
+	RundeckAppName  *string        `json:"rundeck_app_name"`
+	Branch          string         `json:"branch"`
+	Env             string         `json:"env"`
+	Publisher       string         `json:"publisher"`
+	AppId           int            `json:"app_id"`
+	CodePackageType string         `json:"code_package_type"`
+	ExtraData       map[string]any `json:"extra_data,omitempty"`
 }
 
 // CreateBatchPublishRequest 批量触发发布动作请求
@@ -57,9 +61,12 @@ type CreateBatchPublishRequest struct {
 
 // CreatePublishResult 表示单次应用发布动作的结果
 type CreatePublishResult struct {
-	TaskRecord *entity.TaskRecord `json:"task_record"`
-	Error      string             `json:"error"`
-	Success    bool               `json:"success"`
+	RequestIndex int                `json:"request_index"`
+	AppName      string             `json:"app_name"`
+	Env          string             `json:"env"`
+	TaskRecord   *entity.TaskRecord `json:"task_record"`
+	Error        string             `json:"error"`
+	Success      bool               `json:"success"`
 }
 
 // CreateBatchPublishResponse 表示批量应用发布动作的结果
@@ -149,28 +156,29 @@ func (pm *PublishManager) VerifyPipelines(req *PublishRequest) (*entity.Pipeline
 	return &pipelinesJobCombination[0], nil
 }
 
-// CreatePublish 创建单次发布动作
-func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity.TaskRecord, error) {
-	if !jenkins.IsConfigured() {
-		return nil, ErrJenkinsDisabled
+// CreatePublish 创建单次发布动作。发布核心只面向通用工作流；
+// Jenkins 是否必需由当前 AppConfig 的步骤定义决定。
+func (pm *PublishManager) CreatePublish(ctx context.Context, createReq *CreatePublishRequest) (*entity.TaskRecord, error) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	// 验证所需的参数信息是否完成且不为空
-	err := tool.ValidateStruct(creatReq)
+	err := tool.ValidateStruct(createReq)
 	if err != nil {
 		return nil, err
 	}
 
-	req := &PublishRequest{
-		AppName:   creatReq.AppName,
-		Branch:    creatReq.Branch,
-		Env:       creatReq.Env,
-		Publisher: creatReq.Publisher,
-		ExtraData: creatReq.ExtraData,
-		// RundeckAppName 将在验证后设置
+	envConfig, err := environment.NewService().RequireEnabled(ctx, createReq.Env)
+	if err != nil {
+		return nil, err
 	}
-	// 这里打个补丁，为了兼容非标准的 ceshi 环境，将其转换为test环境
-	if req.Env == "ceshi" {
-		req.Env = "test"
+	req := &PublishRequest{
+		AppName:   createReq.AppName,
+		Branch:    createReq.Branch,
+		Env:       envConfig.Env,
+		Publisher: createReq.Publisher,
+		ExtraData: createReq.ExtraData,
+		// RundeckAppName 将在验证后设置
 	}
 	var app *entity.Apps
 
@@ -192,68 +200,61 @@ func (pm *PublishManager) CreatePublish(creatReq *CreatePublishRequest) (*entity
 	}
 	req.CodePackageType = appConfig.CodePackageType
 
-	envConfigs, err := pm.VerifyEnvConfigs(req)
+	// 构建平台无关的发布上下文；Jenkins Adapter 会在需要时把它
+	// 转换为参数，Noop 或其他执行器可以直接忽略这些兼容字段。
+	_, taskRecord, err := pm.ComposePublishData(req, app, appConfig, envConfig)
 	if err != nil {
 		return nil, err
 	}
-
-	pipelines, err := pm.VerifyPipelines(req)
-	if err != nil {
-		return nil, err
+	runtime := release.Shared()
+	if _, err := runtime.Service.CreateTask(ctx, runtime.Store, appConfig.ConfigID, taskRecord); err != nil {
+		if errors.Is(err, workflow.ErrNotFound) {
+			return nil, fmt.Errorf("%w，app=%s env=%s", ErrWorkflowNotConfigured, app.AppName, req.Env)
+		}
+		return nil, fmt.Errorf("创建发布任务失败：%w", err)
 	}
-
-	// 这里需要构建实际的发布数据
-	jenkinsParam, taskRecordResult, err := pm.ComposePublishData(req, app, appConfig, envConfigs)
-	if err != nil {
-		return nil, err
-	}
-
-	// 这里需要传入一个任务id，因为上面已经拿到返回值了，直接在这里传入即可
-	jenkinsParam["task_id"] = strconv.Itoa(taskRecordResult.TaskId)
-
-	// 对相应的管线创建新的构建任务
-	jobBuildId, _, err := jenkins.CreateBuildTask(pipelines.CiJobName, jenkinsParam)
-	if err != nil {
-		return nil, err
-	}
-	var taskRecord entity.TaskRecord
-	// 回写数据库中的数据，将编译阶段产生的taskId回写到表中
-	taskRecord.TaskId = taskRecordResult.TaskId
-	taskRecord.CiBuildId = jobBuildId
-	taskRecord.Status = "packaging"
-	taskRecord.CiJobName = pipelines.CiJobName
-	taskRecord.CdJobName = pipelines.CdJobName
-	// 更新指定id的数据
-	affected, err := db.Engine.ID(taskRecord.TaskId).Update(&taskRecord)
-	if err != nil {
-		return nil, fmt.Errorf("ci阶段taskId回写失败：%s", err)
-	}
-	// 检查更新结果
-	if affected == 0 {
-		return nil, fmt.Errorf("任务记录未更新，可能记录不存在，ID: %d", taskRecord.TaskId)
-	}
-	slog.Info("ci阶段taskId回写成功",
-		"task_id", taskRecord.TaskId,
-		"affected_rows", affected,
-		"taskRecord", taskRecord)
+	// The task and its immutable step snapshot are durable at this point. The
+	// bounded background worker owns execution, so the HTTP request never waits
+	// for an external system and a large batch cannot fan out unbounded goroutines.
 
 	// 如果需要获取最新的记录（包括可能的数据库触发器更新等）
 	var updatedRecord entity.TaskRecord
-	exists, err := db.Engine.ID(taskRecord.TaskId).Get(&updatedRecord)
+	readCtx, readCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer readCancel()
+	exists, err := db.Engine.Context(readCtx).ID(taskRecord.TaskId).Get(&updatedRecord)
 	if err != nil {
-		return nil, fmt.Errorf("获取更新后的记录失败：%v", err)
+		slog.Warn("发布任务已创建但读取最新状态失败", "task_id", taskRecord.TaskId, "error", err)
+		normalizeTaskRecordNullableText(taskRecord)
+		return taskRecord, nil
 	}
 	if !exists {
-		return nil, fmt.Errorf("更新后的记录未找到，ID: %d", taskRecord.TaskId)
+		slog.Warn("发布任务已创建但未能重新读取", "task_id", taskRecord.TaskId)
+		normalizeTaskRecordNullableText(taskRecord)
+		return taskRecord, nil
 	}
+	updatedRecord.Steps, err = runtime.Store.ListTaskSteps(readCtx, taskRecord.TaskId)
+	if err != nil {
+		slog.Warn("发布任务已创建但读取步骤失败", "task_id", taskRecord.TaskId, "error", err)
+		updatedRecord.Steps = make([]entity.TaskStepRecord, 0)
+	}
+	updatedRecord.AppletImages = make([]entity.AppletImage, 0)
 	normalizeTaskRecordNullableText(&updatedRecord)
 	return &updatedRecord, nil
 }
 
 // CreateBatchPublish 批量创建发布任务
-func (pm *PublishManager) CreateBatchPublish(req *CreateBatchPublishRequest) (*CreateBatchPublishResponse, error) {
-	if !jenkins.IsConfigured() {
-		return nil, ErrJenkinsDisabled
+func (pm *PublishManager) CreateBatchPublish(ctx context.Context, req *CreateBatchPublishRequest) (*CreateBatchPublishResponse, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if req == nil {
+		return nil, fmt.Errorf("批量发布请求不能为空")
+	}
+	if len(req.BatchPublish) == 0 {
+		return nil, fmt.Errorf("批量发布至少需要 1 个应用")
+	}
+	if len(req.BatchPublish) > 100 {
+		return nil, fmt.Errorf("单次批量发布不能超过 100 个应用")
 	}
 	response := &CreateBatchPublishResponse{
 		TaskRecords: make([]CreatePublishResult, len(req.BatchPublish)),
@@ -266,26 +267,50 @@ func (pm *PublishManager) CreateBatchPublish(req *CreateBatchPublishRequest) (*C
 		result CreatePublishResult
 	}, len(req.BatchPublish))
 
-	// 并发处理每个请求
-	for i, publishReq := range req.BatchPublish {
-		go func(index int, req CreatePublishRequest) {
-			publish, err := pm.CreatePublish(&publishReq)
-			result := CreatePublishResult{
-				Success:    err == nil,
-				TaskRecord: publish,
-			}
-			if err != nil {
-				result.Error = err.Error()
-			}
-			resultChan <- struct {
-				index  int
-				result CreatePublishResult
-			}{index, result}
-		}(i, publishReq)
+	// 使用有界 worker，避免大批量请求创建无上限 goroutine。
+	type indexedRequest struct {
+		index int
+		req   CreatePublishRequest
 	}
+	jobs := make(chan indexedRequest)
+	workerCount := len(req.BatchPublish)
+	if workerCount > 8 {
+		workerCount = 8
+	}
+	var workers sync.WaitGroup
+	for i := 0; i < workerCount; i++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for item := range jobs {
+				publish, err := pm.CreatePublish(ctx, &item.req)
+				result := CreatePublishResult{
+					RequestIndex: item.index,
+					AppName:      item.req.AppName,
+					Env:          item.req.Env,
+					Success:      err == nil,
+					TaskRecord:   publish,
+				}
+				if err != nil {
+					result.Error = err.Error()
+				}
+				resultChan <- struct {
+					index  int
+					result CreatePublishResult
+				}{item.index, result}
+			}
+		}()
+	}
+	go func() {
+		for index, publishReq := range req.BatchPublish {
+			jobs <- indexedRequest{index: index, req: publishReq}
+		}
+		close(jobs)
+		workers.Wait()
+		close(resultChan)
+	}()
 	// 收集结果
-	for i := 0; i < len(req.BatchPublish); i++ {
-		result := <-resultChan
+	for result := range resultChan {
 		response.TaskRecords[result.index] = result.result
 		if result.result.Success {
 			response.SuccessCount++
@@ -299,39 +324,42 @@ func (pm *PublishManager) CreateBatchPublish(req *CreateBatchPublishRequest) (*C
 // ComposePublishData 构建发布数据
 // 这里主要是拼接各种发布参数信息
 func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Apps, appConfig *entity.AppConfigs, envConfig *entity.EnvConfigs) (map[string]string, *entity.TaskRecord, error) {
-	JenkinsParam := make(map[string]string)
+	releaseInputs := make(map[string]string)
 	// 输出当前时间的时间戳，精确到毫秒
 	milliseconds := time.Now().UnixMilli()
 
-	// 示例格式
-	// harbor.aaa.work/publish/dev/asr-job:1739265948923
-	image := envConfig.HarborURL + "/" + envConfig.HarborProjectName + "/" + envConfig.Env + "/" + app.AppName + ":" + fmt.Sprintf("%d", milliseconds)
+	// Registry 配置是旧 Jenkins 参数合同的一部分，但不再是环境目录
+	// 的必填项。没有配置 Registry 时，其他类型步骤仍可正常运行。
+	image := ""
+	if envConfig.HarborURL != "" && envConfig.HarborProjectName != "" {
+		image = envConfig.HarborURL + "/" + envConfig.HarborProjectName + "/" + envConfig.Env + "/" + app.AppName + ":" + fmt.Sprintf("%d", milliseconds)
+	}
 
-	JenkinsParam["app_name"] = app.AppName
-	JenkinsParam["env"] = envConfig.Env
-	JenkinsParam["branch"] = req.Branch
-	JenkinsParam["git_url"] = app.GitUrl
-	JenkinsParam["code_package_type"] = appConfig.CodePackageType
-	JenkinsParam["code_package_path"] = tool.NormalizeNullableText(appConfig.CodePackagePath)
-	JenkinsParam["code_package_name"] = tool.NormalizeNullableText(appConfig.CodePackageName)
-	JenkinsParam["base_image"] = tool.NormalizeNullableText(appConfig.BaseImage)
-	JenkinsParam["pod_count"] = strconv.Itoa(appConfig.PodCount)
-	JenkinsParam["limits_memory"] = strconv.Itoa(appConfig.LimitsMemory)
-	JenkinsParam["gpu_count"] = strconv.Itoa(appConfig.GpuCount)
-	JenkinsParam["probe_type"] = appConfig.ProbeType
-	JenkinsParam["probe_check_path"] = appConfig.ProbeCheckPath
-	JenkinsParam["probe_check_tcp_port"] = strconv.Itoa(appConfig.ProbeCheckTcpPort)
-	JenkinsParam["probe_check_http_port"] = strconv.Itoa(appConfig.ProbeCheckHttpPort)
-	JenkinsParam["probe_stop_check_http_port"] = strconv.Itoa(appConfig.ProbeStopCheckHttpPort)
-	JenkinsParam["container_port"] = strconv.Itoa(appConfig.ContainerPort)
-	JenkinsParam["pre_stop_type"] = appConfig.PreStopType
-	JenkinsParam["pre_stop_check_path"] = appConfig.PreStopCheckPath
-	JenkinsParam["pre_stop_command"] = tool.NormalizeNullableText(appConfig.PreStopCommand)
-	JenkinsParam["domain"] = ""
-	JenkinsParam["domain_path"] = "/"
+	releaseInputs["app_name"] = app.AppName
+	releaseInputs["env"] = envConfig.Env
+	releaseInputs["branch"] = req.Branch
+	releaseInputs["git_url"] = app.GitUrl
+	releaseInputs["code_package_type"] = appConfig.CodePackageType
+	releaseInputs["code_package_path"] = tool.NormalizeNullableText(appConfig.CodePackagePath)
+	releaseInputs["code_package_name"] = tool.NormalizeNullableText(appConfig.CodePackageName)
+	releaseInputs["base_image"] = tool.NormalizeNullableText(appConfig.BaseImage)
+	releaseInputs["pod_count"] = strconv.Itoa(appConfig.PodCount)
+	releaseInputs["limits_memory"] = strconv.Itoa(appConfig.LimitsMemory)
+	releaseInputs["gpu_count"] = strconv.Itoa(appConfig.GpuCount)
+	releaseInputs["probe_type"] = appConfig.ProbeType
+	releaseInputs["probe_check_path"] = appConfig.ProbeCheckPath
+	releaseInputs["probe_check_tcp_port"] = strconv.Itoa(appConfig.ProbeCheckTcpPort)
+	releaseInputs["probe_check_http_port"] = strconv.Itoa(appConfig.ProbeCheckHttpPort)
+	releaseInputs["probe_stop_check_http_port"] = strconv.Itoa(appConfig.ProbeStopCheckHttpPort)
+	releaseInputs["container_port"] = strconv.Itoa(appConfig.ContainerPort)
+	releaseInputs["pre_stop_type"] = appConfig.PreStopType
+	releaseInputs["pre_stop_check_path"] = appConfig.PreStopCheckPath
+	releaseInputs["pre_stop_command"] = tool.NormalizeNullableText(appConfig.PreStopCommand)
+	releaseInputs["domain"] = ""
+	releaseInputs["domain_path"] = "/"
 
-	// domains_list（Jenkins 透传）：仅使用 app_config_domains（domain/domain_path 已废弃）
-	JenkinsParam["domains_list"] = "[]"
+	// domains_list 是旧步骤的兼容输入；新执行器也可以直接消费它。
+	releaseInputs["domains_list"] = "[]"
 
 	// 多域名支持：优先读取 app_config_domains，存在则额外下发 domains（JSON 字符串）+ domains_list（聚合结构）
 	if appConfig.ConfigID > 0 {
@@ -346,7 +374,7 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 			if err != nil {
 				return nil, nil, fmt.Errorf("序列化 domains_list 失败：%s", err)
 			}
-			JenkinsParam["domains_list"] = string(b)
+			releaseInputs["domains_list"] = string(b)
 		}
 		domains := normalizeIngressDomains(rows)
 		if len(domains) > 0 {
@@ -354,14 +382,17 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 			if err != nil {
 				return nil, nil, fmt.Errorf("序列化多域名配置失败：%s", err)
 			}
-			JenkinsParam["domains"] = string(b)
+			releaseInputs["domains"] = string(b)
 		}
 	}
-	JenkinsParam["image"] = image
-	JenkinsParam["dev_language"] = app.DevLanguage
+	releaseInputs["image"] = image
+	releaseInputs["dev_language"] = app.DevLanguage
 
-	// 透传 extra_data：只要有值就合并进 JenkinsParam，且不覆盖现有 key
+	// 透传 extra_data：只要有值就合并进发布输入，且不覆盖核心字段。
 	if req.ExtraData != nil {
+		if err := validateReleaseExtraData(req.ExtraData, "extra_data"); err != nil {
+			return nil, nil, err
+		}
 		// stringify 将任意值转换为 string，复杂类型优先 JSON 序列化
 		stringify := func(v any) (string, bool) {
 			if v == nil {
@@ -392,37 +423,23 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 			if k == "" {
 				return
 			}
-			if _, exists := JenkinsParam[k]; exists {
+			if _, exists := releaseInputs[k]; exists {
 				return // 不覆盖现有 key
 			}
 			if s, ok := stringify(v); ok {
-				JenkinsParam[k] = s
+				releaseInputs[k] = s
 			}
 		}
 
-		switch extra := req.ExtraData.(type) {
-		case map[string]any:
-			for k, v := range extra {
-				mergeKV(k, v)
-			}
-		case map[string]string:
-			for k, v := range extra {
-				mergeKV(k, v)
-			}
-		default:
-			// 非 map 类型无法展开为多个键：整体透传为 extra_data（同样不覆盖）
-			mergeKV("extra_data", extra)
+		for k, v := range req.ExtraData {
+			mergeKV(k, v)
 		}
 	}
 
-	jsonStr, err := tool.ToJSON(JenkinsParam)
+	jsonStr, err := tool.ToJSON(releaseInputs)
 	if err != nil {
 		return nil, nil, err
 	}
-	//fmt.Println(jsonStr)
-	// 先直接在数据库中写入数据，此时记录状态信息
-	// 然后携带相关的发布信息，对jenkins发送api请求，jenkins会返回对应的build_number，这个用于查询执行状态和获取日志信息。
-	//
 	taskRecord := &entity.TaskRecord{
 		AppName:        app.AppName,
 		RundeckAppName: app.RundeckAppName, // 现在是指针类型，可以直接赋值
@@ -431,49 +448,34 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 		Env:            req.Env,
 		PipelineParam:  json.RawMessage(jsonStr),
 		Products:       image,
-		Status:         "init",
+		Status:         workflow.TaskQueued,
+		Steps:          make([]entity.TaskStepRecord, 0),
+		AppletImages:   make([]entity.AppletImage, 0),
 	}
-	// 需要在这里显式的把一些有默认值的给排除掉，golang会将未使用的值赋值为零值，而不是使用默认值
-	_, err = db.Engine.Omit("ci_build_id", "cd_build_id", "message", "ci_job_name", "cd_job_name", "auto_deploy").Insert(taskRecord)
-	if err != nil {
-		return nil, nil, fmt.Errorf("任务记录创建失败: %s", err)
-	}
-	slog.Info("Jenkins构建任务记录创建成功",
-		"task_id", taskRecord.TaskId,
-		"taskRecord", taskRecord)
-	return JenkinsParam, taskRecord, nil
+	return releaseInputs, taskRecord, nil
 }
 
 func (pm *PublishManager) JobStatus() ([]*entity.TaskRecord, error) {
 	var taskRecords []*entity.TaskRecord
 
-	// 计算3小时前的时间点
-	threeHoursAgo := time.Now().Add(-3 * time.Hour)
-
 	err := db.Engine.
-		Where("status IN (?, ?, ?)", entity.StatusInit, entity.StatusPackaging, entity.StatusDeploying).
-		And("created_at > ?", threeHoursAgo).
+		Where("status IN (?, ?, ?, ?, ?) AND deleted_at IS NULL",
+			entity.StatusInit, entity.StatusPackaging, entity.StatusDeploying,
+			workflow.TaskQueued, workflow.TaskRunning).
 		Find(&taskRecords)
 
 	if err != nil {
 		return nil, fmt.Errorf("查询任务状态失败：%s", err)
 	}
 
-	// 检查 taskRecords 是否为 nil
-	if taskRecords != nil {
-		// 使用有效的 JSON 字符串
-		hiddenMessage := json.RawMessage(`{"message": "隐藏详情，减少数据量"}`)
-		// 清空 PipelineParam 字段
-		for _, record := range taskRecords {
-			normalizeTaskRecordNullableText(record)
-			record.PipelineParam = hiddenMessage
-		}
+	for _, record := range taskRecords {
+		normalizeTaskRecordNullableText(record)
 	}
 
 	// 添加日志记录
 	slog.Info("查询任务状态",
 		"count", len(taskRecords),
-		"time_range", fmt.Sprintf("获取最近3小时数据，构建状态为init、packaging、deploying的数据(%s)", threeHoursAgo.Format("2006-01-02 15:04:05")))
+		"statuses", []string{entity.StatusInit, entity.StatusPackaging, entity.StatusDeploying, workflow.TaskQueued, workflow.TaskRunning})
 
 	return taskRecords, nil
 }
@@ -490,6 +492,12 @@ func (pm *PublishManager) GetTaskRecordDetails(taskID int) (*entity.TaskRecord, 
 		return nil, fmt.Errorf("未找到任务详情，task_id: %d", taskID)
 	}
 	normalizeTaskRecordNullableText(&taskRecord)
+	if taskRecord.EngineVersion >= 2 {
+		taskRecord.Steps, err = release.Shared().Store.ListTaskSteps(context.Background(), taskID)
+		if err != nil {
+			return nil, fmt.Errorf("查询任务步骤失败：%s", err)
+		}
+	}
 
 	// 回填任务图片（方案B：图片表），保持前端好处理：没数据返回空数组而不是 null
 	imgMap, err := fetchTaskRecordImagesByTaskIDs([]int{taskID})

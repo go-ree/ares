@@ -1,10 +1,18 @@
 package publish
 
 import (
+	"ares/internal/security"
 	"fmt"
 	"strings"
 	"time"
 )
+
+func validateReleaseExtraData(value any, path string) error {
+	if err := security.ValidateNoSensitiveKeys(value, path); err != nil {
+		return fmt.Errorf("%w；发布输入会持久化，请改用外部凭据库或后续 Secret Resolver", err)
+	}
+	return nil
+}
 
 // Validate 验证查询参数
 func (q *PublishQuery) Validate() error {

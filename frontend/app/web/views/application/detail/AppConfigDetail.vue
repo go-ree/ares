@@ -17,6 +17,9 @@
         <el-tab-pane v-for="env in envOptions" :key="env.value" :name="env.value">
           <template #label>
             <span>{{ env.label }}</span>
+            <el-tag v-if="!env.enabled" size="small" type="warning" class="ml-8">
+              {{ env.known ? '已停用' : '历史环境' }}
+            </el-tag>
             <el-tag v-if="configsByEnv[env.value]" size="small" type="success" class="ml-8">
               已配置
             </el-tag>
@@ -28,14 +31,18 @@
               type="warning"
               show-icon
               :closable="false"
-              title="该环境暂无配置记录（接口未返回 config）。"
-              description="如需初始化该环境配置，请联系后端补齐配置记录后再编辑。"
+              title="该环境暂无应用配置。"
+              :description="
+                env.enabled
+                  ? '可在此按需创建配置。'
+                  : '环境已停用或仅存在于历史记录中，不能新建配置。'
+              "
             />
             <div class="empty-actions">
               <el-button
                 type="primary"
                 :loading="creatingEnv === env.value"
-                :disabled="loading || saving"
+                :disabled="loading || saving || !env.enabled"
                 @click="createEnvConfig(env.value)"
               >
                 创建该环境配置
@@ -240,6 +247,126 @@
                 </el-col>
               </el-row>
             </el-form>
+
+            <el-divider content-position="left">发布流程</el-divider>
+            <div class="workflow-access">
+              <el-input
+                v-model="workflowAdminToken"
+                type="password"
+                show-password
+                autocomplete="off"
+                placeholder="输入系统设置管理员令牌后管理发布流程"
+                @input="workflowAccessReady = false"
+                @keyup.enter="loadProtectedWorkflow(env.value)"
+              >
+                <template #prepend>管理员令牌</template>
+              </el-input>
+              <el-button
+                type="primary"
+                plain
+                :loading="workflowLoadingByEnv[env.value]"
+                @click="loadProtectedWorkflow(env.value)"
+              >
+                加载流程
+              </el-button>
+            </div>
+            <el-alert
+              v-if="!workflowAccessReady"
+              title="发布流程属于受保护的系统配置，请先验证管理员令牌。"
+              type="info"
+              :closable="false"
+              show-icon
+            />
+            <div v-else class="workflow-editor" v-loading="workflowLoadingByEnv[env.value]">
+              <div class="workflow-toolbar">
+                <div>
+                  <strong>{{ workflowDraftsByEnv[env.value]?.name || '未配置发布流程' }}</strong>
+                  <el-tag v-if="workflowMetaByEnv[env.value]?.version" class="ml-8" size="small">
+                    v{{ workflowMetaByEnv[env.value]?.version }}
+                  </el-tag>
+                </div>
+                <div>
+                  <el-button
+                    type="primary"
+                    plain
+                    :disabled="workflowSaving || pipelineStepTypes.length === 0"
+                    @click="addWorkflowStep(env.value)"
+                    >新增步骤</el-button
+                  >
+                  <el-button
+                    type="primary"
+                    :loading="workflowSaving"
+                    @click="saveWorkflow(env.value)"
+                    >保存流程</el-button
+                  >
+                </div>
+              </div>
+              <el-input
+                v-model="workflowDraftsByEnv[env.value].name"
+                placeholder="流程名称"
+                class="workflow-name"
+              />
+              <el-empty
+                v-if="workflowDraftsByEnv[env.value].steps.length === 0"
+                :image-size="70"
+                description="暂无步骤，可添加 Noop 或 Jenkins 等执行步骤"
+              />
+              <div
+                v-for="(step, index) in workflowDraftsByEnv[env.value].steps"
+                :key="`${step.key}-${index}`"
+                class="workflow-step"
+              >
+                <div class="workflow-step-header">
+                  <strong>步骤 {{ index + 1 }}</strong>
+                  <div>
+                    <el-button
+                      link
+                      :disabled="index === 0"
+                      @click="moveWorkflowStep(env.value, index, -1)"
+                      >上移</el-button
+                    >
+                    <el-button
+                      link
+                      :disabled="index === workflowDraftsByEnv[env.value].steps.length - 1"
+                      @click="moveWorkflowStep(env.value, index, 1)"
+                      >下移</el-button
+                    >
+                    <el-button type="danger" link @click="removeWorkflowStep(env.value, index)"
+                      >删除</el-button
+                    >
+                  </div>
+                </div>
+                <el-row :gutter="12">
+                  <el-col :span="6"
+                    ><el-input v-model="step.key" placeholder="唯一 key，如 build"
+                  /></el-col>
+                  <el-col :span="6"><el-input v-model="step.name" placeholder="步骤名称" /></el-col>
+                  <el-col :span="8">
+                    <el-select v-model="step.uses" placeholder="选择执行器" style="width: 100%">
+                      <el-option
+                        v-for="stepType in pipelineStepTypes"
+                        :key="stepType.uses"
+                        :label="`${stepType.name}（${stepType.uses}）${stepType.available === false ? '— 当前不可运行' : ''}`"
+                        :value="stepType.uses"
+                      />
+                    </el-select>
+                  </el-col>
+                  <el-col :span="4">
+                    <el-select v-model="step.on_failure" style="width: 100%">
+                      <el-option label="失败即停" value="stop" />
+                      <el-option label="继续执行" value="continue" />
+                    </el-select>
+                  </el-col>
+                </el-row>
+                <el-input
+                  v-model="step.withText"
+                  type="textarea"
+                  :rows="3"
+                  class="step-config"
+                  placeholder='步骤配置 JSON，例如 {"message":"done"}'
+                />
+              </div>
+            </div>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -248,18 +375,32 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import type { AppConfig, AppEnv, AppInfo, UpdateAppConfigRequest } from '@/models/application';
+import type {
+  AppConfig,
+  AppConfigWorkflow,
+  AppEnv,
+  AppInfo,
+  PipelineStepType,
+  UpdateAppConfigRequest,
+  WorkflowFailurePolicy,
+  WorkflowSpec,
+} from '@/models/application';
 import {
   createAppConfig,
   getAppConfigs,
   getAppDetail,
   patchAppConfigByEnv,
+  getAppConfigWorkflow,
+  getApplicationApiErrorMessage,
+  getPipelineStepTypes,
+  putAppConfigWorkflow,
 } from '@/services/application';
 import { normalizeLegacyNullableText } from '@/utils/legacy-nullable-text';
+import { useEnvironments } from '@/composables/useEnvironments';
 
 const route = useRoute();
 const appId = ref<number>(Number(route.params.appId));
@@ -270,43 +411,71 @@ const displayName = ref<string>(
     : `应用 ${appId.value}`
 );
 
-const envOptions: Array<{ label: string; value: AppEnv }> = [
-  { label: '开发(dev)', value: 'dev' },
-  { label: '测试(test)', value: 'test' },
-  { label: '模拟(moni)', value: 'moni' },
-];
+const { environments, loadEnvironments, labelForEnvironment } = useEnvironments();
+const discoveredEnvironments = ref<AppEnv[]>([]);
+const envOptions = computed(() => {
+  const codes = new Set<AppEnv>(environments.value.map(item => item.code));
+  discoveredEnvironments.value.forEach(code => codes.add(code));
+  return Array.from(codes).map(value => {
+    const catalog = environments.value.find(item => item.code === value);
+    return {
+      label: labelForEnvironment(value),
+      value,
+      known: Boolean(catalog),
+      enabled: catalog?.enabled === true,
+    };
+  });
+});
 
-const activeEnv = ref<AppEnv>('dev');
+const activeEnv = ref<AppEnv>('');
 const loading = ref(false);
 const saving = ref(false);
 const creatingEnv = ref<AppEnv | null>(null);
 
-const configsByEnv = reactive<Record<AppEnv, AppConfig | null>>({
-  dev: null,
-  test: null,
-  moni: null,
-});
+const configsByEnv = reactive<Record<AppEnv, AppConfig | null>>({});
+const formsByEnv = reactive<Record<AppEnv, UpdateAppConfigRequest>>({});
+const originalFormsByEnv = reactive<Record<AppEnv, UpdateAppConfigRequest>>({});
+const isEditingByEnv = reactive<Record<AppEnv, boolean>>({});
 
-const formsByEnv = reactive<Record<AppEnv, UpdateAppConfigRequest>>({
-  dev: {},
-  test: {},
-  moni: {},
-});
+interface WorkflowStepForm {
+  key: string;
+  name: string;
+  uses: string;
+  category?: string;
+  timeout_seconds?: number;
+  on_failure: WorkflowFailurePolicy;
+  withText: string;
+}
 
-const originalFormsByEnv = reactive<Record<AppEnv, UpdateAppConfigRequest>>({
-  dev: {},
-  test: {},
-  moni: {},
-});
+interface WorkflowDraft {
+  name: string;
+  steps: WorkflowStepForm[];
+}
+const pipelineStepTypes = ref<PipelineStepType[]>([]);
+const workflowDraftsByEnv = reactive<Record<AppEnv, WorkflowDraft>>({});
+const workflowMetaByEnv = reactive<Record<AppEnv, AppConfigWorkflow | null>>({});
+const workflowLoadingByEnv = reactive<Record<AppEnv, boolean>>({});
+const workflowSaving = ref(false);
+const workflowAdminToken = ref('');
+const workflowAccessReady = ref(false);
 
-const isEditingByEnv = reactive<Record<AppEnv, boolean>>({
-  dev: false,
-  test: false,
-  moni: false,
+const ensureEnvState = (env: AppEnv) => {
+  if (!(env in configsByEnv)) configsByEnv[env] = null;
+  if (!(env in formsByEnv)) formsByEnv[env] = {};
+  if (!(env in originalFormsByEnv)) originalFormsByEnv[env] = {};
+  if (!(env in isEditingByEnv)) isEditingByEnv[env] = false;
+  if (!(env in workflowDraftsByEnv)) workflowDraftsByEnv[env] = { name: '', steps: [] };
+  if (!(env in workflowMetaByEnv)) workflowMetaByEnv[env] = null;
+  if (!(env in workflowLoadingByEnv)) workflowLoadingByEnv[env] = false;
+};
+
+watch(envOptions, options => options.forEach(option => ensureEnvState(option.value)), {
+  immediate: true,
 });
 
 const reset = () => {
-  envOptions.forEach(env => {
+  envOptions.value.forEach(env => {
+    ensureEnvState(env.value);
     configsByEnv[env.value] = null;
     formsByEnv[env.value] = {};
     originalFormsByEnv[env.value] = {};
@@ -374,37 +543,49 @@ const fetchConfigs = async () => {
     if (resp.data.code !== 1) throw new Error(resp.data.message || '获取应用配置失败');
 
     reset();
+    discoveredEnvironments.value = (resp.data.result || []).map(cfg => cfg.env);
+    envOptions.value.forEach(option => ensureEnvState(option.value));
     for (const cfg of resp.data.result || []) {
-      if (cfg.env === 'dev' || cfg.env === 'test' || cfg.env === 'moni') {
-        configsByEnv[cfg.env] = cfg;
-        const form: UpdateAppConfigRequest = {
-          code_package_type: cfg.code_package_type || undefined,
-          code_package_path: normalizeLegacyNullableText(cfg.code_package_path),
-          code_package_name: normalizeLegacyNullableText(cfg.code_package_name),
-          base_image: normalizeLegacyNullableText(cfg.base_image),
-          pod_count: cfg.pod_count ?? undefined,
-          limits_memory: cfg.limits_memory ?? undefined,
-          gpu_count: cfg.gpu_count ?? undefined,
-          container_port: (cfg as any).container_port ?? undefined,
-          probe_type: cfg.probe_type || undefined,
-          probe_check_path: cfg.probe_check_path || undefined,
-          // TCP 探针端口：优先取 probe_check_tcp_port，其次兼容 probe_check_port
-          probe_check_tcp_port:
-            (cfg as any).probe_check_tcp_port ?? cfg.probe_check_port ?? undefined,
-          probe_check_http_port: (cfg as any).probe_check_http_port ?? undefined,
-          probe_stop_check_http_port: (cfg as any).probe_stop_check_http_port ?? undefined,
-          // 兼容字段保留（不主动回写）
-          probe_check_port: undefined,
-          // PreStop：前端不再提供 TCP 选项；如果后端返回 TCP，则按“未启用”处理
-          pre_stop_type: cfg.pre_stop_type === 'TCP' ? undefined : cfg.pre_stop_type || undefined,
-          pre_stop_check_path: cfg.pre_stop_check_path || undefined,
-          pre_stop_check_port: cfg.pre_stop_check_port ?? undefined,
-          pre_stop_command: normalizeLegacyNullableText(cfg.pre_stop_command),
-        };
-        formsByEnv[cfg.env] = { ...form };
-        originalFormsByEnv[cfg.env] = { ...form };
-        isEditingByEnv[cfg.env] = false;
-      }
+      ensureEnvState(cfg.env);
+      configsByEnv[cfg.env] = cfg;
+      const form: UpdateAppConfigRequest = {
+        code_package_type: cfg.code_package_type || undefined,
+        code_package_path: normalizeLegacyNullableText(cfg.code_package_path),
+        code_package_name: normalizeLegacyNullableText(cfg.code_package_name),
+        base_image: normalizeLegacyNullableText(cfg.base_image),
+        pod_count: cfg.pod_count ?? undefined,
+        limits_memory: cfg.limits_memory ?? undefined,
+        gpu_count: cfg.gpu_count ?? undefined,
+        container_port: (cfg as any).container_port ?? undefined,
+        probe_type: cfg.probe_type || undefined,
+        probe_check_path: cfg.probe_check_path || undefined,
+        // TCP 探针端口：优先取 probe_check_tcp_port，其次兼容 probe_check_port
+        probe_check_tcp_port:
+          (cfg as any).probe_check_tcp_port ?? cfg.probe_check_port ?? undefined,
+        probe_check_http_port: (cfg as any).probe_check_http_port ?? undefined,
+        probe_stop_check_http_port: (cfg as any).probe_stop_check_http_port ?? undefined,
+        // 兼容字段保留（不主动回写）
+        probe_check_port: undefined,
+        // PreStop：前端不再提供 TCP 选项；如果后端返回 TCP，则按“未启用”处理
+        pre_stop_type: cfg.pre_stop_type === 'TCP' ? undefined : cfg.pre_stop_type || undefined,
+        pre_stop_check_path: cfg.pre_stop_check_path || undefined,
+        pre_stop_check_port: cfg.pre_stop_check_port ?? undefined,
+        pre_stop_command: normalizeLegacyNullableText(cfg.pre_stop_command),
+      };
+      formsByEnv[cfg.env] = { ...form };
+      originalFormsByEnv[cfg.env] = { ...form };
+      isEditingByEnv[cfg.env] = false;
+    }
+    if (!activeEnv.value || !envOptions.value.some(option => option.value === activeEnv.value)) {
+      activeEnv.value = envOptions.value[0]?.value || '';
+    }
+    if (
+      workflowAccessReady.value &&
+      workflowAdminToken.value.trim() &&
+      activeEnv.value &&
+      configsByEnv[activeEnv.value]
+    ) {
+      await loadWorkflow(activeEnv.value);
     }
   } catch (e) {
     console.error(e);
@@ -554,13 +735,153 @@ const refresh = async () => {
   await fetchConfigs();
 };
 
+const emptyWorkflow = (): WorkflowDraft => ({ name: '', steps: [] });
+
+const loadStepTypes = async () => {
+  const response = await getPipelineStepTypes();
+  if (response.data.code !== 1) throw new Error(response.data.message || '获取步骤类型失败');
+  pipelineStepTypes.value = response.data.result || [];
+};
+
+const specToDraft = (spec?: WorkflowSpec | null): WorkflowDraft => ({
+  name: spec?.name || '',
+  steps: (spec?.steps || []).map(step => ({
+    key: step.key,
+    name: step.name,
+    uses: step.uses,
+    category: step.category,
+    timeout_seconds: step.timeout_seconds,
+    on_failure: step.on_failure || 'stop',
+    withText: JSON.stringify(step.with || {}, null, 2),
+  })),
+});
+
+const loadWorkflow = async (env: AppEnv) => {
+  const configId = configsByEnv[env]?.config_id;
+  if (!configId || !workflowAdminToken.value.trim() || workflowLoadingByEnv[env]) return;
+  workflowLoadingByEnv[env] = true;
+  try {
+    const response = await getAppConfigWorkflow(configId, workflowAdminToken.value);
+    const result = response.data.result;
+    const wrapped = result && 'spec' in result ? result : null;
+    const spec = wrapped?.spec || (result as WorkflowSpec | null);
+    workflowMetaByEnv[env] = wrapped;
+    workflowDraftsByEnv[env] = specToDraft(spec);
+    workflowAccessReady.value = true;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      workflowMetaByEnv[env] = null;
+      workflowDraftsByEnv[env] = emptyWorkflow();
+      workflowAccessReady.value = true;
+    } else {
+      workflowAccessReady.value = false;
+      ElMessage.error(getApplicationApiErrorMessage(error, '获取发布流程失败'));
+    }
+  } finally {
+    workflowLoadingByEnv[env] = false;
+  }
+};
+
+const loadProtectedWorkflow = async (env: AppEnv) => {
+  if (!workflowAdminToken.value.trim()) {
+    ElMessage.warning('请输入管理员令牌');
+    return;
+  }
+  await loadWorkflow(env);
+};
+
+const addWorkflowStep = (env: AppEnv) => {
+  ensureEnvState(env);
+  const type =
+    pipelineStepTypes.value.find(item => item.available !== false) || pipelineStepTypes.value[0];
+  const index = workflowDraftsByEnv[env].steps.length + 1;
+  workflowDraftsByEnv[env].steps.push({
+    key: `step-${index}`,
+    name: type?.name || `步骤 ${index}`,
+    uses: type?.uses || '',
+    on_failure: 'stop',
+    withText: '{}',
+  });
+};
+
+const removeWorkflowStep = (env: AppEnv, index: number) =>
+  workflowDraftsByEnv[env].steps.splice(index, 1);
+const moveWorkflowStep = (env: AppEnv, index: number, offset: number) => {
+  const steps = workflowDraftsByEnv[env].steps;
+  const target = index + offset;
+  if (target < 0 || target >= steps.length) return;
+  const [step] = steps.splice(index, 1);
+  if (step) steps.splice(target, 0, step);
+};
+
+const saveWorkflow = async (env: AppEnv) => {
+  const configId = configsByEnv[env]?.config_id;
+  if (!configId) return;
+  if (!workflowAccessReady.value || !workflowAdminToken.value.trim()) {
+    return ElMessage.warning('请先使用管理员令牌加载发布流程');
+  }
+  const draft = workflowDraftsByEnv[env];
+  if (!draft.name.trim()) return ElMessage.warning('请填写流程名称');
+  if (draft.steps.length === 0) return ElMessage.warning('发布流程至少需要一个步骤');
+  try {
+    const keys = new Set<string>();
+    const steps = draft.steps.map((step, index) => {
+      const key = step.key.trim();
+      if (!key || keys.has(key)) throw new Error(`步骤 ${index + 1} 的 key 为空或重复`);
+      keys.add(key);
+      if (!step.name.trim() || !step.uses)
+        throw new Error(`请完善步骤 ${index + 1} 的名称和执行器`);
+      let config: Record<string, unknown>;
+      try {
+        const parsed: unknown = JSON.parse(step.withText || '{}');
+        if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error();
+        config = parsed as Record<string, unknown>;
+      } catch {
+        throw new Error(`步骤 ${index + 1} 的配置必须是 JSON 对象`);
+      }
+      return {
+        key,
+        name: step.name.trim(),
+        uses: step.uses,
+        ...(step.category ? { category: step.category } : {}),
+        with: config,
+        ...(step.timeout_seconds ? { timeout_seconds: step.timeout_seconds } : {}),
+        on_failure: step.on_failure,
+      };
+    });
+    workflowSaving.value = true;
+    const response = await putAppConfigWorkflow(
+      configId,
+      workflowMetaByEnv[env]?.revision || 0,
+      {
+        schema_version: 1,
+        name: draft.name.trim(),
+        steps,
+      },
+      workflowAdminToken.value
+    );
+    if (response.data.code !== 1)
+      throw new Error(response.data.error || response.data.message || '保存流程失败');
+    workflowMetaByEnv[env] = response.data.result;
+    workflowDraftsByEnv[env] = specToDraft(response.data.result.spec);
+    ElMessage.success('发布流程已保存为新版本');
+  } catch (error) {
+    const message = getApplicationApiErrorMessage(error, '保存流程失败');
+    if (axios.isAxiosError(error) && error.response?.status === 409) {
+      ElMessage.error(`配置已被其他管理员更新，请重新加载后再保存：${message}`);
+    } else {
+      ElMessage.error(message);
+    }
+  } finally {
+    workflowSaving.value = false;
+  }
+};
+
 const handleEnvChange = async (name: string | number) => {
   const nextEnv = name as AppEnv;
-  // 切换 tab 时，为避免误改，自动退出当前环境的编辑态（保留数据可再点编辑）
-  if (isEditingByEnv[activeEnv.value]) {
-    cancelEdit(activeEnv.value);
-  }
+  // 每个环境拥有独立表单状态，切换时保留尚未保存的编辑内容。
   activeEnv.value = nextEnv;
+  if (workflowAccessReady.value && configsByEnv[nextEnv]) await loadWorkflow(nextEnv);
 };
 
 watch(
@@ -578,8 +899,16 @@ watch(
 );
 
 onMounted(async () => {
-  await fetchAppName();
+  try {
+    await Promise.all([fetchAppName(), loadEnvironments(), loadStepTypes()]);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '初始化页面失败');
+  }
   await fetchConfigs();
+});
+
+onBeforeUnmount(() => {
+  workflowAdminToken.value = '';
 });
 </script>
 
@@ -636,5 +965,36 @@ onMounted(async () => {
 .app-name {
   font-size: 12px;
   color: #606266;
+}
+
+.workflow-toolbar,
+.workflow-step-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workflow-name {
+  margin: 12px 0;
+}
+.workflow-access {
+  display: grid;
+  grid-template-columns: minmax(280px, 620px) auto;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.workflow-step {
+  padding: 14px;
+  margin-bottom: 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  background: #fafafa;
+}
+.workflow-step-header {
+  margin-bottom: 10px;
+}
+.step-config {
+  margin-top: 10px;
 }
 </style>

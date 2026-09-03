@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"ares/internal/api/controller"
+	"ares/internal/release"
 	_ "ares/internal/swagger"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,9 @@ func Router(r gin.IRouter) {
 	publishController := controller.NewPublishController()
 	podController := controller.NewPodController()
 	compatibleController := controller.NewCompatibleController()
+	environmentController := controller.NewEnvironmentController()
+	workflowRuntime := release.Shared()
+	workflowController := controller.NewWorkflowController(workflowRuntime.Service, workflowRuntime.Coordinator)
 	// Swagger 路由
 	r.GET("/wiki", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/swagger/index.html") })
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -24,6 +28,9 @@ func Router(r gin.IRouter) {
 
 	apiRouter := r.Group("/api/v1")
 	{
+		// 动态环境目录与可插拔步骤类型均为非敏感的运行时元数据。
+		apiRouter.GET("/environments", environmentController.ListCatalog)
+		apiRouter.GET("/pipeline-step-types", workflowController.ListPipelineStepTypes)
 		//apiRouter.GET("/job/log/:job/:id", controller.GetJenkinsBuildLog)
 		// 获取构建日志，以流式获取
 		apiRouter.GET("/job/stream/log", controller.StreamJenkinsBuildLogHandler)
@@ -45,6 +52,7 @@ func Router(r gin.IRouter) {
 			deploy.POST("/publish/query", publishController.QueryBuildTaskList)
 			// 获取job任务构建详情
 			deploy.GET("/publish/query/:task_id", publishController.QueryTaskRecordDetails)
+			deploy.GET("/publish/query/:task_id/steps", workflowController.GetTaskSteps)
 			// 覆盖写入任务图片
 			deploy.POST("/publish/images/:task_id", publishController.UpsertTaskAppletImages)
 
@@ -95,6 +103,8 @@ func Router(r gin.IRouter) {
 		{
 			appConfigs.GET("/:config_id", appConfigsController.GetAppConfigByID)
 			appConfigs.PATCH("/:config_id", appConfigsController.PatchAppConfigByID)
+			appConfigs.GET("/:config_id/workflow", controller.RequireSettingsAdminToken, workflowController.GetAppConfigWorkflow)
+			appConfigs.PUT("/:config_id/workflow", controller.RequireSettingsAdminToken, workflowController.PutAppConfigWorkflow)
 			// 域名相关配置
 			appConfigs.GET("/:config_id/domains", appConfigsController.ListDomainsByConfigID)
 			appConfigs.PUT("/:config_id/domains", appConfigsController.OverwriteDomainsByConfigID)
@@ -117,6 +127,12 @@ func Router(r gin.IRouter) {
 		}
 
 		system := apiRouter.Group("/system")
+		environments := system.Group("/environments", controller.RequireSettingsAdminToken)
+		{
+			environments.GET("", environmentController.ListAll)
+			environments.POST("", environmentController.Create)
+			environments.PATCH("/:code", environmentController.Update)
+		}
 		integrations := system.Group("/integrations", controller.RequireSettingsAdminToken)
 		{
 			integrations.GET("", controller.GetIntegrationSettings)

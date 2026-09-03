@@ -142,8 +142,8 @@ export const queryTaskLogs = async (taskId: number, logType: 'ci' | 'cd' = 'ci')
 };
 
 // SSE流式日志查询接口
-export const streamJobLogs = (jobName: string, buildId: number) => {
-  const url = `/api/v1/job/stream/log?job_name=${encodeURIComponent(jobName)}&build_id=${buildId}`;
+export const streamJobLogs = (taskId: number, logType: 'ci' | 'cd') => {
+  const url = `/api/v1/job/stream/log?task_id=${taskId}&log_type=${logType}`;
 
   return new Promise<string>((resolve, reject) => {
     const eventSource = new EventSource(url);

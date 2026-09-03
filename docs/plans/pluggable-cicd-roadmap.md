@@ -1,11 +1,12 @@
 # 可插拔 CI/CD 实施路线
 
-本文是 [可插拔 CI/CD 与动态环境架构](../architecture/pluggable-cicd.md) 的实施计划。每一阶段都要求可独立验证、可升级、可回退；旧数据删除不属于当前阶段。
+本文是 [可插拔 CI/CD 与动态环境架构](../architecture/pluggable-cicd.md) 的实施计划。每一阶段都要求可独立验证、可升级并支持前向修复；数据库迁移后的旧镜像降级不等于安全回退，旧数据删除不属于当前阶段。
 
 ## 1. 交付原则
 
 - 先固定契约和迁移边界，再改变运行行为。
 - 数据库采用只增不删的兼容迁移。
+- 数据库结构升级后禁止旧版 Xorm 进程继续写库；应用回退必须同时满足 schema 与 v2 Worker 兼容性。
 - 新旧任务通过 `engine_version` 区分，禁止 shadow 双执行。
 - Jenkins、Kubernetes、Redis 和 RabbitMQ 均不是 Ares 启动的强制依赖。
 - 环境目录、AppConfig、流程定义、运行快照分别承担单一职责。
@@ -17,54 +18,56 @@
 
 - [x] 审计 Jenkins 耦合、固定步骤状态机和三环境写死位置。
 - [x] 确认 AppConfig 是环境专属流程的绑定点。
-- [ ] 演进 `env_configs`：新增 `enabled`、`sort_order`，旧工具链字段兼容可空。
-- [ ] 新增环境查询、创建、更新/停用 API。
-- [ ] 新应用不再自动创建 `dev/test/moni` 配置。
-- [ ] 后端环境校验统一走环境服务。
-- [ ] Kubernetes 客户端和集成设置改为动态环境映射。
-- [ ] 前端环境类型改为字符串，并统一从 API 读取。
-- [ ] 应用详情、发布、批量发布、日志和系统设置不再过滤自定义环境。
+- [x] 演进 `env_configs`：新增 `enabled`、`sort_order`，旧工具链字段兼容可空。
+- [x] 新增环境查询、创建、更新/停用 API。
+- [x] 新应用不再自动创建 `dev/test/moni` 配置。
+- [x] 后端环境校验统一走环境服务。
+- [x] Kubernetes 客户端和集成设置改为动态环境映射。
+- [x] 前端环境类型改为字符串，并统一从 API 读取。
+- [x] 应用详情、发布、批量发布、日志和系统设置不再过滤自定义环境。
 
 验收：创建 `qa-cn`，为应用新增配置并在所有相关页面正常显示；停用后不能新建配置或发布，但历史仍可读。
 
 ### 阶段 B：流程定义与步骤注册表
 
-- [ ] 新增流程、不可变版本、AppConfig 绑定和任务步骤表。
-- [ ] 定义版本化 WorkflowSpec 及完整校验。
-- [ ] 实现 Executor Registry 和描述符 API。
-- [ ] 实现 `builtin.noop@v1`。
-- [ ] 提供 AppConfig 流程查询、校验、发布新版本 API。
-- [ ] Demo 为每个示例应用环境绑定可直接执行的 Noop 流程。
+- [x] 新增流程、不可变版本、AppConfig 绑定和任务步骤表。
+- [x] 定义版本化 WorkflowSpec 及完整校验。
+- [x] 实现 Executor Registry 和描述符 API。
+- [x] 实现 `builtin.noop@v1`。
+- [x] 提供 AppConfig 流程查询、校验、发布新版本 API。
+- [x] Demo 为每个示例应用环境绑定可直接执行的 Noop 流程。
 
 验收：同一应用两个环境可保存不同的三步以上流程；修改后版本递增，旧版本不变；未知步骤无法保存。
 
 ### 阶段 C：通用串行编排
 
-- [ ] 创建任务时原子保存流程与上下文快照。
-- [ ] 通用 Worker 按顺序推进任意数量步骤。
-- [ ] 使用数据库 CAS/租约避免多实例重复执行。
-- [ ] 失败策略支持 `stop` 和 `continue`。
-- [ ] 移除三小时扫描窗口。
-- [ ] 任务详情返回通用步骤状态。
-- [ ] 前端展示通用步骤时间线。
+- [x] 创建任务时原子保存流程与上下文快照。
+- [x] 通用 Worker 按顺序推进任意数量步骤。
+- [x] 使用数据库 CAS 保证同一步骤只被认领一次；多副本租约放到阶段 E。
+- [x] 失败策略支持 `stop` 和 `continue`。
+- [x] 移除三小时扫描窗口。
+- [x] 任务详情返回通用步骤状态。
+- [x] 前端展示通用步骤时间线。
 
 验收：Noop 流程无需 Jenkins 即可从 queued 运行到 succeeded；并发 Worker 不重复认领；步骤失败能得到确定终态。
 
 ### 阶段 D：Jenkins Adapter 与兼容切换
 
-- [ ] 把 Jenkins 调用封装为 `jenkins.job@v1`，发布核心不再 import Jenkins。
-- [ ] 外部引用同时容纳 Queue ID、Job 和 Build Number。
-- [ ] Jenkins 调用贯穿请求 context，不在 HTTP 请求中同步等待 Build Number。
-- [ ] 把旧两 Job 组合幂等导入为流程版本并绑定 AppConfig。
-- [ ] 新任务进入 v2；升级前已有任务仅由旧轮询器收尾。
-- [ ] 旧 CI/CD 字段只作为兼容投影。
+- [x] 把 Jenkins 调用封装为 `jenkins.job@v1`，发布核心不再 import Jenkins。
+- [x] 外部引用同时容纳 Queue ID、Job 和 Build Number。
+- [x] Jenkins 调用贯穿请求 context，不在 HTTP 请求中同步等待 Build Number。
+- [x] 把旧两 Job 组合幂等导入为流程版本并绑定 AppConfig。
+- [x] 新任务进入 v2；旧轮询器只续跑带可验证实例绑定的 v1 任务，历史未绑定在途任务 fail-closed。
+- [x] 旧 CI/CD 字段只作为兼容投影。
 - [ ] 日志改为通过任务步骤读取，限制任意 Job 访问。
 
 验收：包含 Jenkins 步骤的任务行为与旧发布一致；关闭 Jenkins 后仅该类流程不可运行，Ares 其余功能和 Noop 流程正常。
 
 ### 阶段 E：可靠性与扩展生态
 
+- [ ] 将 Xorm 结构同步收敛为纯建表，存量结构变化统一使用版本化迁移。
 - [ ] 增加 attempt、有限重试、退避、超时和取消。
+- [ ] 为多副本 Worker 增加 `next_poll_at`、owner/lease 和公平到期扫描。
 - [ ] 发布 API 支持 `Idempotency-Key`。
 - [ ] 增加 Secret Resolver，流程仅保存 Secret 引用。
 - [ ] 提供执行器契约测试套件和开发模板。
@@ -78,7 +81,7 @@
 1. 完成阶段 A 的动态环境主链路。
 2. 完成阶段 B 的流程数据模型、注册表、Noop 与配置 API。
 3. 完成阶段 C 的 Noop 串行编排和步骤查询。
-4. 完成 Jenkins Adapter 的核心解耦，保留旧任务兼容收尾路径。
+4. 完成 Jenkins Adapter 的核心解耦，保留旧任务查询兼容和严格受限的收尾路径。
 5. 前端提供动态环境选择与基础步骤编辑能力。
 6. 补齐单元测试、前端构建和 Docker Compose 空库验证。
 
@@ -87,12 +90,12 @@
 ## 4. 数据迁移与发布步骤
 
 1. 发布前备份 MySQL，并确认没有重复的 `(app_id, normalize(env))`。
-2. 建议等待旧的 `packaging`、`packaged`、`deploying` 任务结束后升级。
+2. 必须尽量等待旧的 `packaging`、自动部署中的 `packaged`、`deploying` 任务结束后升级；遗留未绑定任务会 fail-closed，升级后需人工重新发布。
 3. 启动新版，由版本化迁移扩展表并补齐环境目录。
 4. 检查导入流程和 AppConfig 绑定；Jenkins 集成存在时执行只读连通性检查。
 5. 使用 Noop Demo 验证通用引擎，再为单个非关键应用环境切换 Jenkins 流程。
 6. 观察任务和步骤状态，逐步扩大使用范围。
-7. 如需回退，停止创建 v2 新任务；已经启动的 v2 任务必须继续由 v2 Worker 收尾，不能交给旧引擎重触发。
+7. 如需回退，先冻结写入并停止创建新任务；已经启动的 v2 任务必须继续由 v2 Worker 收尾，不能交给旧引擎重触发。禁止直接让旧 `main` 镜像连接升级后的可写数据库，因为旧 Xorm 同步会删除新索引、但不会撤销迁移版本标记。优先前向修复；确需应用回退时使用保留新索引及 v2 Worker 的兼容补丁镜像，或把应用与数据库一起恢复到升级前备份。
 
 ## 5. 测试矩阵
 

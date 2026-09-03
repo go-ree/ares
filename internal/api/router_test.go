@@ -55,9 +55,8 @@ func TestDisabledIntegrationsReturnServiceUnavailable(t *testing.T) {
 		path   string
 		body   string
 	}{
-		{http.MethodPost, "/api/v1/deploy/publish", `{"app_name":"demo-api","branch":"main","env":"dev","publisher":"demo"}`},
 		{http.MethodGet, "/api/v1/status/nodes", ""},
-		{http.MethodGet, "/api/v1/job/stream/log?job_name=demo&build_id=1", ""},
+		{http.MethodGet, "/api/v1/job/stream/log?task_id=1&log_type=ci", ""},
 		{http.MethodGet, "/api/v1/k8s/pod/list?env=dev", ""},
 	}
 	for _, test := range tests {
@@ -70,5 +69,27 @@ func TestDisabledIntegrationsReturnServiceUnavailable(t *testing.T) {
 		if recorder.Code != http.StatusServiceUnavailable {
 			t.Fatalf("%s %s returned %d, expected 503: %s", test.method, test.path, recorder.Code, recorder.Body.String())
 		}
+	}
+}
+
+func TestPublishIsNotGloballyGatedByJenkins(t *testing.T) {
+	originalJenkins := jenkins.Current()
+	t.Cleanup(func() { jenkins.Activate(originalJenkins) })
+	jenkins.Disable()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	Router(router)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/deploy/publish",
+		strings.NewReader(`{"app_name":"demo-api","branch":"main","env":"invalid env","publisher":"demo"}`))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("publish returned %d, want domain validation response: %s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(strings.ToLower(recorder.Body.String()), "jenkins") {
+		t.Fatalf("publish is still globally gated by Jenkins: %s", recorder.Body.String())
 	}
 }

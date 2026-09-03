@@ -31,7 +31,7 @@ func TestBuildManagerHonorsCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	started := time.Now()
-	_, err = BuildManager(ctx, []ClusterConfig{{Name: "cluster", Environment: EnvDev, Kubeconfig: content, Timeout: time.Minute}})
+	_, err = BuildManager(ctx, []ClusterConfig{{Name: "cluster", Environment: Environment("dev"), Kubeconfig: content, Timeout: time.Minute}})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("BuildManager() error = %v, want context cancellation", err)
 	}
@@ -56,7 +56,7 @@ func TestBuildManagerRejectsInvalidVersionResponse(t *testing.T) {
 
 	_, err = BuildManager(context.Background(), []ClusterConfig{{
 		Name:        "cluster",
-		Environment: EnvDev,
+		Environment: Environment("dev"),
 		Kubeconfig:  content,
 		Timeout:     time.Second,
 	}})
@@ -65,6 +65,50 @@ func TestBuildManagerRejectsInvalidVersionResponse(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "parse Kubernetes server version") {
 		t.Fatalf("BuildManager() error = %q, want a version parsing error", err)
+	}
+}
+
+func TestBuildManagerAcceptsDynamicEnvironment(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"major":"1","minor":"30","gitVersion":"v1.30.0"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	config := testKubeconfig()
+	config.Clusters["cluster"].Server = server.URL
+	content, err := clientcmd.Write(*config)
+	if err != nil {
+		t.Fatalf("encode kubeconfig: %v", err)
+	}
+
+	manager, err := BuildManager(context.Background(), []ClusterConfig{{
+		Name:        "qa-cluster",
+		Environment: Environment("QA-CN"),
+		Kubeconfig:  content,
+		Timeout:     time.Second,
+	}})
+	if err != nil {
+		t.Fatalf("BuildManager() error = %v", err)
+	}
+	if _, ok := manager.clients[Environment("qa-cn")]["qa-cluster"]; !ok {
+		t.Fatalf("dynamic environment was not normalized and registered: %#v", manager.clients)
+	}
+	if _, exists := manager.clients[Environment("dev")]; exists {
+		t.Fatalf("BuildManager() preallocated legacy environment: %#v", manager.clients)
+	}
+}
+
+func TestParseEnvironment(t *testing.T) {
+	got, err := ParseEnvironment(" Prod-Blue ")
+	if err != nil {
+		t.Fatalf("ParseEnvironment() error = %v", err)
+	}
+	if got != Environment("prod-blue") {
+		t.Fatalf("ParseEnvironment() = %q, want prod-blue", got)
+	}
+	if _, err := ParseEnvironment("bad env"); err == nil {
+		t.Fatal("ParseEnvironment() accepted whitespace")
 	}
 }
 
@@ -183,15 +227,15 @@ func TestRegistryConcurrentActivationAndReads(t *testing.T) {
 					continue
 				}
 				_ = IsInitialized()
-				_ = ListClusters(EnvDev)
-				if DefaultClient(EnvDev) == nil {
+				_ = ListClusters(Environment("dev"))
+				if DefaultClient(Environment("dev")) == nil {
 					select {
 					case errors <- "DefaultClient returned nil while a manager was always active":
 					default:
 					}
 					return
 				}
-				_, _ = GetClient(EnvDev, fmt.Sprintf("cluster-%c", 'a'+rune(iteration%2)))
+				_, _ = GetClient(Environment("dev"), fmt.Sprintf("cluster-%c", 'a'+rune(iteration%2)))
 			}
 		}()
 	}
@@ -217,22 +261,40 @@ func TestRegistryDisabledState(t *testing.T) {
 	if IsInitialized() {
 		t.Fatal("IsInitialized() = true after Disable()")
 	}
-	if clusters := ListClusters(EnvDev); clusters != nil {
+	if clusters := ListClusters(Environment("dev")); clusters != nil {
 		t.Fatalf("ListClusters() = %v after Disable(), want nil", clusters)
 	}
-	if client := DefaultClient(EnvDev); client != nil {
+	if client := DefaultClient(Environment("dev")); client != nil {
 		t.Fatalf("DefaultClient() = %#v after Disable(), want nil", client)
 	}
-	if _, err := GetClient(EnvDev, "cluster-a"); err == nil {
+	if _, err := GetClient(Environment("dev"), "cluster-a"); err == nil {
 		t.Fatal("GetClient() unexpectedly succeeded after Disable()")
+	}
+}
+
+func TestListEnvironmentsUsesRuntimeRegistry(t *testing.T) {
+	registry.RLock()
+	original := registry.manager
+	registry.RUnlock()
+	t.Cleanup(func() { ActivateManager(original) })
+
+	ActivateManager(&ClientManager{clients: map[Environment]map[string]*kubernetes.Clientset{
+		Environment("prod-blue"): {},
+		Environment("qa-cn"):     {},
+	}})
+
+	got := ListEnvironments()
+	want := []Environment{"prod-blue", "qa-cn"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("ListEnvironments() = %v, want %v", got, want)
 	}
 }
 
 func testClientManager(name string) *ClientManager {
 	return &ClientManager{clients: map[Environment]map[string]*kubernetes.Clientset{
-		EnvDev:   {name: {}},
-		EnvTest:  {},
-		EnvStage: {},
+		Environment("dev"):  {name: {}},
+		Environment("test"): {},
+		Environment("moni"): {},
 	}}
 }
 

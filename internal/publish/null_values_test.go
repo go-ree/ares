@@ -2,6 +2,7 @@ package publish
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"ares/internal/entity"
@@ -26,6 +27,56 @@ func TestNormalizeLegacyPipelineParameters(t *testing.T) {
 	}
 	if parameters["unrelated_parameter"] != "NULL" {
 		t.Fatal("normalization must be limited to the field allowlist")
+	}
+}
+
+func TestValidateReleaseExtraDataRejectsSensitiveKeysRecursively(t *testing.T) {
+	for _, value := range []any{
+		map[string]any{"deploy_token": "secret"},
+		map[string]any{"accessToken": "secret"},
+		map[string]any{"clientSecret": "secret"},
+		map[string]any{"apiKey": "secret"},
+		map[string]any{"dbPassword": "secret"},
+		map[string]any{"config": map[string]any{"private-key": "secret"}},
+		map[string]any{"items": []any{map[string]any{"api.password": "secret"}}},
+		map[string]string{"credential": "secret"},
+	} {
+		if err := validateReleaseExtraData(value, "extra_data"); err == nil || !strings.Contains(err.Error(), "敏感字段") {
+			t.Fatalf("validateReleaseExtraData(%#v) error = %v", value, err)
+		}
+	}
+	if err := validateReleaseExtraData(map[string]any{
+		"mini_type": "mp-weixin",
+		"metadata":  map[string]any{"region": "cn"},
+	}, "extra_data"); err != nil {
+		t.Fatalf("normal release inputs were rejected: %v", err)
+	}
+}
+
+func TestCreatePublishRequestRequiresObjectExtraData(t *testing.T) {
+	var request CreatePublishRequest
+	if err := json.Unmarshal([]byte(`{"extra_data":"plain-text-secret"}`), &request); err == nil {
+		t.Fatal("string extra_data must be rejected; only a key-inspectable JSON object is allowed")
+	}
+	if err := json.Unmarshal([]byte(`{"extra_data":{"region":"cn"}}`), &request); err != nil {
+		t.Fatalf("object extra_data was rejected: %v", err)
+	}
+}
+
+func TestTaskRecordDoesNotSerializeInternalPipelineInputs(t *testing.T) {
+	record := entity.TaskRecord{
+		TaskId:         1,
+		AppName:        "demo",
+		PipelineParam:  json.RawMessage(`{"deploy_token":"must-not-leak"}`),
+		JenkinsAddress: "https://internal-jenkins.example",
+	}
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "pipeline_param") || strings.Contains(string(encoded), "must-not-leak") ||
+		strings.Contains(string(encoded), "jenkins_address") || strings.Contains(string(encoded), "internal-jenkins") {
+		t.Fatalf("internal pipeline inputs leaked through JSON: %s", encoded)
 	}
 }
 

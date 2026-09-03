@@ -12,11 +12,14 @@
         <div class="left">
           <el-form :inline="true" @submit.prevent>
             <el-form-item label="环境">
-              <el-radio-group v-model="env" size="large">
-                <el-radio-button label="dev">开发(dev)</el-radio-button>
-                <el-radio-button label="test">测试(test)</el-radio-button>
-                <el-radio-button label="moni">模拟(moni)</el-radio-button>
-              </el-radio-group>
+              <el-select v-model="env" placeholder="请选择环境" style="width: 220px">
+                <el-option
+                  v-for="item in enabledEnvironments"
+                  :key="item.code"
+                  :label="labelForEnvironment(item.code)"
+                  :value="item.code"
+                />
+              </el-select>
             </el-form-item>
             <el-form-item label="分支">
               <el-input
@@ -127,12 +130,13 @@ import { useUserStore } from '@/stores/user';
 import { queryApps } from '@/services/application';
 import { batchDeploy } from '@/services/deploy';
 import type { AppInfo, AppQueryParams } from '@/models/application';
-
-type Env = 'dev' | 'test' | 'moni';
+import type { AppEnv } from '@/models/application';
+import { useEnvironments } from '@/composables/useEnvironments';
 
 const userStore = useUserStore();
 
-const env = ref<Env>('dev');
+const { enabledEnvironments, loadEnvironments, labelForEnvironment } = useEnvironments();
+const env = ref<AppEnv>('');
 const branch = ref('');
 const keyword = ref('');
 const isRundeck = ref(false);
@@ -262,7 +266,7 @@ const submitBatchDeploy = async () => {
     const failures = (r.task_records || []).filter(x => !x.success);
     const failureLines = failures
       .slice(0, 10)
-      .map(x => `- ${x.task_record?.app_name || '未知应用'}：${x.error || '失败'}`)
+      .map(x => `- ${x.app_name || x.task_record?.app_name || '未知应用'}：${x.error || '失败'}`)
       .join('\n');
 
     await ElMessageBox.alert(
@@ -283,7 +287,12 @@ const submitBatchDeploy = async () => {
 };
 
 onMounted(async () => {
-  await fetchApps();
+  try {
+    await Promise.all([fetchApps(), loadEnvironments()]);
+    if (!env.value) env.value = enabledEnvironments.value[0]?.code || '';
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '初始化发布页面失败');
+  }
 });
 </script>
 
