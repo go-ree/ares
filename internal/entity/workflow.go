@@ -19,13 +19,14 @@ type ReleaseWorkflow struct {
 // ReleaseWorkflowVersion stores a canonical, validated workflow document.
 // Rows are append-only after creation.
 type ReleaseWorkflowVersion struct {
-	VersionID   int64           `xorm:"BIGINT pk autoincr 'version_id'" json:"version_id"`
-	WorkflowID  int64           `xorm:"BIGINT notnull index unique(uk_workflow_version) 'workflow_id'" json:"workflow_id"`
-	Version     int             `xorm:"INT notnull unique(uk_workflow_version) 'version'" json:"version"`
-	Spec        json.RawMessage `xorm:"JSON notnull 'spec'" json:"spec" swaggertype:"object"`
-	Checksum    string          `xorm:"CHAR(64) notnull 'checksum'" json:"checksum"`
-	CreatedBy   string          `xorm:"VARCHAR(100) notnull 'created_by'" json:"created_by"`
-	CreatedTime time.Time       `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at"`
+	VersionID       int64           `xorm:"BIGINT pk autoincr 'version_id'" json:"version_id"`
+	WorkflowID      int64           `xorm:"BIGINT notnull index unique(uk_workflow_version) 'workflow_id'" json:"workflow_id"`
+	Version         int             `xorm:"INT notnull unique(uk_workflow_version) 'version'" json:"version"`
+	Spec            json.RawMessage `xorm:"JSON notnull 'spec'" json:"spec" swaggertype:"object"`
+	Checksum        string          `xorm:"CHAR(64) notnull 'checksum'" json:"checksum"`
+	CreatedBy       string          `xorm:"VARCHAR(100) notnull 'created_by'" json:"created_by"`
+	CreatedByUserID *int64          `xorm:"BIGINT null 'created_by_user_id'" json:"created_by_user_id,omitempty"`
+	CreatedTime     time.Time       `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at"`
 }
 
 // AppConfigWorkflow atomically binds an app-config to its current immutable

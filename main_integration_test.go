@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	aresdb "github.com/go-ree/ares/internal/db"
 	"github.com/go-sql-driver/mysql"
 )
 
@@ -66,8 +67,8 @@ func TestMigrationCLIExitCodesAndSafeOutput(t *testing.T) {
 	if code != exitSchemaState || stderr != "" || !strings.Contains(stdout, "数据库尚未初始化") {
 		t.Fatalf("empty status = code:%d stdout:%q stderr:%q", code, stdout, stderr)
 	}
-	if got := strings.Count(stdout, "checksum="); got != 4 {
-		t.Fatalf("empty status listed %d pending checksums, want 4: %s", got, stdout)
+	if got, want := strings.Count(stdout, "checksum="), int(aresdb.ApplicationSchemaEpoch); got != want {
+		t.Fatalf("empty status listed %d pending checksums, want %d: %s", got, want, stdout)
 	}
 
 	code, stdout, stderr = run("migrate", "up")

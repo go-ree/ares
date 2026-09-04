@@ -2,7 +2,6 @@ package controller
 
 import (
 	"errors"
-	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -44,8 +43,7 @@ func (cc *AppConfigsController) CreateAppConfig(c *gin.Context) {
 	}
 
 	var req app.CreateAppConfigRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 
@@ -76,7 +74,7 @@ func (cc *AppConfigsController) ListAppConfigs(c *gin.Context) {
 
 	rows, err := cc.cfgManager.ListAppConfigs(ctx, appID)
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("查询失败", err.Error()))
+		writeInternalFailure(c, http.StatusInternalServerError, "查询失败", "database", "list_app_configs", err)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("查询成功", rows))
@@ -141,8 +139,7 @@ func (cc *AppConfigsController) PatchAppConfigByEnv(c *gin.Context) {
 	}
 
 	var req app.UpdateAppConfigRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 
@@ -200,8 +197,7 @@ func (cc *AppConfigsController) PatchAppConfigByID(c *gin.Context) {
 	}
 
 	var req app.UpdateAppConfigRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 
@@ -214,8 +210,7 @@ func (cc *AppConfigsController) PatchAppConfigByID(c *gin.Context) {
 
 // writeAppConfigError 将可预期的领域错误与基础设施故障区分开。
 // 只有未知错误返回 500 并记录错误日志，避免把正常的客户端冲突当作服务故障。
-func writeAppConfigError(c *gin.Context, message string, err error, logArgs ...any) {
-	status := http.StatusInternalServerError
+func writeAppConfigError(c *gin.Context, message string, err error, _ ...any) {
 	var validationError *app.ValidationError
 	var appNotFoundError *app.AppNotFoundError
 	var configNotFoundError *app.AppConfigNotFoundError
@@ -223,22 +218,20 @@ func writeAppConfigError(c *gin.Context, message string, err error, logArgs ...a
 
 	switch {
 	case errors.As(err, &validationError):
-		status = http.StatusBadRequest
-	case errors.Is(err, environment.ErrNotFound),
-		errors.As(err, &appNotFoundError),
-		errors.As(err, &configNotFoundError):
-		status = http.StatusNotFound
-	case errors.Is(err, environment.ErrDisabled), errors.As(err, &duplicateConfigError):
-		status = http.StatusConflict
+		c.JSON(http.StatusBadRequest, util.ResponseFailure(message, validationError.Error()))
+	case errors.Is(err, environment.ErrNotFound):
+		c.JSON(http.StatusNotFound, util.ResponseFailure(message, environment.ErrNotFound.Error()))
+	case errors.As(err, &appNotFoundError):
+		c.JSON(http.StatusNotFound, util.ResponseFailure(message, appNotFoundError.Error()))
+	case errors.As(err, &configNotFoundError):
+		c.JSON(http.StatusNotFound, util.ResponseFailure(message, configNotFoundError.Error()))
+	case errors.Is(err, environment.ErrDisabled):
+		c.JSON(http.StatusConflict, util.ResponseFailure(message, environment.ErrDisabled.Error()))
+	case errors.As(err, &duplicateConfigError):
+		c.JSON(http.StatusConflict, util.ResponseFailure(message, duplicateConfigError.Error()))
+	default:
+		writeInternalFailure(c, http.StatusInternalServerError, message, "database", "app_config", err)
 	}
-
-	if status == http.StatusInternalServerError {
-		args := append([]any{"error", err}, logArgs...)
-		slog.Error("应用环境配置操作失败", args...)
-		c.JSON(status, util.ResponseFailure(message, "内部服务错误"))
-		return
-	}
-	c.JSON(status, util.ResponseFailure(message, err.Error()))
 }
 
 // ListDomainsByConfigID
@@ -260,7 +253,7 @@ func (cc *AppConfigsController) ListDomainsByConfigID(c *gin.Context) {
 
 	rows, err := cc.cfgManager.ListDomainsByConfigID(ctx, id)
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("查询失败", err.Error()))
+		writeInternalFailure(c, http.StatusInternalServerError, "查询失败", "database", "list_app_domains", err)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("查询成功", rows))
@@ -285,14 +278,12 @@ func (cc *AppConfigsController) OverwriteDomainsByConfigID(c *gin.Context) {
 	}
 
 	var req app.UpsertDomainsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 
 	if err := cc.cfgManager.OverwriteDomainsByConfigID(ctx, id, req.Domains); err != nil {
-		c.JSON(500, util.ResponseFailure("写入失败", err.Error()))
-		slog.Error("覆盖写入多域名失败", "config_id", id, "error", err)
+		writeAppDomainError(c, "写入失败", err)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("写入成功", nil))
@@ -317,14 +308,13 @@ func (cc *AppConfigsController) CreateDomain(c *gin.Context) {
 	}
 
 	var req app.DomainItem
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 
 	row, err := cc.cfgManager.CreateDomain(ctx, id, req)
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("新增失败", err.Error()))
+		writeAppDomainError(c, "新增失败", err)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("新增成功", row))
@@ -355,7 +345,7 @@ func (cc *AppConfigsController) DeleteDomain(c *gin.Context) {
 	}
 
 	if err := cc.cfgManager.DeleteDomainByID(ctx, cfgID, domainID); err != nil {
-		c.JSON(500, util.ResponseFailure("删除失败", err.Error()))
+		writeAppDomainError(c, "删除失败", err)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("删除成功", nil))
@@ -387,15 +377,30 @@ func (cc *AppConfigsController) PatchDomain(c *gin.Context) {
 	}
 
 	var req app.PatchDomainRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 
 	row, err := cc.cfgManager.PatchDomainByID(ctx, cfgID, domainID, req)
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("修改失败", err.Error()))
+		writeAppDomainError(c, "修改失败", err)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("修改成功", row))
+}
+
+func writeAppDomainError(c *gin.Context, message string, err error) {
+	var validationError *app.ValidationError
+	var notFoundError *app.DomainNotFoundError
+	var conflictError *app.DomainConflictError
+	switch {
+	case errors.As(err, &validationError):
+		c.JSON(http.StatusBadRequest, util.ResponseFailure(message, validationError.Error()))
+	case errors.As(err, &notFoundError):
+		c.JSON(http.StatusNotFound, util.ResponseFailure(message, notFoundError.Error()))
+	case errors.As(err, &conflictError):
+		c.JSON(http.StatusConflict, util.ResponseFailure(message, conflictError.Error()))
+	default:
+		writeInternalFailure(c, http.StatusInternalServerError, message, "database", "app_domain", err)
+	}
 }

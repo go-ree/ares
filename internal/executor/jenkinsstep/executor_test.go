@@ -45,6 +45,14 @@ func TestValidateConfig(t *testing.T) {
 		{name: "camel client secret parameter", config: `{"job":"build","parameters":{"clientSecret":"secret"}}`, wantErr: true},
 		{name: "camel API key parameter", config: `{"job":"build","parameters":{"apiKey":"secret"}}`, wantErr: true},
 		{name: "camel password parameter", config: `{"job":"build","parameters":{"dbPassword":"secret"}}`, wantErr: true},
+		{name: "pwd parameter", config: `{"job":"build","parameters":{"pwd":"secret"}}`, wantErr: true},
+		{name: "pass parameter", config: `{"job":"build","parameters":{"pass":"secret"}}`, wantErr: true},
+		{name: "passphrase parameter", config: `{"job":"build","parameters":{"keyPassphrase":"secret"}}`, wantErr: true},
+		{name: "kubeconfig parameter", config: `{"job":"build","parameters":{"kubeconfig":"secret"}}`, wantErr: true},
+		{name: "basic auth parameter", config: `{"job":"build","parameters":{"basicAuth":"secret"}}`, wantErr: true},
+		{name: "docker auth parameter", config: `{"job":"build","parameters":{"dockerConfigJson":"secret"}}`, wantErr: true},
+		{name: "GitHub PAT parameter", config: `{"job":"build","parameters":{"githubPat":"secret"}}`, wantErr: true},
+		{name: "Sonar login parameter", config: `{"job":"build","parameters":{"sonar.login":"secret"}}`, wantErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if err := executor.Validate(json.RawMessage(test.config)); (err != nil) != test.wantErr {

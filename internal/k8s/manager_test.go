@@ -1,17 +1,24 @@
 package k8s
 
 import (
+	"bytes"
 	"context"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -68,6 +75,84 @@ func TestBuildManagerRejectsInvalidVersionResponse(t *testing.T) {
 	}
 }
 
+func TestBuildManagerBoundsKubernetesVersionResponse(t *testing.T) {
+	const secretMarker = "sensitive-upstream-version-payload"
+	payload := strings.Repeat(secretMarker, int(maxKubernetesVersionResponseBytes)/len(secretMarker)+2)
+	tests := []struct {
+		name           string
+		contentLength  bool
+		streamResponse bool
+	}{
+		{name: "known content length", contentLength: true},
+		{name: "chunked stream", streamResponse: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+				response.Header().Set("Content-Type", "application/json")
+				if test.contentLength {
+					response.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+				}
+				if test.streamResponse {
+					response.WriteHeader(http.StatusOK)
+					response.(http.Flusher).Flush()
+				}
+				_, _ = response.Write([]byte(payload))
+			}))
+			t.Cleanup(server.Close)
+
+			config := testKubeconfig()
+			config.Clusters["cluster"].Server = server.URL
+			content, err := clientcmd.Write(*config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = BuildManager(context.Background(), []ClusterConfig{{
+				Name: "cluster", Environment: Environment("dev"), Kubeconfig: content, Timeout: 5 * time.Second,
+			}})
+			if err == nil || !strings.Contains(err.Error(), "upstream response exceeds configured size limit") {
+				t.Fatalf("BuildManager() error = %v, want a response-size error", err)
+			}
+			if strings.Contains(err.Error(), secretMarker) {
+				t.Fatalf("BuildManager() exposed upstream response content: %v", err)
+			}
+		})
+	}
+}
+
+func TestBuildManagerBoundsRuntimeKubernetesResponses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		if request.URL.Path == "/version" {
+			_, _ = response.Write([]byte(`{"major":"1","minor":"30","gitVersion":"v1.30.0"}`))
+			return
+		}
+		response.Header().Set("Content-Length", strconv.FormatInt(maxKubernetesRuntimeResponseBytes+1, 10))
+		response.WriteHeader(http.StatusOK)
+		response.(http.Flusher).Flush()
+	}))
+	t.Cleanup(server.Close)
+
+	config := testKubeconfig()
+	config.Clusters["cluster"].Server = server.URL
+	content, err := clientcmd.Write(*config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := BuildManager(context.Background(), []ClusterConfig{{
+		Name: "cluster", Environment: Environment("dev"), Kubeconfig: content, Timeout: time.Second,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = manager.clients[Environment("dev")]["cluster"].CoreV1().Pods("default").List(
+		context.Background(), metav1.ListOptions{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "upstream response exceeds configured size limit") {
+		t.Fatalf("runtime Kubernetes List() error = %v, want a response-size error", err)
+	}
+}
+
 func TestBuildManagerAcceptsDynamicEnvironment(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -99,6 +184,83 @@ func TestBuildManagerAcceptsDynamicEnvironment(t *testing.T) {
 	}
 }
 
+func TestKubernetesStatusErrorsNeverExposeBearerToken(t *testing.T) {
+	const secret = "cluster-super-secret"
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/version":
+			response.WriteHeader(http.StatusInternalServerError)
+			_, _ = fmt.Fprintf(response,
+				`{"apiVersion":"v1","kind":"Status","status":"Failure","message":%q,"reason":"InternalError","code":500}`,
+				request.Header.Get("Authorization"))
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client, err := kubernetes.NewForConfig(&rest.Config{Host: server.URL, BearerToken: secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry.RLock()
+	original := registry.manager
+	registry.RUnlock()
+	t.Cleanup(func() { ActivateManager(original) })
+	ActivateManager(&ClientManager{clients: map[Environment]map[string]*kubernetes.Clientset{
+		Environment("dev"): {"cluster": client},
+	}})
+
+	status := CheckEnvHealth("dev")
+	if status.Available || status.Error != "upstream integration unavailable" {
+		t.Fatalf("health status = %#v", status)
+	}
+	if strings.Contains(status.Error, secret) || strings.Contains(status.Error, "Bearer") {
+		t.Fatalf("health status exposed credentials: %q", status.Error)
+	}
+}
+
+func TestDeploymentServiceLookupWarningDoesNotLogUpstreamBody(t *testing.T) {
+	const secret = "cluster-super-secret"
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/version":
+			_, _ = response.Write([]byte(`{"major":"1","minor":"30","gitVersion":"v1.30.0"}`))
+		case "/apis/apps/v1/namespaces/default/deployments":
+			_, _ = response.Write([]byte(`{"apiVersion":"apps/v1","kind":"DeploymentList","items":[{"metadata":{"name":"demo","namespace":"default"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"demo"}},"template":{"metadata":{"labels":{"app":"demo"}},"spec":{"containers":[{"name":"demo","image":"demo:latest"}]}}}}]}`))
+		case "/api/v1/namespaces/default/services/demo":
+			response.WriteHeader(http.StatusInternalServerError)
+			_, _ = fmt.Fprintf(response,
+				`{"apiVersion":"v1","kind":"Status","status":"Failure","message":%q,"reason":"InternalError","code":500}`,
+				request.Header.Get("Authorization"))
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client, err := kubernetes.NewForConfig(&rest.Config{Host: server.URL, BearerToken: secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry.RLock()
+	original := registry.manager
+	registry.RUnlock()
+	t.Cleanup(func() { ActivateManager(original) })
+	ActivateManager(&ClientManager{clients: map[Environment]map[string]*kubernetes.Clientset{
+		Environment("dev"): {"cluster": client},
+	}})
+	var logs bytes.Buffer
+	manager := &ApplicationManager{logger: slog.New(slog.NewTextHandler(&logs, nil))}
+	results, err := manager.GetDeploymentsByLabel(context.Background(), "default", "dev", "app=demo")
+	if err != nil || len(results) != 1 {
+		t.Fatalf("deployment query = %#v, %v", results, err)
+	}
+	if output := logs.String(); strings.Contains(output, secret) || strings.Contains(output, "Bearer") {
+		t.Fatalf("service lookup warning exposed credentials: %s", output)
+	}
+}
+
 func TestParseEnvironment(t *testing.T) {
 	got, err := ParseEnvironment(" Prod-Blue ")
 	if err != nil {
@@ -118,6 +280,41 @@ func TestValidateKubeconfigRejectsUnsafeCredentialSources(t *testing.T) {
 		mutate func(*clientcmdapi.Cluster, *clientcmdapi.AuthInfo)
 		want   string
 	}{
+		{
+			name: "unencrypted remote API server",
+			mutate: func(cluster *clientcmdapi.Cluster, _ *clientcmdapi.AuthInfo) {
+				cluster.Server = "http://kubernetes.example.test"
+			},
+			want: "server must use HTTPS unless it is loopback",
+		},
+		{
+			name: "TLS verification disabled",
+			mutate: func(cluster *clientcmdapi.Cluster, _ *clientcmdapi.AuthInfo) {
+				cluster.InsecureSkipTLSVerify = true
+			},
+			want: "must verify the server TLS certificate",
+		},
+		{
+			name: "server URL embeds credentials",
+			mutate: func(cluster *clientcmdapi.Cluster, _ *clientcmdapi.AuthInfo) {
+				cluster.Server = "https://user:password@kubernetes.example.test"
+			},
+			want: "server must not contain embedded credentials",
+		},
+		{
+			name: "server URL contains query",
+			mutate: func(cluster *clientcmdapi.Cluster, _ *clientcmdapi.AuthInfo) {
+				cluster.Server = "https://kubernetes.example.test?target=other"
+			},
+			want: "server must not contain a query or fragment",
+		},
+		{
+			name: "proxy URL",
+			mutate: func(cluster *clientcmdapi.Cluster, _ *clientcmdapi.AuthInfo) {
+				cluster.ProxyURL = "http://proxy.example.test"
+			},
+			want: "must not configure a proxy URL",
+		},
 		{
 			name: "exec credential plugin",
 			mutate: func(_ *clientcmdapi.Cluster, authInfo *clientcmdapi.AuthInfo) {
@@ -182,6 +379,39 @@ func TestValidateKubeconfigRejectsUnsafeCredentialSources(t *testing.T) {
 				t.Fatalf("validateKubeconfig() error = %q, want it to contain %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestBuildManagerRejectsRedirectBeforeSendingBearerTokenToTarget(t *testing.T) {
+	var targetRequests atomic.Int64
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		targetRequests.Add(1)
+	}))
+	t.Cleanup(target.Close)
+	source := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Location", target.URL+request.URL.Path)
+		response.WriteHeader(http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(source.Close)
+
+	config := testKubeconfig()
+	config.Clusters["cluster"].Server = source.URL
+	config.Clusters["cluster"].CertificateAuthorityData = pem.EncodeToMemory(&pem.Block{
+		Type: "CERTIFICATE", Bytes: source.Certificate().Raw,
+	})
+	config.AuthInfos["user"].Token = "cluster-secret"
+	content, err := clientcmd.Write(*config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = BuildManager(context.Background(), []ClusterConfig{{
+		Name: "cluster", Environment: Environment("dev"), Kubeconfig: content, Timeout: time.Second,
+	}})
+	if err == nil || !strings.Contains(err.Error(), "redirects are not allowed") {
+		t.Fatalf("BuildManager() redirect error = %v", err)
+	}
+	if got := targetRequests.Load(); got != 0 {
+		t.Fatalf("redirect target received %d request(s), want zero", got)
 	}
 }
 

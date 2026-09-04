@@ -4,151 +4,158 @@ import (
 	"net/http"
 
 	"github.com/go-ree/ares/internal/api/controller"
+	"github.com/go-ree/ares/internal/auth"
 	"github.com/go-ree/ares/internal/release"
 	_ "github.com/go-ree/ares/internal/swagger"
 
 	"github.com/gin-gonic/gin"
-	swaggerFiles "github.com/swaggo/files"     // swagger embed files
-	ginSwagger "github.com/swaggo/gin-swagger" // gin-swagger middleware
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
+// Router keeps route discovery fail-closed for tests and tooling. Production
+// startup must use RouterWithRuntime with a database-backed auth service.
 func Router(r gin.IRouter) {
+	RouterWithRuntime(r, Runtime{})
+}
+
+func RouterWithRuntime(r gin.IRouter, runtime Runtime) {
+	runtime = runtime.withSecurityDefaults()
 	appsController := controller.NewAppsController()
 	appConfigsController := controller.NewAppConfigsController()
 	publishController := controller.NewPublishController()
 	podController := controller.NewPodController()
 	compatibleController := controller.NewCompatibleController()
 	environmentController := controller.NewEnvironmentController()
+	authController := controller.NewAuthController(runtime.Auth)
 	workflowRuntime := release.Shared()
 	workflowController := controller.NewWorkflowController(workflowRuntime.Service, workflowRuntime.Coordinator)
-	// Swagger 路由
-	r.GET("/wiki", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/swagger/index.html") })
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-	r.GET("/home", controller.Home)
+
+	authenticated := runtime.require(routePolicy{Action: "documentation.read", ResourceType: "documentation"})
+	r.GET("/wiki", authenticated, func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/swagger/index.html") })
+	r.GET("/swagger/*any", authenticated, ginSwagger.WrapHandler(swaggerFiles.Handler))
+	r.GET("/home", runtime.require(routePolicy{Action: "home.read", ResourceType: "home"}), controller.Home)
 
 	apiRouter := r.Group("/api/v1")
+	authRoutes := apiRouter.Group("/auth")
 	{
-		// 动态环境目录与可插拔步骤类型均为非敏感的运行时元数据。
-		apiRouter.GET("/environments", environmentController.ListCatalog)
-		apiRouter.GET("/pipeline-step-types", workflowController.ListPipelineStepTypes)
-		//apiRouter.GET("/job/log/:job/:id", controller.GetJenkinsBuildLog)
-		// 获取构建日志，以流式获取
-		apiRouter.GET("/job/stream/log", controller.StreamJenkinsBuildLogHandler)
-		// 状态查询
-		status := apiRouter.Group("/status")
-		{
-			// 查询jenkins中node节点的状态
-			status.GET("/nodes", controller.GetJenkinsNodeStatus)
-		}
-		// 发布相关路由组
-		deploy := apiRouter.Group("/deploy")
-		{
-			// 单个应用进行发布
-			deploy.POST("/publish", publishController.CreateBuildTask)
-			// 应用批量发布
-			deploy.POST("/publish/batch", publishController.CreateBatchBuildTask)
-
-			// 多条件分页查询，查询所有任务列表
-			deploy.POST("/publish/query", publishController.QueryBuildTaskList)
-			// 获取job任务构建详情
-			deploy.GET("/publish/query/:task_id", publishController.QueryTaskRecordDetails)
-			deploy.GET("/publish/query/:task_id/steps", workflowController.GetTaskSteps)
-			// 覆盖写入任务图片
-			deploy.POST("/publish/images/:task_id", publishController.UpsertTaskAppletImages)
-
-			// 获取当前还在发布中的任务
-			deploy.GET("/publish/status", publishController.GetBuildTaskList)
-
-			// 获取构建任务状态
-			//deploy.GET("/query/status", controller.GetBuildTaskStatus)
-			// 获取job任务构建日志
-			deploy.GET("/log/stream", controller.StreamJenkinsBuildLogHandler)
-		}
-		// 应用相关接口
-		apps := apiRouter.Group("/apps")
-		{
-			// 创建单个应用
-			apps.POST("", appsController.CreateApp)
-			// 批量创建应用
-			apps.POST("/batch", appsController.CreateApps)
-
-			// 查询应用列表
-			// 支持多条件组合查询应用列表，包括应用ID、应用名称、开发语言、负责人等
-			apps.POST("/query", appsController.QueryApps)
-			// 根据应用名称获取应用详情
-			apps.GET("/name/:app_name", appsController.GetAppByName)
-			// 获取所有应用名称列表
-			apps.GET("/query/appname", appsController.GetAppNameList)
-			// 根据APPID获取应用详情
-			apps.GET(":app_id", appsController.GetAppByID)
-			// 环境配置可选项（dev_language -> code_package_type）
-			apps.GET("/:app_id/config-options", appsController.GetAppConfigOptions)
-			// 应用基本信息变更（PATCH 指针语义）
-			apps.PATCH("/:app_id", appsController.PatchAppByID)
-
-			// 应用环境配置（app_id + env）
-			apps.POST("/:app_id/configs", appConfigsController.CreateAppConfig)
-			apps.GET("/:app_id/configs", appConfigsController.ListAppConfigs)
-			apps.GET("/:app_id/configs/:env", appConfigsController.GetAppConfigByEnv)
-			apps.PATCH("/:app_id/configs/:env", appConfigsController.PatchAppConfigByEnv)
-
-			// 下线单个应用
-			//apps.DELETE("")
-			// 批量下线应用
-			//apps.DELETE("")
-		}
-
-		// 应用配置（config_id）
-		appConfigs := apiRouter.Group("/app-configs")
-		{
-			appConfigs.GET("/:config_id", appConfigsController.GetAppConfigByID)
-			appConfigs.PATCH("/:config_id", appConfigsController.PatchAppConfigByID)
-			appConfigs.GET("/:config_id/workflow", controller.RequireSettingsAdminToken, workflowController.GetAppConfigWorkflow)
-			appConfigs.PUT("/:config_id/workflow", controller.RequireSettingsAdminToken, workflowController.PutAppConfigWorkflow)
-			// 域名相关配置
-			appConfigs.GET("/:config_id/domains", appConfigsController.ListDomainsByConfigID)
-			appConfigs.PUT("/:config_id/domains", appConfigsController.OverwriteDomainsByConfigID)
-			// 多域名单条增删改
-			appConfigs.POST("/:config_id/domains", appConfigsController.CreateDomain)
-			appConfigs.DELETE("/:config_id/domains/:domain_id", appConfigsController.DeleteDomain)
-			appConfigs.PATCH("/:config_id/domains/:domain_id", appConfigsController.PatchDomain)
-		}
-		// k8s相关接口
-		k8s := apiRouter.Group("/k8s")
-		{
-			// 获取pods信息
-			k8s.GET("/pod/query", podController.GetAppPods)
-			// 获取所有pods信息（调试用）
-			k8s.GET("/pod/list", podController.GetAllPods)
-			// 通过标签查询Deployment
-			k8s.GET("/deployment/query", podController.GetDeploymentsByLabel)
-			// K8s调试信息
-			k8s.GET("/debug", podController.GetK8sDebugInfo)
-		}
-
-		system := apiRouter.Group("/system")
-		environments := system.Group("/environments", controller.RequireSettingsAdminToken)
-		{
-			environments.GET("", environmentController.ListAll)
-			environments.POST("", environmentController.Create)
-			environments.PATCH("/:code", environmentController.Update)
-		}
-		integrations := system.Group("/integrations", controller.RequireSettingsAdminToken)
-		{
-			integrations.GET("", controller.GetIntegrationSettings)
-			integrations.PUT("/jenkins", controller.UpdateJenkinsSettings)
-			integrations.PUT("/kubernetes", controller.UpdateKubernetesSettings)
-		}
-
-		// 特殊兼容接口
-		compatible := apiRouter.Group("/compatible")
-		{
-			// Historical placeholder route returned an empty 200 through global
-			// middleware. Keep that contract explicitly instead of relying on the
-			// middleware chain to provide a handler.
-			compatible.GET("/metadata/relation/all", func(c *gin.Context) { c.Status(http.StatusOK) })
-			compatible.GET("/docker/info/getServiceProjectMap", compatibleController.GetAppInfo)
-		}
+		authRoutes.GET("/options", authController.Options)
+		authRoutes.POST("/bootstrap", authController.Bootstrap)
+		authRoutes.POST("/login", authController.Login)
+		authRoutes.GET("/oidc/start", authController.OIDCStart)
+		authRoutes.GET("/oidc/callback", authController.OIDCCallback)
+		authRoutes.GET("/session", runtime.require(routePolicy{Action: "auth.session.read", ResourceType: "authentication"}), authController.Session)
+		authRoutes.POST("/logout", runtime.require(routePolicy{Action: "auth.logout", ResourceType: "authentication"}), authController.Logout)
+		authRoutes.POST("/password", runtime.require(routePolicy{
+			Action: "auth.password.change", ResourceType: "authentication", CredentialCheck: true,
+		}), authController.ChangePassword)
 	}
 
+	apiRouter.GET("/environments", runtime.require(routePolicy{
+		Permission: auth.PermissionApplicationsRead, Action: "environment.catalog.read", ResourceType: "environment",
+	}), environmentController.ListCatalog)
+	apiRouter.GET("/pipeline-step-types", runtime.require(routePolicy{
+		Permission: auth.PermissionWorkflowsRead, Action: "workflow.step-types.read", ResourceType: "workflow",
+	}), workflowController.ListPipelineStepTypes)
+	apiRouter.GET("/job/stream/log", runtime.require(routePolicy{
+		Permission: auth.PermissionLogsRead, Action: "release.log.read", ResourceType: "release-log",
+		SensitiveRead: true, SSE: true,
+	}), controller.StreamJenkinsBuildLogHandler)
+
+	status := apiRouter.Group("/status")
+	status.GET("/nodes", runtime.require(routePolicy{
+		Permission: auth.PermissionReleasesRead, Action: "executor.nodes.read", ResourceType: "executor",
+	}), controller.GetJenkinsNodeStatus)
+
+	deploy := apiRouter.Group("/deploy")
+	{
+		deploy.POST("/publish", runtime.require(routePolicy{
+			Permission: auth.PermissionReleasesCreate, Action: "release.create", ResourceType: "release",
+		}), publishController.CreateBuildTask)
+		deploy.POST("/publish/batch", runtime.require(routePolicy{
+			Permission: auth.PermissionReleasesCreate, Action: "release.batch.create", ResourceType: "release",
+		}), publishController.CreateBatchBuildTask)
+		deploy.POST("/publish/query", runtime.require(routePolicy{
+			Permission: auth.PermissionTasksRead, Action: "task.list", ResourceType: "task",
+		}), publishController.QueryBuildTaskList)
+		deploy.GET("/publish/query/:task_id", runtime.require(routePolicy{
+			Permission: auth.PermissionTasksRead, Action: "task.read", ResourceType: "task", ResourceParam: "task_id",
+		}), publishController.QueryTaskRecordDetails)
+		deploy.GET("/publish/query/:task_id/steps", runtime.require(routePolicy{
+			Permission: auth.PermissionTasksRead, Action: "task.steps.read", ResourceType: "task", ResourceParam: "task_id",
+		}), workflowController.GetTaskSteps)
+		deploy.POST("/publish/images/:task_id", runtime.require(routePolicy{
+			Permission: auth.PermissionTasksWrite, Action: "task.images.write", ResourceType: "task", ResourceParam: "task_id",
+		}), publishController.UpsertTaskAppletImages)
+		deploy.GET("/publish/status", runtime.require(routePolicy{
+			Permission: auth.PermissionReleasesRead, Action: "release.status.read", ResourceType: "release",
+		}), publishController.GetBuildTaskList)
+		deploy.GET("/log/stream", runtime.require(routePolicy{
+			Permission: auth.PermissionLogsRead, Action: "release.log.read", ResourceType: "release-log",
+			SensitiveRead: true, SSE: true,
+		}), controller.StreamJenkinsBuildLogHandler)
+	}
+
+	apps := apiRouter.Group("/apps")
+	{
+		apps.POST("", runtime.require(routePolicy{Permission: auth.PermissionApplicationsWrite, Action: "application.create", ResourceType: "application"}), appsController.CreateApp)
+		apps.POST("/batch", runtime.require(routePolicy{Permission: auth.PermissionApplicationsWrite, Action: "application.batch.create", ResourceType: "application"}), appsController.CreateApps)
+		apps.POST("/query", runtime.require(routePolicy{Permission: auth.PermissionApplicationsRead, Action: "application.list", ResourceType: "application"}), appsController.QueryApps)
+		apps.GET("/name/:app_name", runtime.require(routePolicy{Permission: auth.PermissionApplicationsRead, Action: "application.read", ResourceType: "application", ResourceParam: "app_name"}), appsController.GetAppByName)
+		apps.GET("/query/appname", runtime.require(routePolicy{Permission: auth.PermissionApplicationsRead, Action: "application.names.read", ResourceType: "application"}), appsController.GetAppNameList)
+		apps.GET("/:app_id", runtime.require(routePolicy{Permission: auth.PermissionApplicationsRead, Action: "application.read", ResourceType: "application", ResourceParam: "app_id"}), appsController.GetAppByID)
+		apps.GET("/:app_id/config-options", runtime.require(routePolicy{Permission: auth.PermissionAppConfigsRead, Action: "app-config.options.read", ResourceType: "application", ResourceParam: "app_id"}), appsController.GetAppConfigOptions)
+		apps.PATCH("/:app_id", runtime.require(routePolicy{Permission: auth.PermissionApplicationsWrite, Action: "application.update", ResourceType: "application", ResourceParam: "app_id"}), appsController.PatchAppByID)
+		apps.POST("/:app_id/configs", runtime.require(routePolicy{Permission: auth.PermissionAppConfigsWrite, Action: "app-config.create", ResourceType: "application", ResourceParam: "app_id"}), appConfigsController.CreateAppConfig)
+		apps.GET("/:app_id/configs", runtime.require(routePolicy{Permission: auth.PermissionAppConfigsRead, Action: "app-config.list", ResourceType: "application", ResourceParam: "app_id"}), appConfigsController.ListAppConfigs)
+		apps.GET("/:app_id/configs/:env", runtime.require(routePolicy{Permission: auth.PermissionAppConfigsRead, Action: "app-config.read", ResourceType: "application", ResourceParam: "app_id"}), appConfigsController.GetAppConfigByEnv)
+		apps.PATCH("/:app_id/configs/:env", runtime.require(routePolicy{Permission: auth.PermissionAppConfigsWrite, Action: "app-config.update", ResourceType: "application", ResourceParam: "app_id"}), appConfigsController.PatchAppConfigByEnv)
+	}
+
+	appConfigs := apiRouter.Group("/app-configs")
+	{
+		appConfigs.GET("/:config_id", runtime.require(routePolicy{Permission: auth.PermissionAppConfigsRead, Action: "app-config.read", ResourceType: "app-config", ResourceParam: "config_id"}), appConfigsController.GetAppConfigByID)
+		appConfigs.PATCH("/:config_id", runtime.require(routePolicy{Permission: auth.PermissionAppConfigsWrite, Action: "app-config.update", ResourceType: "app-config", ResourceParam: "config_id"}), appConfigsController.PatchAppConfigByID)
+		appConfigs.GET("/:config_id/workflow", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsRead, Action: "workflow.read", ResourceType: "app-config", ResourceParam: "config_id"}), workflowController.GetAppConfigWorkflow)
+		appConfigs.PUT("/:config_id/workflow", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsWrite, Action: "workflow.update", ResourceType: "app-config", ResourceParam: "config_id", AllowLegacy: true}), workflowController.PutAppConfigWorkflow)
+		appConfigs.GET("/:config_id/domains", runtime.require(routePolicy{Permission: auth.PermissionDomainsRead, Action: "domain.list", ResourceType: "app-config", ResourceParam: "config_id"}), appConfigsController.ListDomainsByConfigID)
+		appConfigs.PUT("/:config_id/domains", runtime.require(routePolicy{Permission: auth.PermissionDomainsWrite, Action: "domain.replace", ResourceType: "app-config", ResourceParam: "config_id"}), appConfigsController.OverwriteDomainsByConfigID)
+		appConfigs.POST("/:config_id/domains", runtime.require(routePolicy{Permission: auth.PermissionDomainsWrite, Action: "domain.create", ResourceType: "app-config", ResourceParam: "config_id"}), appConfigsController.CreateDomain)
+		appConfigs.DELETE("/:config_id/domains/:domain_id", runtime.require(routePolicy{Permission: auth.PermissionDomainsWrite, Action: "domain.delete", ResourceType: "domain", ResourceParam: "domain_id"}), appConfigsController.DeleteDomain)
+		appConfigs.PATCH("/:config_id/domains/:domain_id", runtime.require(routePolicy{Permission: auth.PermissionDomainsWrite, Action: "domain.update", ResourceType: "domain", ResourceParam: "domain_id"}), appConfigsController.PatchDomain)
+	}
+
+	k8s := apiRouter.Group("/k8s")
+	{
+		k8s.GET("/pod/query", runtime.require(routePolicy{Permission: auth.PermissionKubernetesRead, Action: "kubernetes.pods.read", ResourceType: "kubernetes"}), podController.GetAppPods)
+		k8s.GET("/pod/list", runtime.require(routePolicy{Permission: auth.PermissionKubernetesRead, Action: "kubernetes.pods.read", ResourceType: "kubernetes"}), podController.GetAllPods)
+		k8s.GET("/deployment/query", runtime.require(routePolicy{Permission: auth.PermissionKubernetesRead, Action: "kubernetes.deployments.read", ResourceType: "kubernetes"}), podController.GetDeploymentsByLabel)
+		k8s.GET("/debug", runtime.require(routePolicy{Permission: auth.PermissionKubernetesDebug, Action: "kubernetes.debug.read", ResourceType: "kubernetes", SensitiveRead: true}), podController.GetK8sDebugInfo)
+	}
+
+	system := apiRouter.Group("/system")
+	environments := system.Group("/environments")
+	{
+		environments.GET("", runtime.require(routePolicy{Permission: auth.PermissionSystemSettingsRead, Action: "system.environment.list", ResourceType: "system-environment", SensitiveRead: true, AllowLegacy: true}), environmentController.ListAll)
+		environments.POST("", runtime.require(routePolicy{Permission: auth.PermissionSystemSettingsWrite, Action: "system.environment.create", ResourceType: "system-environment", AllowLegacy: true}), environmentController.Create)
+		environments.PATCH("/:code", runtime.require(routePolicy{Permission: auth.PermissionSystemSettingsWrite, Action: "system.environment.update", ResourceType: "system-environment", ResourceParam: "code", AllowLegacy: true}), environmentController.Update)
+	}
+	integrations := system.Group("/integrations")
+	{
+		integrations.GET("", runtime.require(routePolicy{Permission: auth.PermissionSystemSettingsRead, Action: "system.integration.read", ResourceType: "integration", SensitiveRead: true, AllowLegacy: true}), controller.GetIntegrationSettings)
+		integrations.PUT("/jenkins", runtime.require(routePolicy{Permission: auth.PermissionSystemSettingsWrite, Action: "system.integration.update", ResourceType: "integration", AllowLegacy: true}), controller.UpdateJenkinsSettings)
+		integrations.PUT("/kubernetes", runtime.require(routePolicy{Permission: auth.PermissionSystemSettingsWrite, Action: "system.integration.update", ResourceType: "integration", AllowLegacy: true}), controller.UpdateKubernetesSettings)
+	}
+	users := system.Group("/users")
+	{
+		users.GET("", runtime.require(routePolicy{Permission: auth.PermissionUsersRead, Action: "user.list", ResourceType: "user", SensitiveRead: true}), authController.ListUsers)
+		users.PATCH("/:user_id", runtime.require(routePolicy{Permission: auth.PermissionUsersWrite, Action: "user.update", ResourceType: "user", ResourceParam: "user_id"}), authController.UpdateUser)
+	}
+	system.GET("/audit-events", runtime.require(routePolicy{Permission: auth.PermissionAuditRead, Action: "audit.list", ResourceType: "audit", SensitiveRead: true}), authController.ListAudit)
+
+	compatible := apiRouter.Group("/compatible")
+	{
+		compatible.GET("/metadata/relation/all", runtime.require(routePolicy{Permission: auth.PermissionApplicationsRead, Action: "compatibility.metadata.read", ResourceType: "compatibility"}), func(c *gin.Context) { c.Status(http.StatusOK) })
+		compatible.GET("/docker/info/getServiceProjectMap", runtime.require(routePolicy{Permission: auth.PermissionApplicationsRead, Action: "compatibility.application-map.read", ResourceType: "compatibility"}), compatibleController.GetAppInfo)
+	}
 }

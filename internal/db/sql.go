@@ -17,6 +17,13 @@ import (
 
 var Engine *xorm.Engine
 
+const (
+	runtimeDatabaseMaxOpenConnections = 25
+	runtimeDatabaseMaxIdleConnections = 10
+	runtimeDatabaseConnectionLifetime = 30 * time.Minute
+	runtimeDatabaseConnectionIdleTime = 5 * time.Minute
+)
+
 // Init opens the runtime database, verifies the versioned schema without
 // changing it, then writes only idempotent reference/demo data. Database DDL is
 // owned exclusively by `ares migrate up`.
@@ -32,6 +39,11 @@ func Init() error {
 		return err
 	}
 	Engine = engine
+	runtimeDatabase := engine.DB().DB
+	runtimeDatabase.SetMaxOpenConns(runtimeDatabaseMaxOpenConnections)
+	runtimeDatabase.SetMaxIdleConns(runtimeDatabaseMaxIdleConnections)
+	runtimeDatabase.SetConnMaxLifetime(runtimeDatabaseConnectionLifetime)
+	runtimeDatabase.SetConnMaxIdleTime(runtimeDatabaseConnectionIdleTime)
 	failed := true
 	defer func() {
 		if failed {

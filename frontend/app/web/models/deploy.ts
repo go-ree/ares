@@ -34,7 +34,6 @@ export interface DeployRequest {
   app_name: string;
   env: string;
   branch: string;
-  publisher: string;
   // 是否走 rundeck（可选）
   is_rundeck?: boolean;
   // 额外发布参数（可选）

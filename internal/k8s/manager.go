@@ -3,15 +3,26 @@ package k8s
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-ree/ares/internal/upstreamhttp"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+)
+
+const (
+	maxKubernetesVersionResponseBytes = 1 << 20
+	maxKubernetesRuntimeResponseBytes = 16 << 20
 )
 
 var registry struct {
@@ -96,17 +107,36 @@ func createClient(ctx context.Context, cfg ClusterConfig) (*kubernetes.Clientset
 	}
 	restConfig.Timeout = cfg.Timeout
 
-	client, err := kubernetes.NewForConfig(restConfig)
+	httpClient, err := rest.HTTPClientFor(restConfig)
+	if err != nil {
+		return nil, fmt.Errorf("create Kubernetes HTTP client: %w", err)
+	}
+	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return errors.New("Kubernetes API redirects are not allowed")
+	}
+	baseTransport := httpClient.Transport
+	probeHTTPClient := *httpClient
+	probeHTTPClient.Transport = upstreamhttp.LimitResponses(baseTransport, maxKubernetesVersionResponseBytes)
+	probeClient, err := kubernetes.NewForConfigAndClient(restConfig, &probeHTTPClient)
 	if err != nil {
 		return nil, fmt.Errorf("create Kubernetes client: %w", err)
 	}
-	body, err := client.Discovery().RESTClient().Get().AbsPath("/version").Do(ctx).Raw()
+	body, err := probeClient.Discovery().RESTClient().Get().AbsPath("/version").Do(ctx).Raw()
 	if err != nil {
 		return nil, fmt.Errorf("verify Kubernetes cluster: %w", err)
 	}
 	var serverVersion version.Info
 	if err := json.Unmarshal(body, &serverVersion); err != nil {
 		return nil, fmt.Errorf("parse Kubernetes server version: %w", err)
+	}
+	// Runtime calls are also bounded so a compromised API server cannot make a
+	// low-privilege list/read request consume unbounded process memory. The
+	// higher ceiling accommodates normal Kubernetes list responses while still
+	// providing a hard resource boundary.
+	httpClient.Transport = upstreamhttp.LimitResponses(baseTransport, maxKubernetesRuntimeResponseBytes)
+	client, err := kubernetes.NewForConfigAndClient(restConfig, httpClient)
+	if err != nil {
+		return nil, fmt.Errorf("create Kubernetes client: %w", err)
 	}
 	return client, nil
 }
@@ -120,6 +150,25 @@ func ValidateKubeconfig(content []byte) error {
 		return fmt.Errorf("parse kubeconfig: %w", err)
 	}
 	for name, cluster := range raw.Clusters {
+		endpoint, parseErr := url.Parse(strings.TrimSpace(cluster.Server))
+		if parseErr != nil || endpoint.Host == "" || (endpoint.Scheme != "http" && endpoint.Scheme != "https") {
+			return fmt.Errorf("kubeconfig cluster %q server must be a valid HTTP or HTTPS URL", name)
+		}
+		if endpoint.User != nil {
+			return fmt.Errorf("kubeconfig cluster %q server must not contain embedded credentials", name)
+		}
+		if endpoint.RawQuery != "" || endpoint.Fragment != "" {
+			return fmt.Errorf("kubeconfig cluster %q server must not contain a query or fragment", name)
+		}
+		if strings.TrimSpace(cluster.ProxyURL) != "" {
+			return fmt.Errorf("kubeconfig cluster %q must not configure a proxy URL", name)
+		}
+		if endpoint.Scheme == "http" && !isLoopbackKubernetesHost(endpoint.Hostname()) {
+			return fmt.Errorf("kubeconfig cluster %q server must use HTTPS unless it is loopback", name)
+		}
+		if cluster.InsecureSkipTLSVerify {
+			return fmt.Errorf("kubeconfig cluster %q must verify the server TLS certificate", name)
+		}
 		if cluster.CertificateAuthority != "" {
 			return fmt.Errorf("kubeconfig cluster %q must embed certificate-authority-data instead of referencing a file", name)
 		}
@@ -136,6 +185,15 @@ func ValidateKubeconfig(content []byte) error {
 		}
 	}
 	return nil
+}
+
+func isLoopbackKubernetesHost(host string) bool {
+	normalized := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if normalized == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(normalized)
+	return ip != nil && ip.IsLoopback()
 }
 
 func ActivateManager(next *ClientManager) {

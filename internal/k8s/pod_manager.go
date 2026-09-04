@@ -204,7 +204,7 @@ func (pm *PodManager) RestartPodsBySelector(ctx context.Context, namespace, env,
 		if err != nil {
 			pm.logger.Error("删除Pod失败",
 				"pod", pod.Name,
-				"error", err)
+				"error_class", "upstream_failure")
 			continue
 		}
 		restartedPods = append(restartedPods, pod.Name)

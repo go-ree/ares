@@ -99,24 +99,36 @@ func SnapshotView() Snapshot {
 	runtimeSettings.RUnlock()
 
 	clusters := make([]KubernetesClusterView, 0, len(kubernetesConfig.Clusters))
+	kubernetesReentryRequired := false
 	for _, cluster := range kubernetesConfig.Clusters {
+		reentryRequired := credentialReentryRequired(cluster.KubeconfigCiphertext)
+		kubernetesReentryRequired = kubernetesReentryRequired || reentryRequired
 		clusters = append(clusters, KubernetesClusterView{
-			Environment:          cluster.Environment,
-			Name:                 cluster.Name,
-			Description:          cluster.Description,
-			KubeconfigConfigured: cluster.KubeconfigCiphertext != "",
+			Environment:               cluster.Environment,
+			Name:                      cluster.Name,
+			Description:               cluster.Description,
+			KubeconfigConfigured:      cluster.KubeconfigCiphertext != "",
+			CredentialReentryRequired: reentryRequired,
 		})
+	}
+	jenkinsReentryRequired := credentialReentryRequired(jenkinsConfig.TokenCiphertext)
+	if jenkinsReentryRequired {
+		jenkinsError = safeError(ErrCredentialReentryRequired)
+	}
+	if kubernetesReentryRequired {
+		kubernetesError = safeError(ErrCredentialReentryRequired)
 	}
 	sort.Slice(clusters, func(i, j int) bool { return clusters[i].Environment < clusters[j].Environment })
 	return Snapshot{
 		Jenkins: JenkinsView{
-			Enabled:         jenkinsConfig.Enabled,
-			Address:         jenkinsConfig.Address,
-			Username:        jenkinsConfig.Username,
-			TimeoutSeconds:  normalizedTimeout(jenkinsConfig.TimeoutSeconds),
-			TokenConfigured: jenkinsConfig.TokenCiphertext != "",
-			Connected:       jenkins.IsConfigured(),
-			LastError:       jenkinsError,
+			Enabled:                   jenkinsConfig.Enabled,
+			Address:                   jenkinsConfig.Address,
+			Username:                  jenkinsConfig.Username,
+			TimeoutSeconds:            normalizedTimeout(jenkinsConfig.TimeoutSeconds),
+			TokenConfigured:           jenkinsConfig.TokenCiphertext != "",
+			CredentialReentryRequired: jenkinsReentryRequired,
+			Connected:                 jenkins.IsConfigured(),
+			LastError:                 jenkinsError,
 		},
 		Kubernetes: KubernetesView{
 			Enabled:        kubernetesConfig.Enabled,
@@ -172,7 +184,7 @@ func UpdateJenkins(ctx context.Context, req UpdateJenkinsRequest) (JenkinsView, 
 		if len(*req.Token) > maxJenkinsTokenBytes {
 			return JenkinsView{}, fmt.Errorf("Jenkins token exceeds %d bytes", maxJenkinsTokenBytes)
 		}
-		next.TokenCiphertext, err = cipher.encrypt(*req.Token)
+		next.TokenCiphertext, err = cipher.encrypt(*req.Token, jenkinsCredentialContext(next.Address, next.Username))
 		if err != nil {
 			return JenkinsView{}, err
 		}
@@ -180,7 +192,7 @@ func UpdateJenkins(ctx context.Context, req UpdateJenkinsRequest) (JenkinsView, 
 
 	var candidate *jenkins.Runtime
 	if next.Enabled {
-		token, err := cipher.decrypt(next.TokenCiphertext)
+		token, err := cipher.decrypt(next.TokenCiphertext, jenkinsCredentialContext(next.Address, next.Username))
 		if err != nil {
 			return JenkinsView{}, err
 		}
@@ -313,12 +325,15 @@ func UpdateKubernetes(ctx context.Context, req UpdateKubernetesRequest) (Kuberne
 		}
 		if old, exists := currentByEnvironment[environment]; exists {
 			stored.KubeconfigCiphertext = old.KubeconfigCiphertext
+			if stored.KubeconfigCiphertext != "" && input.Kubeconfig == nil && name != strings.TrimSpace(old.Name) {
+				return KubernetesView{}, fmt.Errorf("kubeconfig must be provided when the cluster name changes for environment %s", environment)
+			}
 		}
 		if input.Kubeconfig != nil {
 			if len(*input.Kubeconfig) > maxKubeconfigBytes {
 				return KubernetesView{}, fmt.Errorf("kubeconfig for %s exceeds %d bytes", environment, maxKubeconfigBytes)
 			}
-			stored.KubeconfigCiphertext, err = cipher.encrypt(*input.Kubeconfig)
+			stored.KubeconfigCiphertext, err = cipher.encrypt(*input.Kubeconfig, kubernetesCredentialContext(environment, name))
 			if err != nil {
 				return KubernetesView{}, err
 			}
@@ -329,14 +344,14 @@ func UpdateKubernetes(ctx context.Context, req UpdateKubernetesRequest) (Kuberne
 		next.Clusters = append(next.Clusters, stored)
 	}
 
-	configs, err := runtimeKubernetesConfigs(next, cipher)
-	if err != nil {
-		return KubernetesView{}, err
-	}
 	var candidate *k8s.ClientManager
 	if next.Enabled {
 		if len(next.Clusters) == 0 {
 			return KubernetesView{}, fmt.Errorf("at least one Kubernetes cluster is required when the integration is enabled")
+		}
+		configs, err := runtimeKubernetesConfigs(next, cipher)
+		if err != nil {
+			return KubernetesView{}, err
 		}
 		connectCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 		defer cancel()
@@ -383,7 +398,7 @@ func applyStoredJenkinsAtBoot(stored storedJenkinsConfig, cipher *secretCipher, 
 		err       error
 	)
 	if stored.Enabled {
-		token, err = cipher.decrypt(stored.TokenCiphertext)
+		token, err = cipher.decrypt(stored.TokenCiphertext, jenkinsCredentialContext(stored.Address, stored.Username))
 	}
 	if stored.Enabled && err == nil {
 		timeout := normalizedTimeout(stored.TimeoutSeconds)
@@ -456,7 +471,7 @@ func runtimeKubernetesConfigs(stored storedKubernetesConfig, cipher *secretCiphe
 	timeout := time.Duration(normalizedTimeout(stored.TimeoutSeconds)) * time.Second
 	configs := make([]k8s.ClusterConfig, 0, len(stored.Clusters))
 	for _, cluster := range stored.Clusters {
-		content, err := cipher.decrypt(cluster.KubeconfigCiphertext)
+		content, err := cipher.decrypt(cluster.KubeconfigCiphertext, kubernetesCredentialContext(cluster.Environment, cluster.Name))
 		if err != nil {
 			return nil, fmt.Errorf("decrypt kubeconfig for %s: %w", cluster.Environment, err)
 		}
@@ -539,9 +554,17 @@ func safeError(err error) string {
 	if err == nil {
 		return ""
 	}
-	message := err.Error()
-	if len(message) > 500 {
-		return message[:500]
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "外部集成连接超时"
+	case errors.Is(err, context.Canceled):
+		return "外部集成连接已取消"
+	case errors.Is(err, ErrCredentialReentryRequired):
+		return "已保存的旧版凭据无法安全迁移，请重新录入"
+	default:
+		// Provider errors and Kubernetes Status.message are untrusted and may
+		// reflect Authorization headers. Runtime snapshots are Web-visible, so
+		// retain only a stable operator-facing class.
+		return "外部集成暂不可用"
 	}
-	return message
 }

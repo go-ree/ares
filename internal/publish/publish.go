@@ -5,6 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/go-ree/ares/internal/api/util"
 	"github.com/go-ree/ares/internal/db"
 	"github.com/go-ree/ares/internal/entity"
@@ -12,10 +18,6 @@ import (
 	"github.com/go-ree/ares/internal/release"
 	"github.com/go-ree/ares/internal/tool"
 	"github.com/go-ree/ares/internal/workflow"
-	"log/slog"
-	"strconv"
-	"sync"
-	"time"
 )
 
 // PublishManager 发布管理器
@@ -37,9 +39,16 @@ type CreatePublishRequest struct {
 	AppName   string         `json:"app_name"`
 	Branch    string         `json:"branch"`
 	Env       string         `json:"env"`
-	Publisher string         `json:"publisher"`
 	IsRundeck bool           `json:"is_rundeck"`
 	ExtraData map[string]any `json:"extra_data,omitempty"`
+}
+
+// PublishActor is the authenticated, server-owned identity attached to a
+// release. It is deliberately separate from CreatePublishRequest so a client
+// cannot choose either the display snapshot or the stable user ID.
+type PublishActor struct {
+	UserID      int64
+	DisplayName string
 }
 
 // PublishRequest 实际发布需要用到的参数
@@ -49,6 +58,7 @@ type PublishRequest struct {
 	Branch          string         `json:"branch"`
 	Env             string         `json:"env"`
 	Publisher       string         `json:"publisher"`
+	PublisherUserID int64          `json:"-"`
 	AppId           int            `json:"app_id"`
 	CodePackageType string         `json:"code_package_type"`
 	ExtraData       map[string]any `json:"extra_data,omitempty"`
@@ -85,7 +95,7 @@ func (pm *PublishManager) VerifyApp(req *PublishRequest) (*entity.Apps, error) {
 		return nil, fmt.Errorf("应用信息查询失败：%s", err)
 	}
 	if len(app) == 0 {
-		return nil, fmt.Errorf("未找到应用：%s", req.AppName)
+		return nil, newInputError(fmt.Sprintf("未找到应用：%s", req.AppName))
 	}
 	if len(app) > 1 {
 		return nil, fmt.Errorf("匹配到 %d 条记录信息，请检查app_name：%s 是否唯一存在", len(app), req.AppName)
@@ -100,7 +110,7 @@ func (pm *PublishManager) VerifyRunDeckApp(req *PublishRequest) (*entity.Apps, e
 		return nil, fmt.Errorf("应用信息查询失败：%s", err)
 	}
 	if len(app) == 0 {
-		return nil, fmt.Errorf("未找到应用：%s", req.AppName)
+		return nil, newInputError(fmt.Sprintf("未找到应用：%s", req.AppName))
 	}
 	if len(app) > 1 {
 		return nil, fmt.Errorf("匹配到 %d 条记录信息，请检查app_name：%s 是否唯一存在", len(app), req.AppName)
@@ -116,7 +126,7 @@ func (pm *PublishManager) VerifyAppConfig(req *PublishRequest) (*entity.AppConfi
 		return nil, fmt.Errorf("配置信息查询失败：%s", err)
 	}
 	if len(appConfigs) == 0 {
-		return nil, fmt.Errorf("未找到对应环境配置信息，appId：%d,env：%s", req.AppId, req.Env)
+		return nil, newInputError(fmt.Sprintf("未找到对应环境配置信息，appId：%d,env：%s", req.AppId, req.Env))
 	}
 	if len(appConfigs) > 1 {
 		return nil, fmt.Errorf("匹配到 %d 条记录信息，请检查appId：%d, env：%s 是否唯一存在", len(appConfigs), req.AppId, req.Env)
@@ -132,7 +142,7 @@ func (pm *PublishManager) VerifyEnvConfigs(req *PublishRequest) (*entity.EnvConf
 		return nil, fmt.Errorf("配置信息查询失败：%s", err)
 	}
 	if len(envConfigs) == 0 {
-		return nil, fmt.Errorf("未找到环境配置：%s", req.Env)
+		return nil, newInputError(fmt.Sprintf("未找到环境配置：%s", req.Env))
 	}
 	if len(envConfigs) > 1 {
 		return nil, fmt.Errorf("匹配到 %d 条记录信息，请检查env：%s 是否唯一存在", len(envConfigs), req.Env)
@@ -158,14 +168,18 @@ func (pm *PublishManager) VerifyPipelines(req *PublishRequest) (*entity.Pipeline
 
 // CreatePublish 创建单次发布动作。发布核心只面向通用工作流；
 // Jenkins 是否必需由当前 AppConfig 的步骤定义决定。
-func (pm *PublishManager) CreatePublish(ctx context.Context, createReq *CreatePublishRequest) (*entity.TaskRecord, error) {
+func (pm *PublishManager) CreatePublish(ctx context.Context, createReq *CreatePublishRequest, actor PublishActor) (*entity.TaskRecord, error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	actor.DisplayName = strings.TrimSpace(actor.DisplayName)
+	if actor.UserID <= 0 || actor.DisplayName == "" {
+		return nil, fmt.Errorf("发布主体无效")
 	}
 	// 验证所需的参数信息是否完成且不为空
 	err := tool.ValidateStruct(createReq)
 	if err != nil {
-		return nil, err
+		return nil, newInputError(err.Error())
 	}
 
 	envConfig, err := environment.NewService().RequireEnabled(ctx, createReq.Env)
@@ -173,11 +187,12 @@ func (pm *PublishManager) CreatePublish(ctx context.Context, createReq *CreatePu
 		return nil, err
 	}
 	req := &PublishRequest{
-		AppName:   createReq.AppName,
-		Branch:    createReq.Branch,
-		Env:       envConfig.Env,
-		Publisher: createReq.Publisher,
-		ExtraData: createReq.ExtraData,
+		AppName:         createReq.AppName,
+		Branch:          createReq.Branch,
+		Env:             envConfig.Env,
+		Publisher:       actor.DisplayName,
+		PublisherUserID: actor.UserID,
+		ExtraData:       createReq.ExtraData,
 		// RundeckAppName 将在验证后设置
 	}
 	var app *entity.Apps
@@ -189,7 +204,7 @@ func (pm *PublishManager) CreatePublish(ctx context.Context, createReq *CreatePu
 	}
 	// 防御：避免后续 nil 解引用导致 panic
 	if app == nil {
-		return nil, fmt.Errorf("未找到应用：%s", req.AppName)
+		return nil, newInputError(fmt.Sprintf("未找到应用：%s", req.AppName))
 	}
 
 	req.AppId = app.AppId
@@ -223,7 +238,7 @@ func (pm *PublishManager) CreatePublish(ctx context.Context, createReq *CreatePu
 	defer readCancel()
 	exists, err := db.Engine.Context(readCtx).ID(taskRecord.TaskId).Get(&updatedRecord)
 	if err != nil {
-		slog.Warn("发布任务已创建但读取最新状态失败", "task_id", taskRecord.TaskId, "error", err)
+		slog.Warn("发布任务已创建但读取最新状态失败", "task_id", taskRecord.TaskId, "error_class", "database_failure")
 		normalizeTaskRecordNullableText(taskRecord)
 		return taskRecord, nil
 	}
@@ -234,7 +249,7 @@ func (pm *PublishManager) CreatePublish(ctx context.Context, createReq *CreatePu
 	}
 	updatedRecord.Steps, err = runtime.Store.ListTaskSteps(readCtx, taskRecord.TaskId)
 	if err != nil {
-		slog.Warn("发布任务已创建但读取步骤失败", "task_id", taskRecord.TaskId, "error", err)
+		slog.Warn("发布任务已创建但读取步骤失败", "task_id", taskRecord.TaskId, "error_class", "database_failure")
 		updatedRecord.Steps = make([]entity.TaskStepRecord, 0)
 	}
 	updatedRecord.AppletImages = make([]entity.AppletImage, 0)
@@ -243,18 +258,22 @@ func (pm *PublishManager) CreatePublish(ctx context.Context, createReq *CreatePu
 }
 
 // CreateBatchPublish 批量创建发布任务
-func (pm *PublishManager) CreateBatchPublish(ctx context.Context, req *CreateBatchPublishRequest) (*CreateBatchPublishResponse, error) {
+func (pm *PublishManager) CreateBatchPublish(ctx context.Context, req *CreateBatchPublishRequest, actor PublishActor) (*CreateBatchPublishResponse, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if req == nil {
-		return nil, fmt.Errorf("批量发布请求不能为空")
+		return nil, newInputError("批量发布请求不能为空")
 	}
 	if len(req.BatchPublish) == 0 {
-		return nil, fmt.Errorf("批量发布至少需要 1 个应用")
+		return nil, newInputError("批量发布至少需要 1 个应用")
 	}
 	if len(req.BatchPublish) > 100 {
-		return nil, fmt.Errorf("单次批量发布不能超过 100 个应用")
+		return nil, newInputError("单次批量发布不能超过 100 个应用")
+	}
+	actor.DisplayName = strings.TrimSpace(actor.DisplayName)
+	if actor.UserID <= 0 || actor.DisplayName == "" {
+		return nil, fmt.Errorf("发布主体无效")
 	}
 	response := &CreateBatchPublishResponse{
 		TaskRecords: make([]CreatePublishResult, len(req.BatchPublish)),
@@ -283,7 +302,7 @@ func (pm *PublishManager) CreateBatchPublish(ctx context.Context, req *CreateBat
 		go func() {
 			defer workers.Done()
 			for item := range jobs {
-				publish, err := pm.CreatePublish(ctx, &item.req)
+				publish, err := pm.CreatePublish(ctx, &item.req, actor)
 				result := CreatePublishResult{
 					RequestIndex: item.index,
 					AppName:      item.req.AppName,
@@ -292,7 +311,11 @@ func (pm *PublishManager) CreateBatchPublish(ctx context.Context, req *CreateBat
 					TaskRecord:   publish,
 				}
 				if err != nil {
-					result.Error = err.Error()
+					if publicError, safe := ClientErrorMessage(err); safe {
+						result.Error = publicError
+					} else {
+						result.Error = "发布任务创建失败，请稍后重试"
+					}
 				}
 				resultChan <- struct {
 					index  int
@@ -391,7 +414,7 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 	// 透传 extra_data：只要有值就合并进发布输入，且不覆盖核心字段。
 	if req.ExtraData != nil {
 		if err := validateReleaseExtraData(req.ExtraData, "extra_data"); err != nil {
-			return nil, nil, err
+			return nil, nil, newInputError(err.Error())
 		}
 		// stringify 将任意值转换为 string，复杂类型优先 JSON 序列化
 		stringify := func(v any) (string, bool) {
@@ -440,17 +463,19 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 	if err != nil {
 		return nil, nil, err
 	}
+	publisherUserID := req.PublisherUserID
 	taskRecord := &entity.TaskRecord{
-		AppName:        app.AppName,
-		RundeckAppName: app.RundeckAppName, // 现在是指针类型，可以直接赋值
-		Publisher:      req.Publisher,
-		Branch:         req.Branch,
-		Env:            req.Env,
-		PipelineParam:  json.RawMessage(jsonStr),
-		Products:       image,
-		Status:         workflow.TaskQueued,
-		Steps:          make([]entity.TaskStepRecord, 0),
-		AppletImages:   make([]entity.AppletImage, 0),
+		AppName:         app.AppName,
+		RundeckAppName:  app.RundeckAppName, // 现在是指针类型，可以直接赋值
+		Publisher:       req.Publisher,
+		PublisherUserID: &publisherUserID,
+		Branch:          req.Branch,
+		Env:             req.Env,
+		PipelineParam:   json.RawMessage(jsonStr),
+		Products:        image,
+		Status:          workflow.TaskQueued,
+		Steps:           make([]entity.TaskStepRecord, 0),
+		AppletImages:    make([]entity.AppletImage, 0),
 	}
 	return releaseInputs, taskRecord, nil
 }
@@ -489,7 +514,7 @@ func (pm *PublishManager) GetTaskRecordDetails(taskID int) (*entity.TaskRecord, 
 		return nil, fmt.Errorf("查询任务详情失败：%s", err)
 	}
 	if !has {
-		return nil, fmt.Errorf("未找到任务详情，task_id: %d", taskID)
+		return nil, newNotFoundError(fmt.Sprintf("未找到任务详情，task_id: %d", taskID))
 	}
 	normalizeTaskRecordNullableText(&taskRecord)
 	if taskRecord.EngineVersion >= 2 {

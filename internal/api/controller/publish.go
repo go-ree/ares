@@ -1,12 +1,13 @@
 package controller
 
 import (
-	"github.com/go-ree/ares/internal/api/util"
-	"github.com/go-ree/ares/internal/publish"
-	"log/slog"
+	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-ree/ares/internal/api/util"
+	"github.com/go-ree/ares/internal/publish"
 )
 
 type PublishController struct {
@@ -28,14 +29,17 @@ func NewPublishController() *PublishController {
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router	/api/v1/deploy/publish [post]
 func (pc *PublishController) CreateBuildTask(c *gin.Context) {
-	var req publish.CreatePublishRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求数据格式错误", err.Error()))
+	actor, ok := currentPublishActor(c)
+	if !ok {
 		return
 	}
-	publishResult, err := pc.publishManager.CreatePublish(c.Request.Context(), &req)
+	var req publish.CreatePublishRequest
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
+		return
+	}
+	publishResult, err := pc.publishManager.CreatePublish(c.Request.Context(), &req, actor)
 	if err != nil {
-		c.JSON(422, util.ResponseFailure("发布任务创建失败", err.Error()))
+		writePublishError(c, "发布任务创建失败", http.StatusUnprocessableEntity, err)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("发布任务创建成功", publishResult))
@@ -50,14 +54,17 @@ func (pc *PublishController) CreateBuildTask(c *gin.Context) {
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router	/api/v1/deploy/publish/batch [post]
 func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
-	var req publish.CreateBatchPublishRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求数据格式错误", err.Error()))
+	actor, ok := currentPublishActor(c)
+	if !ok {
 		return
 	}
-	publishBatchResult, err := pc.publishManager.CreateBatchPublish(c.Request.Context(), &req)
+	var req publish.CreateBatchPublishRequest
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
+		return
+	}
+	publishBatchResult, err := pc.publishManager.CreateBatchPublish(c.Request.Context(), &req, actor)
 	if err != nil {
-		c.JSON(422, util.ResponseFailure("批量发布任务创建失败", err.Error()))
+		writePublishError(c, "批量发布任务创建失败", http.StatusUnprocessableEntity, err)
 		return
 	}
 	if publishBatchResult.FailureCount != 0 {
@@ -70,6 +77,23 @@ func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
 	c.JSON(200, util.ResponseSuccessful("发布任务创建成功", publishBatchResult))
 }
 
+func currentPublishActor(c *gin.Context) (publish.PublishActor, bool) {
+	principal, ok := CurrentPrincipal(c)
+	if !ok || principal.UserID <= 0 {
+		c.JSON(http.StatusUnauthorized, util.ResponseFailure("认证主体不可用", "unauthenticated"))
+		return publish.PublishActor{}, false
+	}
+	displayName := strings.TrimSpace(principal.DisplayName)
+	if displayName == "" {
+		displayName = strings.TrimSpace(principal.Username)
+	}
+	if displayName == "" {
+		c.JSON(http.StatusUnauthorized, util.ResponseFailure("认证主体不可用", "unauthenticated"))
+		return publish.PublishActor{}, false
+	}
+	return publish.PublishActor{UserID: principal.UserID, DisplayName: displayName}, true
+}
+
 // GetBuildTaskList
 // @Tags Publish
 // @Summary 获取发布中的任务列表
@@ -80,7 +104,7 @@ func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
 func (pc *PublishController) GetBuildTaskList(c *gin.Context) {
 	status, err := pc.publishManager.JobStatus()
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("", err.Error()))
+		writeInternalFailure(c, http.StatusInternalServerError, "任务列表获取失败", "database", "active_publish_tasks", err)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("任务列表获取成功", status))
@@ -100,16 +124,14 @@ func (pc *PublishController) QueryBuildTaskList(c *gin.Context) {
 
 	// 从请求中绑定查询参数
 	var params publish.PublishQuery
-	if err := c.ShouldBindJSON(&params); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &params, defaultJSONRequestBytes) {
 		return
 	}
 
 	// 调用管理器查询
 	result, err := pc.publishManager.QueryBuildPublish(ctx, params)
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("查询失败", err.Error()))
-		slog.Error("查询失败", "error", err)
+		writePublishError(c, "查询失败", http.StatusBadRequest, err)
 		return
 	}
 
@@ -129,16 +151,19 @@ func (pc *PublishController) QueryTaskRecordDetails(c *gin.Context) {
 	// 获取路径参数中的应用ID
 	taskIDStr := c.Param("task_id")
 	taskID, err := strconv.Atoi(taskIDStr)
-	if err != nil {
-		c.JSON(400, util.ResponseFailure("无效的任务ID", err.Error()))
+	if err != nil || taskID <= 0 {
+		c.JSON(http.StatusBadRequest, util.ResponseFailure("无效的任务ID", "invalid task id"))
 		return
 	}
 
 	// 调用管理器查询
 	result, err := pc.publishManager.GetTaskRecordDetails(taskID)
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("查询失败", err.Error()))
-		slog.Error("查询失败", "error", err)
+		if publicError, notFound := publish.NotFoundErrorMessage(err); notFound {
+			c.JSON(http.StatusNotFound, util.ResponseFailure("查询失败", publicError))
+		} else {
+			writeInternalFailure(c, http.StatusInternalServerError, "查询失败", "database", "get_publish_task", err)
+		}
 		return
 	}
 
@@ -158,22 +183,28 @@ func (pc *PublishController) QueryTaskRecordDetails(c *gin.Context) {
 func (pc *PublishController) UpsertTaskAppletImages(c *gin.Context) {
 	taskIDStr := c.Param("task_id")
 	taskID, err := strconv.Atoi(taskIDStr)
-	if err != nil {
-		c.JSON(400, util.ResponseFailure("无效的任务ID", err.Error()))
+	if err != nil || taskID <= 0 {
+		c.JSON(http.StatusBadRequest, util.ResponseFailure("无效的任务ID", "invalid task id"))
 		return
 	}
 
 	var req publish.UpsertTaskAppletImagesRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 
 	if err := pc.publishManager.UpsertTaskAppletImages(taskID, req.AppletImages); err != nil {
-		c.JSON(500, util.ResponseFailure("写入失败", err.Error()))
-		slog.Error("写入任务图片失败", "task_id", taskID, "error", err)
+		writeInternalFailure(c, http.StatusInternalServerError, "写入失败", "database", "upsert_task_images", err)
 		return
 	}
 
 	c.JSON(200, util.ResponseSuccessful("写入成功", nil))
+}
+
+func writePublishError(c *gin.Context, message string, clientStatus int, err error) {
+	if publicError, safe := publish.ClientErrorMessage(err); safe {
+		c.JSON(clientStatus, util.ResponseFailure(message, publicError))
+		return
+	}
+	writeInternalFailure(c, http.StatusInternalServerError, message, "database", "publish", err)
 }

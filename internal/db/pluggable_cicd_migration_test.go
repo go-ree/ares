@@ -65,4 +65,7 @@ func TestPluggableCICDMigrationRunsAfterNullCleanup(t *testing.T) {
 	if schemaMigrations[3].version != versionedSchemaMigrationVersion {
 		t.Fatalf("epoch 4 migration = %q, want %q", schemaMigrations[3].version, versionedSchemaMigrationVersion)
 	}
+	if schemaMigrations[4].version != authRBACMigrationVersion {
+		t.Fatalf("epoch 5 migration = %q, want %q", schemaMigrations[4].version, authRBACMigrationVersion)
+	}
 }

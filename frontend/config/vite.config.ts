@@ -2,8 +2,8 @@ import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import path from 'path';
 import fs from 'fs';
-import type { Connect } from 'vite';
 import { visualizer } from 'rollup-plugin-visualizer';
+import { createDistAssetMiddleware } from './static-assets.ts';
 
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
@@ -74,44 +74,7 @@ export default defineConfig(({ command, mode }) => {
       });
 
       // 静态资源服务中间件 - 处理 /assets/ 路径（必须在 SPA 回退之前）
-      server.middlewares.use((req: any, res: any, next: any) => {
-        const url = req.url;
-
-        if (url.startsWith('/assets/')) {
-          console.log(`[${new Date().toISOString()}] Serving static asset: ${req.method} ${url}`);
-
-          // 移除 /assets/ 前缀，直接映射到 dist/assets/
-          const filePath = path.join(process.cwd(), 'dist', url);
-
-          if (fs.existsSync(filePath)) {
-            const ext = path.extname(filePath);
-            let contentType = 'application/octet-stream';
-
-            // 设置正确的 Content-Type
-            if (ext === '.js') {
-              contentType = 'application/javascript';
-            } else if (ext === '.css') {
-              contentType = 'text/css';
-            } else if (ext === '.svg') {
-              contentType = 'image/svg+xml';
-            }
-
-            const content = fs.readFileSync(filePath);
-            res.writeHead(200, {
-              'Content-Type': contentType,
-              'Cache-Control': 'public, max-age=31536000',
-            });
-            res.end(content);
-          } else {
-            console.error('Static asset not found:', filePath);
-            res.writeHead(404, { 'Content-Type': 'text/plain' });
-            res.end('Asset not found');
-          }
-          return;
-        }
-
-        next();
-      });
+      server.middlewares.use(createDistAssetMiddleware());
 
       // 开发模式的 SPA 回退中间件 - 只在 vite preview 不可用时使用
       server.middlewares.use((req: any, res: any, next: any) => {

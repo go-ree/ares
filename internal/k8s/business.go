@@ -103,7 +103,9 @@ func CheckEnvHealth(env string) *EnvStatus {
 
 	// 检查集群连通性（ServerVersion 不支持 context）
 	if _, err := client.Discovery().ServerVersion(); err != nil {
-		status.Error = fmt.Sprintf("集群连接失败: %v", err)
+		// Kubernetes Status.message is controlled by the upstream and may echo
+		// request headers. Never retain it in a Web-visible health snapshot.
+		status.Error = "upstream integration unavailable"
 		return status
 	}
 

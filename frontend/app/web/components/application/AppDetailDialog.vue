@@ -29,10 +29,16 @@
         {{ appDetail?.owner_cn }}
       </el-descriptions-item>
       <el-descriptions-item label="Git仓库">
-        <el-link v-if="appDetail?.git_url" type="primary" :href="appDetail.git_url" target="_blank">
-          {{ appDetail.git_url }}
+        <el-link
+          v-if="safeGitURL"
+          type="primary"
+          :href="safeGitURL"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {{ appDetail?.git_url }}
         </el-link>
-        <span v-else>-</span>
+        <span v-else>{{ appDetail?.git_url || '-' }}</span>
       </el-descriptions-item>
       <el-descriptions-item label="创建时间">
         {{ formatDate(appDetail?.created_at) }}
@@ -54,11 +60,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { getAppDetail } from '@/services/application';
 import type { AppInfo } from '@/models/application';
 import { AppStatus } from '@/models/application';
+import { repositoryWebURL } from '@/utils/repository-url';
 
 const props = defineProps<{
   visible: boolean;
@@ -86,6 +93,7 @@ const loading = ref(false);
 
 // 应用详情数据
 const appDetail = ref<AppInfo>();
+const safeGitURL = computed(() => repositoryWebURL(appDetail.value?.git_url));
 
 // 获取应用详情
 const fetchAppDetail = async () => {

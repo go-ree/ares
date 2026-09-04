@@ -40,6 +40,7 @@
             />
             <div class="empty-actions">
               <el-button
+                v-if="canWriteAppConfigs"
                 type="primary"
                 :loading="creatingEnv === env.value"
                 :disabled="loading || saving || !env.enabled"
@@ -53,14 +54,14 @@
           <div v-else class="env-content">
             <div class="env-actions">
               <el-button
-                v-if="!isEditingByEnv[env.value]"
+                v-if="!isEditingByEnv[env.value] && canWriteAppConfigs"
                 type="primary"
                 :disabled="loading || saving"
                 @click="startEdit(env.value)"
               >
                 编辑
               </el-button>
-              <template v-else>
+              <template v-if="isEditingByEnv[env.value] && canWriteAppConfigs">
                 <el-button
                   type="primary"
                   :loading="saving"
@@ -248,125 +249,140 @@
               </el-row>
             </el-form>
 
-            <el-divider content-position="left">发布流程</el-divider>
-            <div class="workflow-access">
-              <el-input
-                v-model="workflowAdminToken"
-                type="password"
-                show-password
-                autocomplete="off"
-                placeholder="输入系统设置管理员令牌后管理发布流程"
-                @input="workflowAccessReady = false"
-                @keyup.enter="loadProtectedWorkflow(env.value)"
-              >
-                <template #prepend>管理员令牌</template>
-              </el-input>
-              <el-button
-                type="primary"
-                plain
-                :loading="workflowLoadingByEnv[env.value]"
-                @click="loadProtectedWorkflow(env.value)"
-              >
-                加载流程
-              </el-button>
-            </div>
-            <el-alert
-              v-if="!workflowAccessReady"
-              title="发布流程属于受保护的系统配置，请先验证管理员令牌。"
-              type="info"
-              :closable="false"
-              show-icon
-            />
-            <div v-else class="workflow-editor" v-loading="workflowLoadingByEnv[env.value]">
-              <div class="workflow-toolbar">
-                <div>
-                  <strong>{{ workflowDraftsByEnv[env.value]?.name || '未配置发布流程' }}</strong>
-                  <el-tag v-if="workflowMetaByEnv[env.value]?.version" class="ml-8" size="small">
-                    v{{ workflowMetaByEnv[env.value]?.version }}
-                  </el-tag>
-                </div>
-                <div>
-                  <el-button
-                    type="primary"
-                    plain
-                    :disabled="workflowSaving || pipelineStepTypes.length === 0"
-                    @click="addWorkflowStep(env.value)"
-                    >新增步骤</el-button
-                  >
-                  <el-button
-                    type="primary"
-                    :loading="workflowSaving"
-                    @click="saveWorkflow(env.value)"
-                    >保存流程</el-button
-                  >
-                </div>
-              </div>
-              <el-input
-                v-model="workflowDraftsByEnv[env.value].name"
-                placeholder="流程名称"
-                class="workflow-name"
+            <template v-if="canReadWorkflows">
+              <el-divider content-position="left">发布流程</el-divider>
+              <el-alert
+                v-if="!canWriteWorkflows"
+                title="当前账号拥有发布流程只读权限。"
+                type="info"
+                :closable="false"
+                show-icon
+                class="mb-12"
               />
-              <el-empty
-                v-if="workflowDraftsByEnv[env.value].steps.length === 0"
-                :image-size="70"
-                description="暂无步骤，可添加 Noop 或 Jenkins 等执行步骤"
-              />
-              <div
-                v-for="(step, index) in workflowDraftsByEnv[env.value].steps"
-                :key="`${step.key}-${index}`"
-                class="workflow-step"
-              >
-                <div class="workflow-step-header">
-                  <strong>步骤 {{ index + 1 }}</strong>
+              <div class="workflow-editor" v-loading="workflowLoadingByEnv[env.value]">
+                <div class="workflow-toolbar">
+                  <div>
+                    <strong>{{ workflowDraftsByEnv[env.value]?.name || '未配置发布流程' }}</strong>
+                    <el-tag v-if="workflowMetaByEnv[env.value]?.version" class="ml-8" size="small">
+                      v{{ workflowMetaByEnv[env.value]?.version }}
+                    </el-tag>
+                  </div>
                   <div>
                     <el-button
-                      link
-                      :disabled="index === 0"
-                      @click="moveWorkflowStep(env.value, index, -1)"
-                      >上移</el-button
+                      v-if="canWriteWorkflows"
+                      type="primary"
+                      plain
+                      :disabled="workflowSaving || pipelineStepTypes.length === 0"
+                      @click="addWorkflowStep(env.value)"
+                      >新增步骤</el-button
                     >
                     <el-button
-                      link
-                      :disabled="index === workflowDraftsByEnv[env.value].steps.length - 1"
-                      @click="moveWorkflowStep(env.value, index, 1)"
-                      >下移</el-button
+                      v-if="canWriteWorkflows"
+                      type="primary"
+                      :loading="workflowSaving"
+                      @click="saveWorkflow(env.value)"
+                      >保存流程</el-button
                     >
-                    <el-button type="danger" link @click="removeWorkflowStep(env.value, index)"
-                      >删除</el-button
+                    <el-button
+                      :loading="workflowLoadingByEnv[env.value]"
+                      :disabled="workflowSaving"
+                      @click="loadWorkflow(env.value)"
+                      >刷新</el-button
                     >
                   </div>
                 </div>
-                <el-row :gutter="12">
-                  <el-col :span="6"
-                    ><el-input v-model="step.key" placeholder="唯一 key，如 build"
-                  /></el-col>
-                  <el-col :span="6"><el-input v-model="step.name" placeholder="步骤名称" /></el-col>
-                  <el-col :span="8">
-                    <el-select v-model="step.uses" placeholder="选择执行器" style="width: 100%">
-                      <el-option
-                        v-for="stepType in pipelineStepTypes"
-                        :key="stepType.uses"
-                        :label="`${stepType.name}（${stepType.uses}）${stepType.available === false ? '— 当前不可运行' : ''}`"
-                        :value="stepType.uses"
-                      />
-                    </el-select>
-                  </el-col>
-                  <el-col :span="4">
-                    <el-select v-model="step.on_failure" style="width: 100%">
-                      <el-option label="失败即停" value="stop" />
-                      <el-option label="继续执行" value="continue" />
-                    </el-select>
-                  </el-col>
-                </el-row>
                 <el-input
-                  v-model="step.withText"
-                  type="textarea"
-                  :rows="3"
-                  class="step-config"
-                  placeholder='步骤配置 JSON，例如 {"message":"done"}'
+                  v-model="workflowDraftsByEnv[env.value].name"
+                  placeholder="流程名称"
+                  class="workflow-name"
+                  :disabled="!canWriteWorkflows"
                 />
+                <el-empty
+                  v-if="workflowDraftsByEnv[env.value].steps.length === 0"
+                  :image-size="70"
+                  description="暂无步骤，可添加 Noop 或 Jenkins 等执行步骤"
+                />
+                <div
+                  v-for="(step, index) in workflowDraftsByEnv[env.value].steps"
+                  :key="`${step.key}-${index}`"
+                  class="workflow-step"
+                >
+                  <div class="workflow-step-header">
+                    <strong>步骤 {{ index + 1 }}</strong>
+                    <div>
+                      <el-button
+                        v-if="canWriteWorkflows"
+                        link
+                        :disabled="index === 0"
+                        @click="moveWorkflowStep(env.value, index, -1)"
+                        >上移</el-button
+                      >
+                      <el-button
+                        v-if="canWriteWorkflows"
+                        link
+                        :disabled="index === workflowDraftsByEnv[env.value].steps.length - 1"
+                        @click="moveWorkflowStep(env.value, index, 1)"
+                        >下移</el-button
+                      >
+                      <el-button
+                        v-if="canWriteWorkflows"
+                        type="danger"
+                        link
+                        @click="removeWorkflowStep(env.value, index)"
+                        >删除</el-button
+                      >
+                    </div>
+                  </div>
+                  <el-row :gutter="12">
+                    <el-col :span="6"
+                      ><el-input
+                        v-model="step.key"
+                        placeholder="唯一 key，如 build"
+                        :disabled="!canWriteWorkflows"
+                    /></el-col>
+                    <el-col :span="6"
+                      ><el-input
+                        v-model="step.name"
+                        placeholder="步骤名称"
+                        :disabled="!canWriteWorkflows"
+                    /></el-col>
+                    <el-col :span="8">
+                      <el-select
+                        v-model="step.uses"
+                        placeholder="选择执行器"
+                        style="width: 100%"
+                        :disabled="!canWriteWorkflows"
+                      >
+                        <el-option
+                          v-for="stepType in pipelineStepTypes"
+                          :key="stepType.uses"
+                          :label="`${stepType.name}（${stepType.uses}）${stepType.available === false ? '— 当前不可运行' : ''}`"
+                          :value="stepType.uses"
+                        />
+                      </el-select>
+                    </el-col>
+                    <el-col :span="4">
+                      <el-select
+                        v-model="step.on_failure"
+                        style="width: 100%"
+                        :disabled="!canWriteWorkflows"
+                      >
+                        <el-option label="失败即停" value="stop" />
+                        <el-option label="继续执行" value="continue" />
+                      </el-select>
+                    </el-col>
+                  </el-row>
+                  <el-input
+                    v-model="step.withText"
+                    type="textarea"
+                    :rows="3"
+                    class="step-config"
+                    placeholder='步骤配置 JSON，例如 {"message":"done"}'
+                    :disabled="!canWriteWorkflows"
+                  />
+                </div>
               </div>
-            </div>
+            </template>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -375,7 +391,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -401,8 +417,14 @@ import {
 } from '@/services/application';
 import { normalizeLegacyNullableText } from '@/utils/legacy-nullable-text';
 import { useEnvironments } from '@/composables/useEnvironments';
+import { useAuthStore } from '@/stores/auth';
+import { PERMISSIONS } from '@/types/auth';
 
 const route = useRoute();
+const authStore = useAuthStore();
+const canWriteAppConfigs = computed(() => authStore.can(PERMISSIONS.APP_CONFIGS_WRITE));
+const canReadWorkflows = computed(() => authStore.can(PERMISSIONS.WORKFLOWS_READ));
+const canWriteWorkflows = computed(() => authStore.can(PERMISSIONS.WORKFLOWS_WRITE));
 const appId = ref<number>(Number(route.params.appId));
 const appDetail = ref<AppInfo | null>(null);
 const displayName = ref<string>(
@@ -456,8 +478,6 @@ const workflowDraftsByEnv = reactive<Record<AppEnv, WorkflowDraft>>({});
 const workflowMetaByEnv = reactive<Record<AppEnv, AppConfigWorkflow | null>>({});
 const workflowLoadingByEnv = reactive<Record<AppEnv, boolean>>({});
 const workflowSaving = ref(false);
-const workflowAdminToken = ref('');
-const workflowAccessReady = ref(false);
 
 const ensureEnvState = (env: AppEnv) => {
   if (!(env in configsByEnv)) configsByEnv[env] = null;
@@ -579,12 +599,7 @@ const fetchConfigs = async () => {
     if (!activeEnv.value || !envOptions.value.some(option => option.value === activeEnv.value)) {
       activeEnv.value = envOptions.value[0]?.value || '';
     }
-    if (
-      workflowAccessReady.value &&
-      workflowAdminToken.value.trim() &&
-      activeEnv.value &&
-      configsByEnv[activeEnv.value]
-    ) {
+    if (canReadWorkflows.value && activeEnv.value && configsByEnv[activeEnv.value]) {
       await loadWorkflow(activeEnv.value);
     }
   } catch (e) {
@@ -596,6 +611,7 @@ const fetchConfigs = async () => {
 };
 
 const createEnvConfig = async (env: AppEnv) => {
+  if (!canWriteAppConfigs.value) return;
   if (!Number.isFinite(appId.value) || appId.value <= 0) return;
   creatingEnv.value = env;
   try {
@@ -636,6 +652,7 @@ const fetchAppName = async () => {
 };
 
 const startEdit = (env: AppEnv) => {
+  if (!canWriteAppConfigs.value) return;
   if (!configsByEnv[env]) return;
   originalFormsByEnv[env] = { ...formsByEnv[env] };
   isEditingByEnv[env] = true;
@@ -658,6 +675,7 @@ const getChangedKeys = (env: AppEnv) => {
 };
 
 const saveEnvConfig = async (env: AppEnv) => {
+  if (!canWriteAppConfigs.value) return;
   if (!Number.isFinite(appId.value) || appId.value <= 0) return;
   if (!isEditingByEnv[env]) return;
   const changedKeys = getChangedKeys(env);
@@ -758,23 +776,20 @@ const specToDraft = (spec?: WorkflowSpec | null): WorkflowDraft => ({
 
 const loadWorkflow = async (env: AppEnv) => {
   const configId = configsByEnv[env]?.config_id;
-  if (!configId || !workflowAdminToken.value.trim() || workflowLoadingByEnv[env]) return;
+  if (!canReadWorkflows.value || !configId || workflowLoadingByEnv[env]) return;
   workflowLoadingByEnv[env] = true;
   try {
-    const response = await getAppConfigWorkflow(configId, workflowAdminToken.value);
+    const response = await getAppConfigWorkflow(configId);
     const result = response.data.result;
     const wrapped = result && 'spec' in result ? result : null;
     const spec = wrapped?.spec || (result as WorkflowSpec | null);
     workflowMetaByEnv[env] = wrapped;
     workflowDraftsByEnv[env] = specToDraft(spec);
-    workflowAccessReady.value = true;
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 404) {
       workflowMetaByEnv[env] = null;
       workflowDraftsByEnv[env] = emptyWorkflow();
-      workflowAccessReady.value = true;
     } else {
-      workflowAccessReady.value = false;
       ElMessage.error(getApplicationApiErrorMessage(error, '获取发布流程失败'));
     }
   } finally {
@@ -782,15 +797,8 @@ const loadWorkflow = async (env: AppEnv) => {
   }
 };
 
-const loadProtectedWorkflow = async (env: AppEnv) => {
-  if (!workflowAdminToken.value.trim()) {
-    ElMessage.warning('请输入管理员令牌');
-    return;
-  }
-  await loadWorkflow(env);
-};
-
 const addWorkflowStep = (env: AppEnv) => {
+  if (!canWriteWorkflows.value) return;
   ensureEnvState(env);
   const type =
     pipelineStepTypes.value.find(item => item.available !== false) || pipelineStepTypes.value[0];
@@ -804,9 +812,12 @@ const addWorkflowStep = (env: AppEnv) => {
   });
 };
 
-const removeWorkflowStep = (env: AppEnv, index: number) =>
+const removeWorkflowStep = (env: AppEnv, index: number) => {
+  if (!canWriteWorkflows.value) return;
   workflowDraftsByEnv[env].steps.splice(index, 1);
+};
 const moveWorkflowStep = (env: AppEnv, index: number, offset: number) => {
+  if (!canWriteWorkflows.value) return;
   const steps = workflowDraftsByEnv[env].steps;
   const target = index + offset;
   if (target < 0 || target >= steps.length) return;
@@ -815,11 +826,9 @@ const moveWorkflowStep = (env: AppEnv, index: number, offset: number) => {
 };
 
 const saveWorkflow = async (env: AppEnv) => {
+  if (!canWriteWorkflows.value) return;
   const configId = configsByEnv[env]?.config_id;
   if (!configId) return;
-  if (!workflowAccessReady.value || !workflowAdminToken.value.trim()) {
-    return ElMessage.warning('请先使用管理员令牌加载发布流程');
-  }
   const draft = workflowDraftsByEnv[env];
   if (!draft.name.trim()) return ElMessage.warning('请填写流程名称');
   if (draft.steps.length === 0) return ElMessage.warning('发布流程至少需要一个步骤');
@@ -850,16 +859,11 @@ const saveWorkflow = async (env: AppEnv) => {
       };
     });
     workflowSaving.value = true;
-    const response = await putAppConfigWorkflow(
-      configId,
-      workflowMetaByEnv[env]?.revision || 0,
-      {
-        schema_version: 1,
-        name: draft.name.trim(),
-        steps,
-      },
-      workflowAdminToken.value
-    );
+    const response = await putAppConfigWorkflow(configId, workflowMetaByEnv[env]?.revision || 0, {
+      schema_version: 1,
+      name: draft.name.trim(),
+      steps,
+    });
     if (response.data.code !== 1)
       throw new Error(response.data.error || response.data.message || '保存流程失败');
     workflowMetaByEnv[env] = response.data.result;
@@ -881,7 +885,7 @@ const handleEnvChange = async (name: string | number) => {
   const nextEnv = name as AppEnv;
   // 每个环境拥有独立表单状态，切换时保留尚未保存的编辑内容。
   activeEnv.value = nextEnv;
-  if (workflowAccessReady.value && configsByEnv[nextEnv]) await loadWorkflow(nextEnv);
+  if (canReadWorkflows.value && configsByEnv[nextEnv]) await loadWorkflow(nextEnv);
 };
 
 watch(
@@ -900,15 +904,15 @@ watch(
 
 onMounted(async () => {
   try {
-    await Promise.all([fetchAppName(), loadEnvironments(), loadStepTypes()]);
+    await Promise.all([
+      fetchAppName(),
+      loadEnvironments(),
+      ...(canReadWorkflows.value ? [loadStepTypes()] : []),
+    ]);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '初始化页面失败');
   }
   await fetchConfigs();
-});
-
-onBeforeUnmount(() => {
-  workflowAdminToken.value = '';
 });
 </script>
 
@@ -977,12 +981,6 @@ onBeforeUnmount(() => {
 
 .workflow-name {
   margin: 12px 0;
-}
-.workflow-access {
-  display: grid;
-  grid-template-columns: minmax(280px, 620px) auto;
-  gap: 12px;
-  margin-bottom: 12px;
 }
 .workflow-step {
   padding: 14px;

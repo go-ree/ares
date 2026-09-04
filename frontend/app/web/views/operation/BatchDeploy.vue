@@ -126,14 +126,11 @@
 import { computed, nextTick, onMounted, ref } from 'vue';
 import type { TableInstance } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { useUserStore } from '@/stores/user';
 import { queryApps } from '@/services/application';
 import { batchDeploy } from '@/services/deploy';
 import type { AppInfo, AppQueryParams } from '@/models/application';
 import type { AppEnv } from '@/models/application';
 import { useEnvironments } from '@/composables/useEnvironments';
-
-const userStore = useUserStore();
 
 const { enabledEnvironments, loadEnvironments, labelForEnvironment } = useEnvironments();
 const env = ref<AppEnv>('');
@@ -232,10 +229,6 @@ const extraData = computed(() => {
 });
 
 const submitBatchDeploy = async () => {
-  if (!userStore.userInfo) {
-    ElMessage.error('用户未登录');
-    return;
-  }
   const selected = Array.from(selectedMap.value.values());
   const envValue = env.value;
   const branchValue = branch.value.trim();
@@ -256,10 +249,7 @@ const submitBatchDeploy = async () => {
       ...(isRundeck.value ? { is_rundeck: true } : {}),
       ...(Object.keys(extraData.value).length > 0 ? { extra_data: extraData.value } : {}),
     }));
-    const resp = await batchDeploy(deployRequests, {
-      username: userStore.userInfo.username,
-      nameCn: userStore.userInfo.nameCn,
-    });
+    const resp = await batchDeploy(deployRequests);
     if (resp.data.code !== 1) throw new Error(resp.data.message || '批量发布失败');
 
     const r = resp.data.result;

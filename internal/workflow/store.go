@@ -20,6 +20,7 @@ type SaveWorkflowCommand struct {
 	ConfigID         int
 	ExpectedRevision int
 	Actor            string
+	ActorUserID      *int64
 	Spec             WorkflowSpec
 }
 

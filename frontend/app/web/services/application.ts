@@ -20,16 +20,6 @@ import type {
 } from '../models/application';
 
 const BASE_URL = '/api/v1';
-const workflowAdminApi = axios.create({
-  timeout: 15000,
-  headers: { 'Content-Type': 'application/json' },
-});
-
-const workflowAdminHeaders = (adminToken: string) => {
-  const token = adminToken.trim();
-  if (!token) throw new Error('请输入管理员令牌');
-  return { 'X-Ares-Admin-Token': token };
-};
 
 // 查询应用列表
 export const queryApps = async (params: AppQueryParams) => {
@@ -144,23 +134,16 @@ export const patchAppConfigDomain = (
 export const getPipelineStepTypes = () =>
   api.get<ApiResponse<PipelineStepType[]>>(`${BASE_URL}/pipeline-step-types`);
 
-export const getAppConfigWorkflow = (configId: number, adminToken: string) =>
-  workflowAdminApi.get<ApiResponse<AppConfigWorkflow | WorkflowSpec | null>>(
-    `${BASE_URL}/app-configs/${configId}/workflow`,
-    { headers: workflowAdminHeaders(adminToken) }
+export const getAppConfigWorkflow = (configId: number) =>
+  api.get<ApiResponse<AppConfigWorkflow | WorkflowSpec | null>>(
+    `${BASE_URL}/app-configs/${configId}/workflow`
   );
 
-export const putAppConfigWorkflow = (
-  configId: number,
-  revision: number,
-  spec: WorkflowSpec,
-  adminToken: string
-) =>
-  workflowAdminApi.put<ApiResponse<AppConfigWorkflow>>(
-    `${BASE_URL}/app-configs/${configId}/workflow`,
-    { revision, spec },
-    { headers: workflowAdminHeaders(adminToken) }
-  );
+export const putAppConfigWorkflow = (configId: number, revision: number, spec: WorkflowSpec) =>
+  api.put<ApiResponse<AppConfigWorkflow>>(`${BASE_URL}/app-configs/${configId}/workflow`, {
+    revision,
+    spec,
+  });
 
 export const getApplicationApiErrorMessage = (error: unknown, fallback = '请求失败') => {
   if (axios.isAxiosError<ApiResponse<unknown>>(error)) {

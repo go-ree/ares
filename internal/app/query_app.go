@@ -91,6 +91,12 @@ func (am *AppManager) applySorting(session *xorm.Session, params *AppQuery) *xor
 
 // QueryApps 查询应用列表
 func (am *AppManager) QueryApps(ctx context.Context, params AppQuery) (*AppQueryResult, error) {
+	// Reject invalid or overflowing pagination before issuing even the count
+	// query, so malformed client input cannot amplify database work.
+	pageSize, offset, err := am.utilManager.NormalizePagination(&params.ParamPage)
+	if err != nil {
+		return nil, NewValidationError(err.Error())
+	}
 	slog.Info("查询应用列表",
 		"app_id", params.AppID,
 		"app_name", params.AppName,
@@ -106,9 +112,6 @@ func (am *AppManager) QueryApps(ctx context.Context, params AppQuery) (*AppQuery
 	if err != nil {
 		return nil, err
 	}
-
-	// 规范化分页参数
-	pageSize, offset := am.utilManager.NormalizePagination(&params.ParamPage)
 
 	// 计算总页数
 	totalPages := am.utilManager.CalculateTotalPages(total, pageSize)
@@ -186,7 +189,7 @@ func (am *AppManager) GetAppByName(ctx context.Context, appName string) (*entity
 		Where("app_name = ? AND deleted_at IS NULL", appName).
 		Get(&app)
 
-	slog.Info("GetAppByName query finished", "exists", exists, "error", err)
+	slog.Info("GetAppByName query finished", "exists", exists, "success", err == nil)
 
 	if err != nil {
 		return nil, err
@@ -210,7 +213,7 @@ func (am *AppManager) GetAppNameList(ctx context.Context) ([]string, error) {
 		Find(&appNames)
 
 	if err != nil {
-		slog.Error("获取应用名称列表失败", "error", err)
+		slog.Error("获取应用名称列表失败", "error_class", "database_failure")
 		return nil, err
 	}
 

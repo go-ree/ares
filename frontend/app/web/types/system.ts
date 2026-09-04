@@ -14,6 +14,7 @@ export interface JenkinsIntegrationSettings {
   username: string;
   timeout_seconds: number;
   token_configured: boolean;
+  credential_reentry_required: boolean;
   connected: boolean;
   last_error: string;
 }
@@ -23,6 +24,7 @@ export interface KubernetesClusterSettings {
   name: string;
   description: string;
   kubeconfig_configured: boolean;
+  credential_reentry_required: boolean;
 }
 
 export interface KubernetesIntegrationSettings {

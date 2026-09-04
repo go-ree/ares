@@ -46,13 +46,34 @@
             <span>快捷操作</span>
           </template>
           <div class="quick-actions card-content">
-            <el-button type="primary" size="large" class="quick-btn" @click="goApply" plain>
+            <el-button
+              v-if="authStore.can(PERMISSIONS.APPLICATIONS_WRITE)"
+              type="primary"
+              size="large"
+              class="quick-btn"
+              @click="goApply"
+              plain
+            >
               <el-icon><Plus /></el-icon><span>申请应用</span>
             </el-button>
-            <el-button type="success" size="large" class="quick-btn" @click="goMerge" plain>
+            <el-button
+              v-if="authStore.can(PERMISSIONS.RELEASES_CREATE)"
+              type="success"
+              size="large"
+              class="quick-btn"
+              @click="goMerge"
+              plain
+            >
               <el-icon><Link /></el-icon><span>代码合并</span>
             </el-button>
-            <el-button type="warning" size="large" class="quick-btn" @click="goDeploy" plain>
+            <el-button
+              v-if="authStore.can(PERMISSIONS.RELEASES_READ)"
+              type="warning"
+              size="large"
+              class="quick-btn"
+              @click="goDeploy"
+              plain
+            >
               <el-icon><UploadFilled /></el-icon><span>服务发布</span>
             </el-button>
           </div>
@@ -73,8 +94,11 @@ import {
   Link,
   UploadFilled,
 } from '@element-plus/icons-vue';
+import { useAuthStore } from '@/stores/auth';
+import { PERMISSIONS } from '@/types/auth';
 
 const router = useRouter();
+const authStore = useAuthStore();
 const goApply = () => router.push('/application/apply');
 const goMerge = () => router.push('/publish/merge');
 const goDeploy = () => router.push('/publish/deploy');

@@ -124,10 +124,11 @@ backend-check: fmt-check mod-check test vet race vuln swagger-check ## 执行后
 frontend-install: ## 按 lockfile 安装前端依赖
 	$(NPM) --prefix frontend ci
 
-frontend-check: ## 执行前端格式、Lint、类型与构建检查
+frontend-check: ## 执行前端格式、Lint、类型、单元测试与构建检查
 	$(NPM) --prefix frontend run eslint:check
 	$(NPM) --prefix frontend run prettier:check
 	$(NPM) --prefix frontend run type-check
+	$(NPM) --prefix frontend test
 	$(NPM) --prefix frontend run build
 
 frontend-audit: ## 扫描全部前端依赖的 high/critical 漏洞
@@ -146,6 +147,7 @@ swagger-check: swagger ## 校验 Swagger 已提交且可重复生成
 	fi
 
 compose-config: ## 校验 Docker Compose 配置
+	sh -n deploy/compose/init-auth-secrets.sh
 	bash -n deploy/compose/mysql/01-create-users.sh
 	bash -n deploy/compose/mysql/account-init-integration.sh
 	$(DOCKER) compose config --quiet

@@ -11,6 +11,7 @@ db:
 
 web:
   address: ":8080"
+  public_url: ""
 
 log:
   level: "info"
@@ -28,3 +29,16 @@ settings:
   # Prefer the environment variables documented in .env.example.
   admin_token: ""
   encryption_key: ""
+
+auth:
+  # `serve` requires at least one real authentication method. Prefer secret
+  # files or environment variables; never commit production secret values.
+  root_key: ""
+  oidc:
+    enabled: false
+  local_login:
+    enabled: false
+  bootstrap:
+    enabled: false
+  legacy_admin_token:
+    enabled: false

@@ -18,9 +18,16 @@ definitions:
         type: string
       owner_cn:
         type: string
-      page_num: {}
+      page_num:
+        description: PageInteger distinguishes omission (use the default) from explicit
+          null.
+        minimum: 1
+        type: integer
       page_size:
         description: 前端可选 15 30 50 100 200
+        maximum: 200
+        minimum: 1
+        type: integer
       sort:
         $ref: '#/definitions/util.SortOption'
     type: object
@@ -234,12 +241,53 @@ definitions:
       projectType:
         type: string
     type: object
+  controller.authOptionsResponse:
+    properties:
+      bootstrap_available:
+        type: boolean
+      local_login_enabled:
+        type: boolean
+      oidc_enabled:
+        type: boolean
+    type: object
+  controller.bootstrapRequest:
+    properties:
+      bootstrap_token:
+        type: string
+      display_name:
+        type: string
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  controller.changePasswordRequest:
+    properties:
+      current_password:
+        type: string
+      new_password:
+        type: string
+    type: object
+  controller.loginRequest:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    type: object
   controller.putWorkflowRequest:
     properties:
       revision:
         type: integer
       spec:
         $ref: '#/definitions/workflow.WorkflowSpec'
+    type: object
+  controller.updateUserRequest:
+    properties:
+      enabled:
+        type: boolean
+      role:
+        type: string
     type: object
   entity.AppConfigDomain:
     properties:
@@ -382,6 +430,8 @@ definitions:
         type: string
       publisher:
         type: string
+      publisher_user_id:
+        type: integer
       rundeck_app_name:
         type: string
       status:
@@ -476,6 +526,8 @@ definitions:
         type: string
       connected:
         type: boolean
+      credential_reentry_required:
+        type: boolean
       enabled:
         type: boolean
       last_error:
@@ -489,6 +541,8 @@ definitions:
     type: object
   integration.KubernetesClusterView:
     properties:
+      credential_reentry_required:
+        type: boolean
       description:
         type: string
       environment:
@@ -657,8 +711,6 @@ definitions:
         type: object
       is_rundeck:
         type: boolean
-      publisher:
-        type: string
     type: object
   publish.CreatePublishResult:
     properties:
@@ -688,9 +740,16 @@ definitions:
         type: string
       is_rundeck:
         type: boolean
-      page_num: {}
+      page_num:
+        description: PageInteger distinguishes omission (use the default) from explicit
+          null.
+        minimum: 1
+        type: integer
       page_size:
         description: 前端可选 15 30 50 100 200
+        maximum: 200
+        minimum: 1
+        type: integer
       publisher:
         type: string
       sort:
@@ -1171,11 +1230,6 @@ paths:
         name: config_id
         required: true
         type: integer
-      - description: 系统设置管理员令牌
-        in: header
-        name: X-Ares-Admin-Token
-        required: true
-        type: string
       responses:
         "200":
           description: OK
@@ -1207,11 +1261,6 @@ paths:
         name: config_id
         required: true
         type: integer
-      - description: 系统设置管理员令牌
-        in: header
-        name: X-Ares-Admin-Token
-        required: true
-        type: string
       - description: 工作流与当前 revision
         in: body
         name: request
@@ -1870,6 +1919,154 @@ paths:
       summary: 获取全量应用名称列表
       tags:
       - App
+  /api/v1/auth/bootstrap:
+    post:
+      parameters:
+      - description: 首次管理员信息
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.bootstrapRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 一次性创建首次本地管理员并登录
+      tags:
+      - Auth
+  /api/v1/auth/login:
+    post:
+      parameters:
+      - description: 登录信息
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.loginRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 使用本地恢复管理员账号登录
+      tags:
+      - Auth
+  /api/v1/auth/logout:
+    post:
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 撤销当前服务端会话
+      tags:
+      - Auth
+  /api/v1/auth/oidc/callback:
+    get:
+      parameters:
+      - description: 一次性 state
+        in: query
+        name: state
+        required: true
+        type: string
+      - description: 授权码
+        in: query
+        name: code
+        required: true
+        type: string
+      responses:
+        "303":
+          description: See Other
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 完成 OIDC 回调并建立服务端会话
+      tags:
+      - Auth
+  /api/v1/auth/oidc/start:
+    get:
+      parameters:
+      - description: 登录后站内回跳路径
+        in: query
+        name: return_to
+        type: string
+      responses:
+        "302":
+          description: Found
+      summary: 启动 OIDC Authorization Code + PKCE 登录
+      tags:
+      - Auth
+  /api/v1/auth/options:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/controller.authOptionsResponse'
+              type: object
+      summary: 查询可用登录方式
+      tags:
+      - Auth
+  /api/v1/auth/password:
+    post:
+      parameters:
+      - description: 密码变更
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.changePasswordRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 修改当前本地用户密码并撤销该用户的全部会话
+      tags:
+      - Auth
+  /api/v1/auth/session:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 查询当前服务端会话与最终权限
+      tags:
+      - Auth
   /api/v1/compatible/docker/info/getServiceProjectMap:
     get:
       description: 用于替换老接口 getServiceProjectMap：按 env 查询 app_configs.code_package_type，并返回
@@ -2491,14 +2688,35 @@ paths:
       summary: 获取jenkins节点的状态
       tags:
       - Jenkins
-  /api/v1/system/environments:
+  /api/v1/system/audit-events:
     get:
       parameters:
-      - description: 系统设置管理员令牌
-        in: header
-        name: X-Ares-Admin-Token
-        required: true
-        type: string
+      - description: 上一页最后一条审计 ID
+        in: query
+        name: after_id
+        type: integer
+      - description: 首屏返回的固定快照上界，翻页时原样传回
+        in: query
+        name: through_id
+        type: integer
+      - description: 每页条数，最大 200
+        in: query
+        name: limit
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 按只增游标查询安全审计事件
+      tags:
+      - System
+  /api/v1/system/environments:
+    get:
       responses:
         "200":
           description: OK
@@ -2518,11 +2736,6 @@ paths:
       - System
     post:
       parameters:
-      - description: 系统设置管理员令牌
-        in: header
-        name: X-Ares-Admin-Token
-        required: true
-        type: string
       - description: 环境信息
         in: body
         name: request
@@ -2559,11 +2772,6 @@ paths:
       - description: 环境代码
         in: path
         name: code
-        required: true
-        type: string
-      - description: 系统设置管理员令牌
-        in: header
-        name: X-Ares-Admin-Token
         required: true
         type: string
       - description: 待更新字段
@@ -2607,12 +2815,6 @@ paths:
       - System
   /api/v1/system/integrations:
     get:
-      parameters:
-      - description: 系统设置管理员令牌
-        in: header
-        name: X-Ares-Admin-Token
-        required: true
-        type: string
       responses:
         "200":
           description: OK
@@ -2631,11 +2833,6 @@ paths:
   /api/v1/system/integrations/jenkins:
     put:
       parameters:
-      - description: 系统设置管理员令牌
-        in: header
-        name: X-Ares-Admin-Token
-        required: true
-        type: string
       - description: Jenkins 配置
         in: body
         name: request
@@ -2660,11 +2857,6 @@ paths:
   /api/v1/system/integrations/kubernetes:
     put:
       parameters:
-      - description: 系统设置管理员令牌
-        in: header
-        name: X-Ares-Admin-Token
-        required: true
-        type: string
       - description: Kubernetes 配置
         in: body
         name: request
@@ -2684,6 +2876,55 @@ paths:
                   $ref: '#/definitions/integration.KubernetesView'
               type: object
       summary: 保存并热加载 Kubernetes 配置
+      tags:
+      - System
+  /api/v1/system/users:
+    get:
+      parameters:
+      - description: 偏移量
+        in: query
+        name: offset
+        type: integer
+      - description: 每页条数，最大 200
+        in: query
+        name: limit
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 分页查询身份用户
+      tags:
+      - System
+  /api/v1/system/users/{user_id}:
+    patch:
+      parameters:
+      - description: 用户 ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: 用户变更
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.updateUserRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 修改用户角色或启用状态
       tags:
       - System
   /home:

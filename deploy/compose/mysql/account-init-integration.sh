@@ -115,6 +115,23 @@ hex_upper() {
 	LC_ALL=C od -An -tx1 | tr -d ' \n' | tr '[:lower:]' '[:upper:]'
 }
 
+account_init_failure_category() {
+	local output="$1"
+	case "$output" in
+		*'账号初始化超过'*'总时限'*) printf 'overall-timeout' ;;
+		*'持锁数据库会话执行 SQL 失败'*) printf 'redacted-root-sql-failure' ;;
+		*'账号级互斥锁'*) printf 'account-lock-protocol' ;;
+		*'数据库管理身份'*|*'缺少直接全局'*) printf 'administrator-capability' ;;
+		*'数据库对象 DEFINER'*) printf 'external-definer-object' ;;
+		*'触发器、事件、存储程序或视图'*) printf 'schema-executable-object' ;;
+		*'非 Ares 身份授权'*) printf 'unexpected-schema-grantee' ;;
+		*'迁移账号'*) printf 'migration-account-state' ;;
+		*'回连验证失败'*) printf 'account-reconnect' ;;
+		*'Ares MySQL 初始化失败'*) printf 'other-initializer-refusal' ;;
+		*) printf 'unclassified' ;;
+	esac
+}
+
 suffix="$(printf '%x%04x' "$$" "$RANDOM")"
 database="ares_w04_${suffix}"
 decoy_database="${database//_/X}"
@@ -728,7 +745,7 @@ if unsafe_output="$(run_account_init \
 	fail '持有全局或外部对象授权的 runtime 账号仍被初始化'
 fi
 [[ "$unsafe_output" == *'拒绝跨部署复用账号'* ]] || \
-	fail '跨部署危险授权失败原因不明确'
+	fail "跨部署危险授权失败原因分类：$(account_init_failure_category "$unsafe_output")"
 assert_query_equals "$unsafe_account_before" \
 	"SELECT account_locked, HEX(authentication_string) FROM mysql.user WHERE BINARY User = BINARY '${unsafe_runtime_user}' AND Host = '%'" \
 	'危险授权拒绝路径不得改变目标账号锁态或凭据'
@@ -796,6 +813,12 @@ tables=(
 	release_workflow_versions
 	app_config_workflows
 	task_step_records
+	auth_users
+	auth_identities
+	auth_sessions
+	auth_oidc_flows
+	auth_bootstrap_state
+	audit_events
 	schema_migrations
 	runtime_read_only
 )
@@ -828,9 +851,23 @@ fi
 mysql_as_user "$runtime_user" "$runtime_password" "$database" \
 	"INSERT INTO apps (id, payload) VALUES (1, 'inserted');
 	UPDATE apps SET payload = 'updated' WHERE id = 1;
-	DELETE FROM apps WHERE id = 1;
 	SELECT COUNT(*) FROM schema_migrations;" >/dev/null || \
 	fail 'runtime 应能执行允许的 DML 与只读 ledger 查询'
+mysql_as_user "$runtime_user" "$runtime_password" "$database" \
+	"INSERT INTO release_workflow_versions (id, payload) VALUES (1, 'immutable');" >/dev/null || \
+	fail 'runtime 应能追加工作流版本'
+if workflow_update_output="$(mysql_as_user "$runtime_user" "$runtime_password" "$database" \
+	"UPDATE release_workflow_versions SET payload = 'tampered' WHERE id = 1" 2>&1)"; then
+	fail 'runtime 不应能修改已发布的工作流版本'
+fi
+[[ "$workflow_update_output" == *'ERROR 1142'* ]] || \
+	fail "工作流版本 UPDATE 拒绝原因不符合预期：${workflow_update_output}"
+if workflow_delete_output="$(mysql_as_user "$runtime_user" "$runtime_password" "$database" \
+	"DELETE FROM release_workflow_versions WHERE id = 1" 2>&1)"; then
+	fail 'runtime 不应能删除已发布的工作流版本'
+fi
+[[ "$workflow_delete_output" == *'ERROR 1142'* ]] || \
+	fail "工作流版本 DELETE 拒绝原因不符合预期：${workflow_delete_output}"
 if mysql_as_user "$runtime_user" "$runtime_password" "$database" \
 	'CREATE TABLE runtime_forbidden (id BIGINT PRIMARY KEY)' >/dev/null 2>&1; then
 	fail 'runtime 不应拥有 DDL 权限'
@@ -857,18 +894,55 @@ assert_query_equals 0 \
 		AND TABLE_SCHEMA = '${database}'
 		AND TABLE_NAME NOT IN (
 			'apps', 'app_configs', 'app_config_domains', 'task_record', 'task_record_images',
-			'pipelines', 'pipelines_job_combination', 'env_configs', 'integration_settings',
+			'env_configs', 'integration_settings',
 			'dev_language_rules', 'release_workflows', 'release_workflow_versions',
-			'app_config_workflows', 'task_step_records'
+			'app_config_workflows', 'task_step_records', 'auth_users', 'auth_identities',
+			'auth_sessions', 'auth_oidc_flows', 'auth_bootstrap_state', 'audit_events'
 		)" \
 	'runtime DML 表白名单不匹配'
-assert_query_equals $'14\t42\tDELETE,INSERT,UPDATE' \
+assert_query_equals $'18\t34\tDELETE,INSERT,UPDATE' \
 	"SELECT COUNT(DISTINCT TABLE_NAME), COUNT(*),
 		COALESCE(GROUP_CONCAT(DISTINCT PRIVILEGE_TYPE ORDER BY PRIVILEGE_TYPE SEPARATOR ','), '')
 	FROM information_schema.TABLE_PRIVILEGES
 	WHERE GRANTEE = CONCAT(CHAR(39), '${runtime_user}', CHAR(39), '@', CHAR(39), '%', CHAR(39))
 		AND TABLE_SCHEMA = '${database}'" \
-	'runtime 表级权限必须仅为 14 张表的 DML'
+	'runtime 表级权限数量不符合最小权限矩阵'
+for table_privileges in \
+	'apps:INSERT,UPDATE' \
+	'app_configs:INSERT,UPDATE' \
+	'app_config_domains:DELETE,INSERT,UPDATE' \
+	'task_record:INSERT,UPDATE' \
+	'task_record_images:DELETE,INSERT' \
+	'env_configs:INSERT,UPDATE' \
+	'integration_settings:INSERT,UPDATE' \
+	'dev_language_rules:INSERT' \
+	'release_workflows:INSERT,UPDATE' \
+	'release_workflow_versions:INSERT' \
+	'app_config_workflows:INSERT,UPDATE' \
+	'task_step_records:INSERT,UPDATE' \
+	'auth_users:INSERT,UPDATE' \
+	'auth_identities:INSERT' \
+	'auth_sessions:DELETE,INSERT,UPDATE' \
+	'auth_oidc_flows:DELETE,INSERT,UPDATE' \
+	'auth_bootstrap_state:UPDATE' \
+	'audit_events:INSERT'; do
+	table_name="${table_privileges%%:*}"
+	want_privileges="${table_privileges#*:}"
+	assert_query_equals "$want_privileges" \
+		"SELECT COALESCE(GROUP_CONCAT(PRIVILEGE_TYPE ORDER BY PRIVILEGE_TYPE SEPARATOR ','), '')
+		FROM information_schema.TABLE_PRIVILEGES
+		WHERE GRANTEE = CONCAT(CHAR(39), '${runtime_user}', CHAR(39), '@', CHAR(39), '%', CHAR(39))
+			AND TABLE_SCHEMA = '${database}' AND TABLE_NAME = '${table_name}'" \
+		"runtime 表 ${table_name} 权限不符合最小权限矩阵"
+done
+for read_only_table in pipelines pipelines_job_combination; do
+	assert_query_equals '' \
+		"SELECT COALESCE(GROUP_CONCAT(PRIVILEGE_TYPE ORDER BY PRIVILEGE_TYPE SEPARATOR ','), '')
+		FROM information_schema.TABLE_PRIVILEGES
+		WHERE GRANTEE = CONCAT(CHAR(39), '${runtime_user}', CHAR(39), '@', CHAR(39), '%', CHAR(39))
+			AND TABLE_SCHEMA = '${database}' AND TABLE_NAME = '${read_only_table}'" \
+		"runtime 只读表 ${read_only_table} 不应持有表级 DML 权限"
+done
 assert_query_equals 0 \
 	"SELECT COUNT(*) FROM information_schema.USER_PRIVILEGES
 	WHERE GRANTEE = CONCAT(CHAR(39), '${runtime_user}', CHAR(39), '@', CHAR(39), '%', CHAR(39))

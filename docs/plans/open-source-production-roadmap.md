@@ -1,9 +1,9 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W01 仓库实现已合并、管理项阻塞，W04 的 GitHub 检查已通过，[PR #22](https://github.com/go-ree/ares/pull/22) 待维护者验收
-> - 基线版本：`main@e2cfd2a`，已合并 [PR #6：建立开源质量门禁与供应链基线](https://github.com/go-ree/ares/pull/6)
-> - 最后更新：2026-09-04
+> - 当前状态：W01 仓库实现已合并、管理项阻塞；W04 已合并，W02 中文 [PR #23](https://github.com/go-ree/ares/pull/23) 的自动化已通过，正在等待维护者验收
+> - 基线版本：`main@0e66fae`，已合并 [PR #22：建立版本化数据库迁移与运行时兼容边界](https://github.com/go-ree/ares/pull/22)
+> - 最后更新：2026-09-05
 
 本文承接 [可插拔 CI/CD 实施路线](pluggable-cicd-roadmap.md)。上一阶段已经完成动态环境、版本化工作流、通用串行编排和 Jenkins Adapter 的主链路；本计划负责把 Ares 从“可运行的开源 CI/CD 基础”推进到“可安全公开部署、可持续扩展、可进行生产化验证”的状态。
 
@@ -52,9 +52,9 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 
 ### 2.2 当前主要缺口
 
-- 当前登录身份来自浏览器本地数据，尚不能作为公开部署的身份与权限边界。
+- W02 分支已用服务端会话、RBAC 与审计替换浏览器伪身份，本地全量门禁、真实部署验收和 PR 自动化已经完成，维护者验收与主线合并尚待完成。
 - v2 任务日志尚未通过通用步骤能力读取，前端仍保留固定 CI/CD 的 Jenkins 日志兼容逻辑。
-- W04 已落地独立 migrator、运行时只读检查和显式 schema manifest，本地 MySQL 8.4 中断、并发、历史库与 Compose 验收矩阵及 GitHub 检查均已通过，[PR #22](https://github.com/go-ree/ares/pull/22) 正在等待维护者验收。
+- W04 已落地独立 migrator、运行时只读检查和显式 schema manifest，本地 MySQL 8.4 中断、并发、历史库与 Compose 验收矩阵及 GitHub 检查均已通过，[PR #22](https://github.com/go-ree/ares/pull/22) 已合并。
 - 发布接口尚无客户端幂等键和统一预检，重复请求可能创建不同任务。
 - Worker 只有步骤认领 CAS，没有完整 owner、lease、fencing 和多副本公平调度。
 - `attempt`、超时基础字段已经存在，但尚无完整重试、退避、取消与尝试历史。
@@ -76,9 +76,9 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 | ------ | ---------------------------- | ------------------ | -------- | ------------------------------------------------ | ----------------------------------------------- |
 | W00    | 后续路线与进度机制           | PR #4              | `已完成` | [PR #5](https://github.com/go-ree/ares/pull/5)   | 建立本计划、状态口径和验收规则                  |
 | W01    | 开源工程与质量门禁           | W00                | `阻塞`   | [PR #6](https://github.com/go-ree/ares/pull/6)   | 开源治理文件、Required Checks、依赖与供应链基线 |
-| W02    | 认证、RBAC 与审计            | W01                | `未开始` | 待创建                                           | 可信身份、服务端授权、真实发布人和审计记录      |
+| W02    | 认证、RBAC 与审计            | W01                | `待验收` | [PR #23](https://github.com/go-ree/ares/pull/23) | 可信身份、服务端授权、真实发布人和审计记录      |
 | W03    | 通用步骤日志                 | W02                | `未开始` | 待创建                                           | 通过 `task_id + step_key` 读取任意执行器日志    |
-| W04    | 数据库迁移机制收敛           | W01                | `待验收` | [PR #22](https://github.com/go-ree/ares/pull/22) | 存量结构只由版本化 migration 改变               |
+| W04    | 数据库迁移机制收敛           | W01                | `已完成` | [PR #22](https://github.com/go-ree/ares/pull/22) | 存量结构只由版本化 migration 改变               |
 | W05    | AppConfig 核心的幂等发布     | W02、W04           | `未开始` | 待创建                                           | 预检、`config_id` 发布、`Idempotency-Key`       |
 | W06    | 多副本 Worker 与租约         | W04、W05           | `未开始` | 待创建                                           | 公平领取、lease、fencing、故障接管              |
 | W07    | 重试、取消、超时与尝试历史   | W03、W06           | `未开始` | 待创建                                           | 可控的失败恢复和执行器取消能力                  |
@@ -168,19 +168,31 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 
 范围：
 
-- [ ] 先形成身份与权限 ADR；默认方案为 OIDC，并提供首次部署的本地 bootstrap 管理员。
-- [ ] 定义 `viewer`、`developer`、`releaser`、`admin` 的权限矩阵。
-- [ ] 为应用、AppConfig、域名、工作流、发布、任务、日志、Kubernetes 和系统设置路由统一接入鉴权中间件。
-- [ ] 发布人、配置修改人和审计主体由服务端认证信息生成，不接受客户端冒充。
-- [ ] 建立只增的审计事件，记录主体、动作、资源、结果、request ID 和时间，不记录敏感请求正文。
-- [ ] 替换前端本地伪登录，按服务端会话和权限显示菜单/按钮。
-- [ ] 明确 SSE/流式接口的安全传输方案，优先同源 HttpOnly Cookie 或短时一次性流令牌。
-- [ ] OIDC 严格校验签名、issuer、audience、`state`、`nonce` 和 PKCE，并限制时钟偏差与回调地址。
-- [ ] Cookie 会话启用 Secure、HttpOnly、SameSite，防止会话固定；Cookie 鉴权的写请求必须校验 CSRF。
-- [ ] 支持会话过期、服务端撤销和完整登出；bootstrap 凭据首次使用后必须关闭或显式轮换。
-- [ ] 所有接收 JSON 请求体的 API（包括 POST 查询）统一使用严格解码和请求体上限，避免未知字段误用和超大请求占用资源。
-- [ ] HTTP Server 配置 Header/Read/Idle 超时，普通 API 使用有限 WriteTimeout；SSE 使用路由级写入期限、心跳、空闲超时和 cursor 续传，不能被普通 API 的全局 WriteTimeout 意外截断。
-- [ ] 将 `X-Ares-Admin-Token` 标记为过渡兼容方案并给出弃用路径。
+- [x] 先形成[身份与权限 ADR](../architecture/decisions/0002-authentication-rbac-audit.md)；默认方案为 OIDC，并提供首次部署的本地 bootstrap 管理员。
+- [x] 定义 `viewer`、`developer`、`releaser`、`admin` 的权限矩阵。
+- [x] 为应用、AppConfig、域名、工作流、发布、任务、日志、Kubernetes 和系统设置路由统一接入鉴权中间件。
+- [x] 发布人、配置修改人和审计主体由服务端认证信息生成，不接受客户端冒充。
+- [x] 建立只增的审计事件，记录主体、动作、资源、结果、request ID 和时间，不记录敏感请求正文。
+- [x] 替换前端本地伪登录，按服务端会话和权限显示菜单/按钮。
+- [x] 明确并实现 SSE/流式接口的同源 HttpOnly Cookie、定期会话复验和失效停止重连方案。
+- [x] OIDC 严格校验签名、issuer、audience/authorized party、`state`、`nonce` 和 PKCE，并限制时钟偏差与回调地址。
+- [x] Cookie 会话启用 Secure、HttpOnly、SameSite，防止会话固定；Cookie 鉴权的写请求必须校验 CSRF。
+- [x] 支持会话过期、服务端撤销和完整登出；bootstrap 凭据首次使用后关闭，且启动状态必须存在启用的 admin 或可用 bootstrap。
+- [x] 所有接收 JSON 请求体的 API（包括 POST 查询）统一使用严格解码和请求体上限，拒绝未知/重复字段、尾随值和超大请求。
+- [x] HTTP Server 配置 Header/Read/Idle 超时，普通 API 使用有限 WriteTimeout；SSE 使用路由级写入期限、心跳、空闲超时和 cursor 续传，不受普通 API 全局 WriteTimeout 截断。
+- [x] 将 `X-Ares-Admin-Token` 标记为过渡兼容方案，Web 停止使用并给出默认关闭和弃用路径。
+- [x] 本地管理员支持自助修改密码；密码更新和该用户全部会话撤销在同一数据库事务提交，旧密码登录在建会话事务中复核已验证哈希，浏览器成功后清除本地身份并要求重新登录。
+- [x] 匿名认证入口、鉴权前会话查询和公开 readiness 增加有界并发、速率限制与短期请求合并；密码修改使用用户+可信客户端专用低速门禁，Argon2 排队响应取消；限流维度不能通过伪造 Cookie 挤占其他客户端容量。
+- [x] OIDC、Jenkins 和 Kubernetes 外连拒绝跨地址重定向及不安全远端 HTTP，并为 discovery、探测和运行时响应设置硬字节上限；上游原始错误和正文不进入 API 响应或日志。
+- [x] 系统设置密文升级为带用途上下文的 `v2` AES-GCM 格式；历史 `v1` 凭据保持失败关闭并在 Web 明确要求重新录入，仍允许先禁用或删除旧配置。
+- [x] Vite 本地静态资源中间件限制在构建目录内，拒绝路径穿越、符号链接和非 GET/HEAD 访问；开发服务默认仅监听 loopback。
+- [x] W02 后端不注册匿名 `/metrics`，Web 同名路径即使命中 SPA fallback 也不返回指标，健康与 readiness 仅返回最小状态；内部指标的监听与访问控制留到 W10 完整设计。
+- [x] Git 仓库外链仅允许校验后的 HTTPS；SSH clone 地址安全转换，HTTP、脚本/data scheme、凭据和歧义输入不能触发浏览器导航。
+- [x] 工作流规范 JSON 将数学整数写为无小数十进制，真实 MySQL 往返仍保持整数类型；4096 位展开上限前精确、超限失败，不使用浮点舍入。
+- [x] 完成全量 Go/前端/Swagger/漏洞门禁、真实 MySQL 8.4 与全新 Compose 端到端验收。
+- [x] 创建中文 PR 并回填关联链接；等待 PR 自动化与维护者验收。
+
+2026-09-05 进度记录：密码轮换、登录与改密并发互斥、密码入口专用门禁、凭据格式升级、外连 URL/重定向/响应体边界、公开入口请求合并、SSE 最长 60 秒复验、严格有界分页、统一错误脱敏、本地静态资源路径约束和匿名指标关闭均已通过冻结回归。[PR #23](https://github.com/go-ree/ares/pull/23) 已创建且首轮自动化全部通过；在维护者验收和合并完成前保持 `待验收`。
 
 非目标：首版不实现复杂的应用级自定义角色和外部策略引擎。
 
@@ -195,6 +207,9 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 - 所有 JSON 请求中的未知字段稳定返回 400，超出限制的请求体返回 413，慢请求和未完成 Header 在配置超时内被释放。
 - 日志流持续超过普通 API WriteTimeout 时仍能连续读取，或断线后通过 cursor 无损续传。
 - 登录失效后日志流不会无限重连，敏感字段不会进入审计日志。
+- 本地密码修改后，新密码可登录，旧密码和修改前全部会话立即失效；与轮换并发的旧密码登录不能建立新会话，失败更新不能只改密码或只撤销会话。
+- 外部身份/CI/集群端点不能通过重定向降级协议或把凭据转发到其他地址，已知长度与流式超限响应都在固定上限内失败。
+- 分页请求只接受有界整数，不能通过字符串、浮点、负数、超大页长或偏移溢出放大数据库与内存消耗。
 - 鉴权矩阵拥有后端集成测试和前端关键路径测试。
 
 ### W03：通用步骤日志
@@ -400,8 +415,8 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 | 编号  | 决策               | 状态     | 结论或建议                                                                                                                 | 影响工作包    |
 | ----- | ------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------- | ------------- |
 | D-001 | 开源许可证         | `待确认` | 建议 Apache-2.0，由维护者最终确认                                                                                          | W01           |
-| D-002 | 首个正式身份源     | `待设计` | 建议 OIDC + 本地 bootstrap 管理员                                                                                          | W02           |
-| D-003 | 流式日志认证       | `待设计` | 建议同源 HttpOnly Cookie 或短时一次性流令牌                                                                                | W02、W03      |
+| D-002 | 首个正式身份源     | `已确定` | [ADR-0002](../architecture/decisions/0002-authentication-rbac-audit.md)：OIDC + 一次性本地 bootstrap 管理员                | W02           |
+| D-003 | 流式日志认证       | `已确定` | [ADR-0002](../architecture/decisions/0002-authentication-rbac-audit.md)：同源 HttpOnly Cookie、会话失效即停止重连          | W02、W03      |
 | D-004 | migration 运行模式 | `已确定` | [ADR-0001](../architecture/decisions/0001-versioned-database-migrations.md)：独立 migrator、运行时只读检查、dirty 前向恢复 | W04           |
 | D-005 | 多副本交付语义     | `待固化` | Ares 提供 at-least-once；执行器必须配合幂等键，lease 使用 fencing 防陈旧写                                                 | W05、W06、W07 |
 | D-006 | 中间件策略         | `待固化` | 默认不依赖 Redis/RabbitMQ；通知与队列能力通过可选 Adapter 扩展                                                             | W09、W10      |
@@ -410,26 +425,68 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 
 ## 7. 风险看板
 
-| 编号  | 风险                                     | 当前等级 | 缓解计划                                                       | 状态 |
-| ----- | ---------------------------------------- | -------- | -------------------------------------------------------------- | ---- |
-| R-001 | 浏览器身份可伪造，公开部署后缺少权限边界 | 高       | W02 建立真实认证、RBAC 与审计；完成前仅用于本地或受信网络      | 开放 |
-| R-002 | Xorm 可能隐式修改存量表结构              | 高       | W04 收敛为版本化迁移；升级前备份并禁止旧镜像写升级库           | 开放 |
-| R-003 | 多副本会重复 Reconcile running 步骤      | 高       | W06 引入 lease 和 fencing；完成前整个 Ares Worker 保持单副本   | 开放 |
-| R-004 | v2 日志仍依赖 Jenkins 兼容字段           | 中       | W03 改为执行器通用日志能力                                     | 开放 |
-| R-005 | 重试请求可能重复创建发布任务             | 中       | W05 引入 `Idempotency-Key` 和请求摘要                          | 开放 |
-| R-006 | 工作流不能安全消费 Secret                | 中       | W08 上线前继续拒绝敏感字段，不允许保存明文凭据                 | 开放 |
-| R-007 | 开发/构建依赖存在已知漏洞或版本漂移      | 中       | W01 固定工具链、升级依赖并建立自动扫描                         | 开放 |
-| R-008 | 前端缺少真实的自动化交互测试             | 中       | W02 为身份和权限关键路径补单元/组件测试与 Compose E2E          | 开放 |
-| R-009 | 仓库尚无可用的私密安全与行为事件报告渠道 | 中       | W01 分别建立漏洞报告入口和独立的行为事件邮箱或私密表单         | 开放 |
-| R-010 | `main` 尚未强制 PR 和 Required Checks    | 中       | W01 工作流首次成功运行后启用 Ruleset，并验证失败检查可阻止合并 | 开放 |
+| 编号  | 风险                                     | 当前等级 | 缓解计划                                                       | 状态       |
+| ----- | ---------------------------------------- | -------- | -------------------------------------------------------------- | ---------- |
+| R-001 | 浏览器身份可伪造，公开部署后缺少权限边界 | 高       | W02 已建立真实认证、RBAC 与审计，合并前仍按旧边界限制使用      | 待 PR 合并 |
+| R-002 | Xorm 可能隐式修改存量表结构              | 高       | W04 收敛为版本化迁移；升级前备份并禁止旧镜像写升级库           | 开放       |
+| R-003 | 多副本会重复 Reconcile running 步骤      | 高       | W06 引入 lease 和 fencing；完成前整个 Ares Worker 保持单副本   | 开放       |
+| R-004 | v2 日志仍依赖 Jenkins 兼容字段           | 中       | W03 改为执行器通用日志能力                                     | 开放       |
+| R-005 | 重试请求可能重复创建发布任务             | 中       | W05 引入 `Idempotency-Key` 和请求摘要                          | 开放       |
+| R-006 | 工作流不能安全消费 Secret                | 中       | W08 上线前继续拒绝敏感字段，不允许保存明文凭据                 | 开放       |
+| R-007 | 开发/构建依赖存在已知漏洞或版本漂移      | 中       | W01 固定工具链、升级依赖并建立自动扫描                         | 开放       |
+| R-008 | 前端缺少真实的自动化交互测试             | 中       | W02 已补身份、权限和用户管理关键路径测试及 Compose E2E         | 待 PR 合并 |
+| R-009 | 仓库尚无可用的私密安全与行为事件报告渠道 | 中       | W01 分别建立漏洞报告入口和独立的行为事件邮箱或私密表单         | 开放       |
+| R-010 | `main` 尚未强制 PR 和 Required Checks    | 中       | W01 工作流首次成功运行后启用 Ruleset，并验证失败检查可阻止合并 | 开放       |
 
 风险关闭时必须填写验证证据或关联 PR；降低等级必须说明依据。
 
 ## 8. 下一步
 
-[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。W04 的 schema 所有权、独立 migrator 与启动兼容性检查已由 [PR #22](https://github.com/go-ree/ares/pull/22) 提交评审，自动化检查已通过，当前等待维护者验收；合并后再按依赖顺序启动 W02，确保新增用户、会话和审计结构从第一天进入版本化 migration。
+[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。[PR #22](https://github.com/go-ree/ares/pull/22) 已合并，W04 的 schema 所有权、独立 migrator 与启动兼容性检查成为主线基线。W02 的身份、会话、RBAC、可信操作主体、审计、前端权限界面和 Compose 初始化已经落地，本地完整门禁、fresh-volume 安全 E2E 和 PR 自动化均已通过；中文 [PR #23](https://github.com/go-ree/ares/pull/23) 正在等待维护者验收，不在合并前提前标记 `已完成`。
 
 ## 9. 进度记录
+
+### 2026-09-05：W02 冻结版本完成本地验收
+
+- 分支：`codex/w02-auth-rbac-audit`；W02 本地完成定义已满足，已创建中文 [PR #23](https://github.com/go-ree/ares/pull/23)，状态进入 `待验收`。
+- 回归修复：首轮 fresh-volume Compose 验收发现运行期 Demo seed 在 epoch 5 完成后仍对非规范 JSON 直接计算 checksum，导致 MySQL 重排 JSON 后 12 份工作流均无法读取，重启又被只读 schema 检查正确阻止。seed 现与普通工作流写入共用精确规范化语义，并新增真实 MySQL 回归；epoch 5 尚未发布，因此直接修正本轮未发布实现与测试基线，不新增伪造的后续 epoch，也不改写已发布的 epoch 1～4。
+- 后端门禁：`git diff --check`、gofmt、`go mod verify`、`go mod tidy -diff`、全量 Go test/vet、关键包完整 race、冻结修复后的 canonical/workflow/db 定向 race、govulncheck、actionlint、Compose 配置与 Swagger 连续重复生成均通过；govulncheck 为 0 个可达漏洞。
+- 前端门禁：ESLint、Prettier、Type Check、生产构建和 91 项 Vitest 全部通过；完整 npm audit 为 0 个漏洞。Element Plus 生产 chunk 仍有体积告警，但不影响正确性，后续性能优化不阻塞 W02。
+- 数据库门禁：MySQL 8.4.10 的完整 `make db-integration` 与最小权限账号矩阵均通过，账号矩阵额外连续重复 5 轮；最终修复后的集成用例逐一读取 12 份 Demo 工作流并重新执行 schema 兼容检查。epoch 1～4 checksum/实现指纹保持已发布原值。
+- Compose E2E：最终镜像在全新 volume 上按完整依赖链启动，3 个应用、4 个环境、12 个 AppConfig 和 12 份两步 Noop 工作流均可读。Bootstrap 仅首次成功，匿名 401/越权与 CSRF 拒绝、可选 Jenkins/Kubernetes 关闭、改密全会话撤销、审计追加和 `/metrics` 非暴露均符合契约；精确重启 API/Web 后服务恢复健康，会话与 Bootstrap 状态保持，Demo 数据及 12 份工作流规范化响应逐条零差异。测试 OIDC callback 返回预期 401 且带 `no-store`/`no-referrer`，Nginx 与后端日志均未记录 marker、原始 query、Referer 或测试秘密。测试容器、网络、数据卷和临时文件均已清理。
+- PR 自动化：[质量门禁运行 #33910044630](https://github.com/go-ree/ares/actions/runs/33910044630) 的工作流语法、后端、MySQL 8.4 迁移与恢复、MySQL 8.4 最小权限账号、关键包 race、Go 漏洞和前端七项作业全部通过；[镜像与供应链运行 #33910044692](https://github.com/go-ree/ares/actions/runs/33910044692) 同样通过。
+- 关联 PR：[PR #23](https://github.com/go-ree/ares/pull/23)；自动化已通过，等待维护者验收，不直接合并。
+
+### 2026-09-04：W02 核心实现落地并进入最终回归
+
+- 分支：`codex/w02-auth-rbac-audit`；W02 继续保持 `开发中`，关联 PR 待创建，R-001 与 R-008 仅标记为待 PR 合并，不提前关闭。
+- 身份与管理员边界：epoch 5 已建立用户、外部身份、会话、OIDC 流、Bootstrap singleton 和只增审计六张表；本地密码使用 Argon2id，不透明 Cookie 会话仅持久化摘要，写请求校验精确 Origin 与 CSRF。Bootstrap 只以 singleton 状态为准，OIDC `viewer` 先登录不消费或阻止首次管理员仪式；启动时若既无启用的 `admin` 又无显式可用 Bootstrap 会 fail-closed，用户管理同时禁止禁用或降级最后一个管理员。
+- OIDC 与匿名入口：Authorization Code + PKCE S256 已覆盖 state、nonce、浏览器绑定、签名、issuer、audience/authorized party、时钟偏差、精确 callback 和站内回跳；被禁用的外部身份不会刷新资料/登录时间或建立会话。创建新流会事务清理已消费/过期记录，并把活动流限制为 4096 条；bootstrap、本地登录和 OIDC 起始入口增加进程级令牌桶，生产仍要求边缘按客户端做分布式限流。
+- 授权与审计：应用、AppConfig、域名、工作流、发布、任务、日志、Kubernetes 和系统设置已经接入细粒度路由权限；发布人与工作流修改人只取服务端 Principal，客户端身份字段按未知字段拒绝。写入和敏感读取使用只增审计，读取接口固定首屏 `through_id` 快照上界，避免查询自身或并发写入让分页无限延长；Nginx 不记录原始 query/Referer，OIDC 响应使用 `no-store` 与 `no-referrer`。
+- 前端：已移除 `localStorage` 伪登录和管理员 Token 输入，统一 Axios Cookie/CSRF/401/403，会话状态、路由、菜单和操作按钮只消费服务端最终权限；SSE 收到 `auth-expired` 或确认 session 失效后停止重连。新增用户管理页面，可分页查看用户、调整角色或启停账号，并对最后管理员冲突及当前用户权限/状态变化做即时会话收敛。
+- 部署：Compose 私有 `auth_secrets` volume 一次生成并持久化会话根密钥、Bootstrap Token 与系统配置加密密钥；身份任务纳入 epoch 5 和运行时最小权限，Jenkins/Kubernetes 继续是启动后的可选 Web 配置。部署手册已补 HTTPS/Cookie、OIDC Secret、首次初始化、管理员故障恢复、边缘限流和 callback 日志脱敏边界。
+- 最新后端定向验证：`go test -count=1 ./internal/auth ./internal/api ./internal/api/controller ./internal/db .` 已通过；真实 MySQL 8.4 定向用例 `TestMySQL84Migrations/auth_store_preserves_bootstrap` 已验证 OIDC viewer 先到仍可 Bootstrap、第二次初始化失败、禁用 OIDC 用户不被更新，以及过期/已消费流被清理。
+- 阶段性前端与运行验证：用户管理相关 13 项 Vitest、ESLint、Prettier、Type Check 和生产构建已通过；最终安全收敛前的完整 Go test/vet/race/govulncheck/workflow 检查和隔离 Compose 初始化、会话、发布主体、审计及重启 E2E 也曾通过。由于其后又加入管理员启动门禁、固定审计快照、OIDC 流容量/限流和 Nginx 脱敏，最终冻结版本仍须重跑完整门禁、Swagger 可重复生成、完整前端测试及 Compose 日志泄露场景；本记录不把此前检查冒充最终验收。
+- 关联 PR：待创建。
+
+### 2026-09-05：W02 最终安全边界与密码轮换
+
+- 分支：`codex/w02-auth-rbac-audit`；W02 保持 `开发中`，关联 PR 待创建。
+- 凭据与外连：系统设置密文升级为带用途/实例上下文的 `v2` AES-GCM；旧 `v1` 明确要求重新录入且保持失败关闭。OIDC、Jenkins、Kubernetes 均拒绝不安全远端 HTTP、敏感 URL 组成和服务端重定向，并为 discovery、探测、通用响应、Kubernetes 运行时响应及 Jenkins progressive log 设置分层硬上限。
+- 资源与错误边界：匿名入口、鉴权前会话读取和 readiness 增加进程内速率/并发限制与短期 single-flight；密码修改另按用户和可信客户端进行低速准入，Argon2 计算槽排队响应请求取消；SSE 会话复验不超过 60 秒且不长于 idle timeout。统一 JSON 拒绝歧义输入，分页只接受有界整数并在数据库查询前检查页长/偏移；工作流规范 JSON 用精确十进制把数学整数持久化为整数，避免 MySQL 科学计数往返变成浮点。未知数据库或上游错误、批量子项和执行器不可用原因均不再返回原始错误或正文。后端 `/metrics` 不注册，指标采集边界留到 W10。
+- 本地身份恢复：新增已认证本地用户密码修改；服务层复验当前密码，SQL 事务原子保存新 Argon2id 哈希并撤销该用户全部会话，成功后前端清除身份并要求重新登录。旧密码登录在创建会话的事务中锁定并重新核对已验证哈希，消除与密码轮换并发时的陈旧会话窗口；真实 MySQL 8.4 定向用例已覆盖错误 expected hash 零变更、正确更新全会话撤销、陈旧哈希拒绝建会话、跨用户隔离、OIDC/禁用用户失败关闭。
+- 前端与开发边界：系统设置显示旧凭据重录状态；会话探测使用 generation 防止退出/改密后的迟到响应恢复身份；日志弹窗关闭会终止 SSE 和全部定时器，重开保留 buffer/cursor，单次生命周期内所有自动重连共用 5 次预算；Git 仓库按钮只生成校验后的 HTTPS 外链。Vite 开发服务只监听 loopback，静态资源读取限制到真实构建目录并拒绝穿越、符号链接和非 GET/HEAD。阶段性验证已通过 Go 认证/API/数据库定向测试，以及前端 Type Check、ESLint、Prettier 和 91 项 Vitest；最终冻结版本仍待全量门禁与 Compose E2E。
+- 关联 PR：待创建。
+
+### 2026-09-04：W02 身份、RBAC 与审计设计完成并进入开发
+
+- 分支：`codex/w02-auth-rbac-audit`；状态从 `未开始` 经 `设计中` 进入 `开发中`，关联 PR 待创建。
+- 基线校准：[PR #22](https://github.com/go-ree/ares/pull/22) 已合并，W04 更新为 `已完成`；W02 的六张新表与两处稳定主体引用将只通过 epoch 5 显式迁移创建，不改写 epoch 1～4。
+- 审计结论：浏览器当前可在 `localStorage` 伪造身份和角色，发布请求直接提交 `publisher`；绝大多数业务 API 无鉴权，少数配置接口依赖共享管理员令牌；前端 HTTP 客户端分裂，SSE 在登录失效后可周期性复活；HTTP Server 没有生产级连接期限。
+- 设计结论：[ADR-0002](../architecture/decisions/0002-authentication-rbac-audit.md) 已接受：默认 OIDC Authorization Code + PKCE，一次性本地 bootstrap 管理员，服务端不透明 Cookie 会话、CSRF、固定四角色与细粒度权限、只增审计、同源 SSE 和严格 JSON/HTTP 边界。
+- 实现顺序：epoch 5 与最小数据库授权；身份/会话/OIDC/审计服务；统一路由权限、真实发布人与严格请求解码；前端服务端会话和权限 UI；安全测试、Compose 升级及完整门禁。每个阶段验证证据继续回填本节。
+- 兼容边界：`X-Ares-Admin-Token` 只在原有设置/工作流接口保留一版过渡兼容，Web 不再使用；数据库升级不可 down，回退必须恢复 epoch 5 前备份。
+- 关联 PR：待创建。
 
 ### 2026-09-03：W04 设计完成并进入开发
 

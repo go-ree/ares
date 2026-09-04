@@ -27,6 +27,19 @@ type DuplicateAppConfigError struct {
 	Env   string
 }
 
+// DomainNotFoundError reports a missing, client-selected domain record.
+type DomainNotFoundError struct {
+	ConfigID int
+	DomainID int64
+}
+
+// DomainConflictError reports a duplicate host/path pair without exposing a
+// database constraint or driver error.
+type DomainConflictError struct {
+	Host string
+	Path string
+}
+
 func (e *ValidationError) Error() string {
 	return e.Message
 }
@@ -94,4 +107,20 @@ func (e *DuplicateAppConfigError) Error() string {
 // NewDuplicateAppConfigError 创建应用环境配置冲突错误。
 func NewDuplicateAppConfigError(appID int, env string) *DuplicateAppConfigError {
 	return &DuplicateAppConfigError{AppID: appID, Env: env}
+}
+
+func (e *DomainNotFoundError) Error() string {
+	return fmt.Sprintf("未找到域名记录：config_id=%d domain_id=%d", e.ConfigID, e.DomainID)
+}
+
+func NewDomainNotFoundError(configID int, domainID int64) *DomainNotFoundError {
+	return &DomainNotFoundError{ConfigID: configID, DomainID: domainID}
+}
+
+func (e *DomainConflictError) Error() string {
+	return fmt.Sprintf("多域名配置冲突：host=%s path=%s", e.Host, e.Path)
+}
+
+func NewDomainConflictError(host, path string) *DomainConflictError {
+	return &DomainConflictError{Host: host, Path: path}
 }

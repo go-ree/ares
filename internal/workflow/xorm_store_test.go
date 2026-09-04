@@ -1,10 +1,14 @@
 package workflow
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
-	"github.com/go-ree/ares/internal/entity"
 	"strings"
 	"testing"
+
+	"github.com/go-ree/ares/internal/canonicaljson"
+	"github.com/go-ree/ares/internal/entity"
 )
 
 func TestTaskStepRecordDoesNotSerializePrivatePayloads(t *testing.T) {
@@ -46,5 +50,53 @@ func TestTruncateRunesKeepsUTF8Valid(t *testing.T) {
 	}
 	if got := truncateRunes("发布成功", 255); got != "发布成功" {
 		t.Fatalf("short value changed: %q", got)
+	}
+}
+
+func TestDecodeStoredWorkflowSpecVerifiesChecksum(t *testing.T) {
+	specJSON := json.RawMessage(`{"schema_version":1,"name":"demo","steps":[]}`)
+	canonical, err := canonicaljson.Canonicalize(specJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(canonical)
+	valid := entity.ReleaseWorkflowVersion{
+		VersionID: 7,
+		Spec:      specJSON,
+		Checksum:  hex.EncodeToString(digest[:]),
+	}
+	if _, err := decodeStoredWorkflowSpec(valid); err != nil {
+		t.Fatalf("valid stored workflow rejected: %v", err)
+	}
+	rewritten := valid
+	rewritten.Spec = json.RawMessage(` { "steps": [], "name": "demo", "schema_version": 1 } `)
+	if _, err := decodeStoredWorkflowSpec(rewritten); err != nil {
+		t.Fatalf("semantically identical MySQL-style JSON rewrite rejected: %v", err)
+	}
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*entity.ReleaseWorkflowVersion)
+	}{
+		{name: "changed spec", mutate: func(version *entity.ReleaseWorkflowVersion) {
+			version.Spec = json.RawMessage(`{"schema_version":1,"name":"tampered","steps":[]}`)
+		}},
+		{name: "changed checksum", mutate: func(version *entity.ReleaseWorkflowVersion) {
+			version.Checksum = strings.Repeat("0", 64)
+		}},
+		{name: "uppercase checksum", mutate: func(version *entity.ReleaseWorkflowVersion) {
+			version.Checksum = strings.ToUpper(version.Checksum)
+		}},
+		{name: "malformed checksum", mutate: func(version *entity.ReleaseWorkflowVersion) {
+			version.Checksum = "not-a-checksum"
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			version := valid
+			test.mutate(&version)
+			if _, err := decodeStoredWorkflowSpec(version); err == nil || !strings.Contains(err.Error(), "完整性校验失败") {
+				t.Fatalf("corrupted workflow error = %v", err)
+			}
+		})
 	}
 }

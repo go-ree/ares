@@ -1,7 +1,6 @@
 import { ref, reactive, computed } from 'vue';
 import { ElMessage } from 'element-plus';
 import { batchDeploy, createDeploy } from '@/services/deploy';
-import { useUserStore } from '@/stores/user';
 import api from '@/config/api';
 import type { DeployingService, ServiceInfo, SelectedService, DeployForm } from '@/types/deploy';
 import { normalizeLegacyNullableText } from '@/utils/legacy-nullable-text';
@@ -9,7 +8,6 @@ import { useEnvironments } from '@/composables/useEnvironments';
 import type { BatchDeployResponse } from '@/models/deploy';
 
 export function useDeploy() {
-  const userStore = useUserStore();
   const { labelForEnvironment } = useEnvironments();
 
   // 发布表单数据
@@ -189,24 +187,14 @@ export function useDeploy() {
 
   const handleDeploySingle = async (service: SelectedService, _index: number) => {
     try {
-      if (!userStore.userInfo) {
-        throw new Error('用户未登录');
-      }
-
       service.status = '发布中';
       service.lastUpdateTime = formatDateTime(new Date().toISOString());
 
-      const response = await createDeploy(
-        {
-          app_name: service.serviceName,
-          env: deployForm.environment,
-          branch: service.branch,
-        },
-        {
-          username: userStore.userInfo.username,
-          nameCn: userStore.userInfo.nameCn,
-        }
-      );
+      const response = await createDeploy({
+        app_name: service.serviceName,
+        env: deployForm.environment,
+        branch: service.branch,
+      });
 
       if (response.data.code === 1) {
         const taskRecord = response.data.result;
@@ -231,10 +219,6 @@ export function useDeploy() {
 
   const handleBatchDeploy = async () => {
     try {
-      if (!userStore.userInfo) {
-        throw new Error('用户未登录');
-      }
-
       const deployableServices = selectedServices.value.filter(
         service => service.serviceName && service.branch && !isServiceProcessing(service.status)
       );
@@ -256,10 +240,7 @@ export function useDeploy() {
         branch: service.branch,
       }));
 
-      const response = await batchDeploy(deployRequests, {
-        username: userStore.userInfo.username,
-        nameCn: userStore.userInfo.nameCn,
-      });
+      const response = await batchDeploy(deployRequests);
 
       const envelope = response.data as unknown as {
         code: number;
