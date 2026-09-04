@@ -60,8 +60,7 @@ func (ec *EnvironmentController) ListAll(c *gin.Context) {
 // @Router /api/v1/system/environments [post]
 func (ec *EnvironmentController) Create(c *gin.Context) {
 	var req environment.CreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 	row, err := ec.service.Create(c.Request.Context(), req)
@@ -84,8 +83,7 @@ func (ec *EnvironmentController) Create(c *gin.Context) {
 // @Router /api/v1/system/environments/{code} [patch]
 func (ec *EnvironmentController) Update(c *gin.Context) {
 	var req environment.UpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 	row, err := ec.service.Update(c.Request.Context(), c.Param("code"), req)

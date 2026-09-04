@@ -44,8 +44,7 @@ func (cc *AppConfigsController) CreateAppConfig(c *gin.Context) {
 	}
 
 	var req app.CreateAppConfigRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 
@@ -141,8 +140,7 @@ func (cc *AppConfigsController) PatchAppConfigByEnv(c *gin.Context) {
 	}
 
 	var req app.UpdateAppConfigRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 
@@ -200,8 +198,7 @@ func (cc *AppConfigsController) PatchAppConfigByID(c *gin.Context) {
 	}
 
 	var req app.UpdateAppConfigRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 
@@ -285,8 +282,7 @@ func (cc *AppConfigsController) OverwriteDomainsByConfigID(c *gin.Context) {
 	}
 
 	var req app.UpsertDomainsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 
@@ -317,8 +313,7 @@ func (cc *AppConfigsController) CreateDomain(c *gin.Context) {
 	}
 
 	var req app.DomainItem
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 
@@ -387,8 +382,7 @@ func (cc *AppConfigsController) PatchDomain(c *gin.Context) {
 	}
 
 	var req app.PatchDomainRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 

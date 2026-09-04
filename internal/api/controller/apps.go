@@ -30,8 +30,7 @@ func NewAppsController() *AppsController {
 func (ac *AppsController) CreateApp(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req app.CreateAppRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求数据格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 
@@ -55,8 +54,7 @@ func (ac *AppsController) CreateApp(c *gin.Context) {
 func (ac *AppsController) CreateApps(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req app.CreateAppsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求数据格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 
@@ -99,8 +97,7 @@ func (ac *AppsController) QueryApps(c *gin.Context) {
 
 	// 从请求中绑定查询参数
 	var params app.AppQuery
-	if err := c.ShouldBindJSON(&params); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &params, defaultJSONRequestBytes) {
 		return
 	}
 
@@ -258,8 +255,7 @@ func (ac *AppsController) PatchAppByID(c *gin.Context) {
 	}
 
 	var req app.PatchAppRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 

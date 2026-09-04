@@ -29,8 +29,7 @@ func NewPublishController() *PublishController {
 // @Router	/api/v1/deploy/publish [post]
 func (pc *PublishController) CreateBuildTask(c *gin.Context) {
 	var req publish.CreatePublishRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求数据格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 	publishResult, err := pc.publishManager.CreatePublish(c.Request.Context(), &req)
@@ -51,8 +50,7 @@ func (pc *PublishController) CreateBuildTask(c *gin.Context) {
 // @Router	/api/v1/deploy/publish/batch [post]
 func (pc *PublishController) CreateBatchBuildTask(c *gin.Context) {
 	var req publish.CreateBatchPublishRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求数据格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 	publishBatchResult, err := pc.publishManager.CreateBatchPublish(c.Request.Context(), &req)
@@ -100,8 +98,7 @@ func (pc *PublishController) QueryBuildTaskList(c *gin.Context) {
 
 	// 从请求中绑定查询参数
 	var params publish.PublishQuery
-	if err := c.ShouldBindJSON(&params); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &params, defaultJSONRequestBytes) {
 		return
 	}
 
@@ -164,8 +161,7 @@ func (pc *PublishController) UpsertTaskAppletImages(c *gin.Context) {
 	}
 
 	var req publish.UpsertTaskAppletImagesRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &req, defaultJSONRequestBytes) {
 		return
 	}
 

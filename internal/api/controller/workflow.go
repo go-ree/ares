@@ -1,10 +1,8 @@
 package controller
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 
@@ -89,22 +87,8 @@ func (wc *WorkflowController) PutAppConfigWorkflow(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxWorkflowRequestBytes)
 	var request putWorkflowRequest
-	decoder := json.NewDecoder(c.Request.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			c.JSON(http.StatusRequestEntityTooLarge, util.ResponseFailure("请求数据过大", err.Error()))
-			return
-		}
-		c.JSON(http.StatusBadRequest, util.ResponseFailure("请求参数格式错误", err.Error()))
-		return
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		c.JSON(http.StatusBadRequest, util.ResponseFailure("请求参数格式错误", "请求只能包含一个 JSON 对象"))
+	if !BindJSON(c, &request, maxWorkflowRequestBytes) {
 		return
 	}
 	view, err := wc.service.Save(c.Request.Context(), configID, request.Revision, "settings-admin", request.Spec)

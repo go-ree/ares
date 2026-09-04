@@ -97,15 +97,5 @@ func UpdateKubernetesSettings(c *gin.Context) {
 }
 
 func bindSettingsJSON(c *gin.Context, target any, maxBytes int64) bool {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
-	if err := c.ShouldBindJSON(target); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			c.JSON(http.StatusRequestEntityTooLarge, util.ResponseFailure("请求数据过大", err.Error()))
-			return false
-		}
-		c.JSON(http.StatusBadRequest, util.ResponseFailure("请求数据格式错误", err.Error()))
-		return false
-	}
-	return true
+	return BindJSON(c, target, maxBytes)
 }
