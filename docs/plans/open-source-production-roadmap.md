@@ -1,7 +1,7 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W01 仓库实现已合并、管理项阻塞，W04 本地验收完成、PR 待创建
+> - 当前状态：W01 仓库实现已合并、管理项阻塞，W04 已提交 [PR #22](https://github.com/go-ree/ares/pull/22) 并进入待验收
 > - 基线版本：`main@e2cfd2a`，已合并 [PR #6：建立开源质量门禁与供应链基线](https://github.com/go-ree/ares/pull/6)
 > - 最后更新：2026-09-04
 
@@ -54,7 +54,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 
 - 当前登录身份来自浏览器本地数据，尚不能作为公开部署的身份与权限边界。
 - v2 任务日志尚未通过通用步骤能力读取，前端仍保留固定 CI/CD 的 Jenkins 日志兼容逻辑。
-- W04 已落地独立 migrator、运行时只读检查和显式 schema manifest，本地 MySQL 8.4 中断、并发、历史库与 Compose 验收矩阵已经通过，等待中文 PR 和 GitHub 检查。
+- W04 已落地独立 migrator、运行时只读检查和显式 schema manifest，本地 MySQL 8.4 中断、并发、历史库与 Compose 验收矩阵已经通过，[PR #22](https://github.com/go-ree/ares/pull/22) 正在等待 GitHub 检查与维护者验收。
 - 发布接口尚无客户端幂等键和统一预检，重复请求可能创建不同任务。
 - Worker 只有步骤认领 CAS，没有完整 owner、lease、fencing 和多副本公平调度。
 - `attempt`、超时基础字段已经存在，但尚无完整重试、退避、取消与尝试历史。
@@ -72,19 +72,19 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 
 ## 3. 总进度看板
 
-| 工作包 | 主题                         | 依赖               | 状态     | 关联 PR                                        | 主要交付结果                                    |
-| ------ | ---------------------------- | ------------------ | -------- | ---------------------------------------------- | ----------------------------------------------- |
-| W00    | 后续路线与进度机制           | PR #4              | `已完成` | [PR #5](https://github.com/go-ree/ares/pull/5) | 建立本计划、状态口径和验收规则                  |
-| W01    | 开源工程与质量门禁           | W00                | `阻塞`   | [PR #6](https://github.com/go-ree/ares/pull/6) | 开源治理文件、Required Checks、依赖与供应链基线 |
-| W02    | 认证、RBAC 与审计            | W01                | `未开始` | 待创建                                         | 可信身份、服务端授权、真实发布人和审计记录      |
-| W03    | 通用步骤日志                 | W02                | `未开始` | 待创建                                         | 通过 `task_id + step_key` 读取任意执行器日志    |
-| W04    | 数据库迁移机制收敛           | W01                | `开发中` | 待创建                                         | 存量结构只由版本化 migration 改变               |
-| W05    | AppConfig 核心的幂等发布     | W02、W04           | `未开始` | 待创建                                         | 预检、`config_id` 发布、`Idempotency-Key`       |
-| W06    | 多副本 Worker 与租约         | W04、W05           | `未开始` | 待创建                                         | 公平领取、lease、fencing、故障接管              |
-| W07    | 重试、取消、超时与尝试历史   | W03、W06           | `未开始` | 待创建                                         | 可控的失败恢复和执行器取消能力                  |
-| W08    | Secret Resolver 与密钥轮换   | W02、W04           | `未开始` | 待创建                                         | 工作流只保存 Secret 引用，运行时按版本解析      |
-| W09    | 执行器开发套件与扩展生态     | W03、W07、W08      | `未开始` | 待创建                                         | 契约测试、模板及新增执行器                      |
-| W10    | 可观测性、正式发行与生产示例 | W01、W06、W07、W08 | `未开始` | 待创建                                         | 指标、告警、签名镜像、生产部署与升级工具        |
+| 工作包 | 主题                         | 依赖               | 状态     | 关联 PR                                          | 主要交付结果                                    |
+| ------ | ---------------------------- | ------------------ | -------- | ------------------------------------------------ | ----------------------------------------------- |
+| W00    | 后续路线与进度机制           | PR #4              | `已完成` | [PR #5](https://github.com/go-ree/ares/pull/5)   | 建立本计划、状态口径和验收规则                  |
+| W01    | 开源工程与质量门禁           | W00                | `阻塞`   | [PR #6](https://github.com/go-ree/ares/pull/6)   | 开源治理文件、Required Checks、依赖与供应链基线 |
+| W02    | 认证、RBAC 与审计            | W01                | `未开始` | 待创建                                           | 可信身份、服务端授权、真实发布人和审计记录      |
+| W03    | 通用步骤日志                 | W02                | `未开始` | 待创建                                           | 通过 `task_id + step_key` 读取任意执行器日志    |
+| W04    | 数据库迁移机制收敛           | W01                | `待验收` | [PR #22](https://github.com/go-ree/ares/pull/22) | 存量结构只由版本化 migration 改变               |
+| W05    | AppConfig 核心的幂等发布     | W02、W04           | `未开始` | 待创建                                           | 预检、`config_id` 发布、`Idempotency-Key`       |
+| W06    | 多副本 Worker 与租约         | W04、W05           | `未开始` | 待创建                                           | 公平领取、lease、fencing、故障接管              |
+| W07    | 重试、取消、超时与尝试历史   | W03、W06           | `未开始` | 待创建                                           | 可控的失败恢复和执行器取消能力                  |
+| W08    | Secret Resolver 与密钥轮换   | W02、W04           | `未开始` | 待创建                                           | 工作流只保存 Secret 引用，运行时按版本解析      |
+| W09    | 执行器开发套件与扩展生态     | W03、W07、W08      | `未开始` | 待创建                                           | 契约测试、模板及新增执行器                      |
+| W10    | 可观测性、正式发行与生产示例 | W01、W06、W07、W08 | `未开始` | 待创建                                           | 指标、告警、签名镜像、生产部署与升级工具        |
 
 依赖关系如下：
 
@@ -427,7 +427,7 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 
 ## 8. 下一步
 
-[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。本轮先推进 W04：在 W02 引入用户、会话和审计表之前，先将 schema 所有权、独立 migrator 与启动兼容性检查收敛，避免身份数据继续依赖 Xorm 隐式同步。W02 在 W04 数据库契约稳定后进入实现。
+[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。W04 的 schema 所有权、独立 migrator 与启动兼容性检查已由 [PR #22](https://github.com/go-ree/ares/pull/22) 提交评审，当前等待 GitHub 检查与维护者验收；合并后再按依赖顺序启动 W02，确保新增用户、会话和审计结构从第一天进入版本化 migration。
 
 ## 9. 进度记录
 
@@ -455,7 +455,7 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 
 ### 2026-09-04：W04 安全复审与本地验收收敛
 
-- 分支：`codex/w04-versioned-migrations`；本地完成定义已满足，状态在中文 PR 创建并回填链接前继续保持 `开发中`，关联 PR 待创建。
+- 分支：`codex/w04-versioned-migrations`；实现提交为 `ba9108e`，本地完成定义已满足；已创建中文 [PR #22](https://github.com/go-ree/ares/pull/22)，状态进入 `待验收`。
 - epoch 契约：bootstrap 改为真正的 10 表 epoch 1 基线，epoch 2～4 通过普通迁移演进到 14 表；每个 epoch 使用独立深拷贝的完整精确 manifest，只校验最高连续前缀，后续 verifier 显式继承历史 NULL 值、活动环境代码，以及“未删除 AppConfig 必须对应未删除环境目录项”等仍有效数据不变量。迁移实现、实体目录、bootstrap 和规范化 manifest/data-contract 均设置独立 golden；共享引擎指纹覆盖 runner、ledger 收养、manifest 比较、目录调度和 dirty 恢复。
 - 中断安全：dirty preflight 只接受上一 clean epoch 和按迁移语句顺序枚举的精确中间状态，已存在目标对象必须验证完整定义；不安全恢复会在任何新 DML/DDL 或 ledger 更新前拒绝。resume 保留首次 `started_at`，并接受进程刚写 dirty 后崩溃形成的 `finished_at/last_error=NULL` 初始 marker；迁移失败后尽力刷新真实 dirty 状态并记录脱敏、限长错误。所有 verifier 先检查结构再查询数据契约，缺表/缺列稳定归类为退出码 `3` 的 schema 漂移而非 SQL 故障。
 - schema 边界：完整比较所有受管列、精确字符集/排序规则、CHECK、视图、索引主键/唯一性/列序/方向/可见性/类型及外键动作；专用 schema 的未知基础表和对象、出向跨 schema 外键及外部 schema 反向引用受管表/ledger 的入向外键均 fail-closed。运行路径限定 MySQL 8.4.x；最小权限无法看全的 trigger/event/routine/inbound FK 由 root 账号任务或 guarded 管理员权威审计。`AUTO_INCREMENT` 只从 `SHOW CREATE TABLE` 的非引号表选项解析，表注释不能伪造下限。
@@ -465,7 +465,7 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 - Compose 本地 E2E：最终冻结镜像在全新独立 volume 按依赖顺序启动，三个一次性任务均退出 `0`，MySQL、API、Web 健康；Demo 精确为 3 个应用、4 个环境、12 个 AppConfig，四个 epoch 均 clean。runtime 业务 DML 成功，DDL 与 ledger 写入被数据库拒绝，migrator 锁定且无会话；完整重放后 Demo 和 ledger checksum/dirty/起止时间不变。额外加入旧版宽权限 schema grantee 时，账号任务在首写前拒绝且 migrator/ledger 不变，DBA 删除旧授权后成功恢复。测试容器、网络与 volume 均已清理。
 - 备份恢复：epoch 4 dump 恢复后 W04 `migrate status` 与 `serve` 通过；W04 前 fixture dump roundtrip 通过，并已把它恢复到新库，用创建备份的精确 `main@e2cfd2a` 二进制实际启动，`/health/live`、`/health/ready`、夹具应用/环境读取及受控环境创建写入均成功，验证后数据与临时 worktree 已清理。
 - 本地质量门禁：工作流/actionlint、Go 格式与模块一致性、全量单测、vet、race、govulncheck（0 个可达漏洞）、Swagger 可重复生成、前端 lint/Prettier/type-check/生产构建、Compose 配置和差异检查均通过。仓库锁定的 npm 11.19.1 可访问普通 registry，但本机对官方 audit POST 端点两次分别在 30 秒和 120 秒超时，未将网络失败记为审计通过；由 PR 的 `前端质量检查` 在独立网络环境给出最终结果。
-- 待完成：创建中文 PR、回填实现提交和 PR 链接并等待 GitHub 全部检查。完成后 W04 进入维护者验收；当前仍保持 `开发中`，不在 PR 合并前标记 `已完成`。
+- 待完成：等待 [PR #22](https://github.com/go-ree/ares/pull/22) 的 GitHub 全部检查与维护者验收；检查结果继续回填本文，不在 PR 合并前标记 `已完成`。
 
 ### 2026-09-03：W01 PR 首轮 CI 修复
 
