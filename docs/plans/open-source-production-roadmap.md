@@ -465,6 +465,7 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 - Compose 本地 E2E：最终冻结镜像在全新独立 volume 按依赖顺序启动，三个一次性任务均退出 `0`，MySQL、API、Web 健康；Demo 精确为 3 个应用、4 个环境、12 个 AppConfig，四个 epoch 均 clean。runtime 业务 DML 成功，DDL 与 ledger 写入被数据库拒绝，migrator 锁定且无会话；完整重放后 Demo 和 ledger checksum/dirty/起止时间不变。额外加入旧版宽权限 schema grantee 时，账号任务在首写前拒绝且 migrator/ledger 不变，DBA 删除旧授权后成功恢复。测试容器、网络与 volume 均已清理。
 - 备份恢复：epoch 4 dump 恢复后 W04 `migrate status` 与 `serve` 通过；W04 前 fixture dump roundtrip 通过，并已把它恢复到新库，用创建备份的精确 `main@e2cfd2a` 二进制实际启动，`/health/live`、`/health/ready`、夹具应用/环境读取及受控环境创建写入均成功，验证后数据与临时 worktree 已清理。
 - 本地质量门禁：工作流/actionlint、Go 格式与模块一致性、全量单测、vet、race、govulncheck（0 个可达漏洞）、Swagger 可重复生成、前端 lint/Prettier/type-check/生产构建、Compose 配置和差异检查均通过。仓库锁定的 npm 11.19.1 可访问普通 registry，但本机对官方 audit POST 端点两次分别在 30 秒和 120 秒超时，未将网络失败记为审计通过；由 PR 的 `前端质量检查` 在独立网络环境给出最终结果。
+- PR 首轮检查：`工作流语法检查` 的 actionlint/shellcheck 报告 MySQL 健康等待循环变量未使用（SC2034）；已将该变量改为匿名占位符并在本地重新执行工作流校验，修复后检查结果继续在 PR 中验证。
 - 待完成：等待 [PR #22](https://github.com/go-ree/ares/pull/22) 的 GitHub 全部检查与维护者验收；检查结果继续回填本文，不在 PR 合并前标记 `已完成`。
 
 ### 2026-09-03：W01 PR 首轮 CI 修复

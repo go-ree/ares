@@ -120,7 +120,7 @@ jobs:
             --health-timeout=5s \
             --health-retries=30 \
             mysql:8.4
-          for attempt in {1..40}; do
+          for _ in {1..40}; do
             status="$(docker inspect --format '{{.State.Health.Status}}' "$ARES_TEST_MYSQL_CONTAINER")"
             if [ "$status" = healthy ]; then
               exit 0
