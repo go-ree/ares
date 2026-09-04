@@ -40,6 +40,7 @@ USER 101
 ENV NGINX_ENTRYPOINT_QUIET_LOGS=1
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY security-headers.conf /etc/nginx/ares-security-headers.conf
 COPY --from=builder /app/dist/ /usr/share/nginx/html/
 
 EXPOSE 8080

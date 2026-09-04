@@ -11,6 +11,7 @@
       :app-list="appList"
       :loading="loading"
       :total="total"
+      :can-configure="authStore.can(PERMISSIONS.APP_CONFIGS_READ)"
       @config="handleConfig"
       @page-change="handlePageChange"
       @size-change="handleSizeChange"
@@ -26,8 +27,11 @@ import AppTable from '@/components/application/AppTable.vue';
 import AppAdvancedSearch from '@/components/application/AppAdvancedSearch.vue';
 import { queryApps } from '@/services/application';
 import type { AppInfo, AppQueryParams, PageResponse } from '@/models/application';
+import { useAuthStore } from '@/stores/auth';
+import { PERMISSIONS } from '@/types/auth';
 
 const router = useRouter();
+const authStore = useAuthStore();
 
 // 分页参数
 const pageNum = ref(1);

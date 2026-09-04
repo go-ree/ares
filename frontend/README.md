@@ -9,7 +9,7 @@ npm ci
 npm run dev
 ```
 
-开发服务默认监听 `0.0.0.0:8080`，API 地址和代理行为由 `config/vite.config.ts` 管理。
+开发服务默认只监听 `127.0.0.1:8080`；确需让容器或局域网访问时，应显式传入 `--host`。API 地址和代理行为由 `config/vite.config.ts` 管理。
 
 提交前至少运行：
 

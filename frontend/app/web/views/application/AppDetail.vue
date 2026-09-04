@@ -23,9 +23,7 @@
 
         <div class="actions">
           <el-button @click="goBack">返回列表</el-button>
-          <el-button v-if="appDetail?.git_url" type="primary" plain @click="openGit">
-            打开 Git
-          </el-button>
+          <el-button v-if="safeGitURL" type="primary" plain @click="openGit"> 打开 Git </el-button>
         </div>
       </div>
     </el-card>
@@ -37,15 +35,24 @@
             <el-icon><InfoFilled /></el-icon>
             <span>应用详情</span>
           </el-menu-item>
-          <el-menu-item :index="`/application/${appId}/config`">
+          <el-menu-item
+            v-if="authStore.can(PERMISSIONS.APP_CONFIGS_READ)"
+            :index="`/application/${appId}/config`"
+          >
             <el-icon><Setting /></el-icon>
             <span>环境配置</span>
           </el-menu-item>
-          <el-menu-item :index="`/application/${appId}/domains`">
+          <el-menu-item
+            v-if="authStore.can(PERMISSIONS.DOMAINS_READ)"
+            :index="`/application/${appId}/domains`"
+          >
             <el-icon><Share /></el-icon>
             <span>多域名</span>
           </el-menu-item>
-          <el-menu-item :index="`/application/${appId}/pods`">
+          <el-menu-item
+            v-if="authStore.can(PERMISSIONS.KUBERNETES_READ)"
+            :index="`/application/${appId}/pods`"
+          >
             <el-icon><Monitor /></el-icon>
             <span>Pod 实例</span>
           </el-menu-item>
@@ -66,6 +73,9 @@ import { ElMessage } from 'element-plus';
 import { InfoFilled, Monitor, Setting, Share } from '@element-plus/icons-vue';
 import { getAppDetail } from '@/services/application';
 import { AppStatus, type AppInfo } from '@/models/application';
+import { useAuthStore } from '@/stores/auth';
+import { PERMISSIONS } from '@/types/auth';
+import { repositoryWebURL } from '@/utils/repository-url';
 
 const props = defineProps<{
   appId: string | number;
@@ -73,9 +83,11 @@ const props = defineProps<{
 
 const router = useRouter();
 const route = useRoute();
+const authStore = useAuthStore();
 
 const appId = computed(() => Number(props.appId));
 const appDetail = ref<AppInfo | null>(null);
+const safeGitURL = computed(() => repositoryWebURL(appDetail.value?.git_url));
 
 const activeKey = computed(() => route.path);
 
@@ -134,34 +146,7 @@ const goBack = () => {
 };
 
 const openGit = () => {
-  const raw = (appDetail.value?.git_url || '').trim();
-  if (!raw) return;
-
-  const toHttpUrl = (input: string) => {
-    // ssh: git@gitlab.xxx:group/repo.git  -> http://gitlab.xxx/group/repo
-    // ssh: ssh://git@gitlab.xxx/group/repo.git -> http://gitlab.xxx/group/repo
-    if (input.startsWith('http://')) return input;
-    if (input.startsWith('https://')) return `http://${input.slice('https://'.length)}`;
-
-    const scpLike = input.match(/^git@([^:]+):(.+?)(?:\.git)?$/);
-    if (scpLike) {
-      const host = scpLike[1];
-      const path = scpLike[2];
-      return `http://${host}/${path}`;
-    }
-
-    const sshUrl = input.match(/^ssh:\/\/git@([^/]+)\/(.+?)(?:\.git)?$/);
-    if (sshUrl) {
-      const host = sshUrl[1];
-      const path = sshUrl[2];
-      return `http://${host}/${path}`;
-    }
-
-    return input;
-  };
-
-  const url = toHttpUrl(raw);
-  window.open(url, '_blank', 'noopener,noreferrer');
+  if (safeGitURL.value) window.open(safeGitURL.value, '_blank', 'noopener,noreferrer');
 };
 
 watch(appId, async () => {

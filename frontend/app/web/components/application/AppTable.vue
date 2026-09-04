@@ -23,7 +23,7 @@
           {{ new Date(row.created_at).toLocaleString() }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="120" fixed="right">
+      <el-table-column v-if="canConfigure" label="操作" width="120" fixed="right">
         <template #default="{ row }">
           <el-button type="primary" link @click="$emit('config', row)">配置</el-button>
         </template>
@@ -54,6 +54,7 @@ const props = defineProps<{
   appList: AppInfo[];
   loading?: boolean;
   total: number;
+  canConfigure?: boolean;
 }>();
 
 // 定义事件
