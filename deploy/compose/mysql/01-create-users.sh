@@ -969,20 +969,24 @@ else
     assert_account_lock_owned
     run_mysql_with_password "$MYSQL_ROOT_PASSWORD" "${mysql_command[@]}" <<SQL
 GRANT SELECT ON \`${grant_database_pattern}\`.* TO '${MYSQL_RUNTIME_USER}'@'%';
-GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`apps\` TO '${MYSQL_RUNTIME_USER}'@'%';
-GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`app_configs\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`apps\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`app_configs\` TO '${MYSQL_RUNTIME_USER}'@'%';
 GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`app_config_domains\` TO '${MYSQL_RUNTIME_USER}'@'%';
-GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`task_record\` TO '${MYSQL_RUNTIME_USER}'@'%';
-GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`task_record_images\` TO '${MYSQL_RUNTIME_USER}'@'%';
-GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`pipelines\` TO '${MYSQL_RUNTIME_USER}'@'%';
-GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`pipelines_job_combination\` TO '${MYSQL_RUNTIME_USER}'@'%';
-GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`env_configs\` TO '${MYSQL_RUNTIME_USER}'@'%';
-GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`integration_settings\` TO '${MYSQL_RUNTIME_USER}'@'%';
-GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`dev_language_rules\` TO '${MYSQL_RUNTIME_USER}'@'%';
-GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`release_workflows\` TO '${MYSQL_RUNTIME_USER}'@'%';
-GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`release_workflow_versions\` TO '${MYSQL_RUNTIME_USER}'@'%';
-GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`app_config_workflows\` TO '${MYSQL_RUNTIME_USER}'@'%';
-GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`task_step_records\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`task_record\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, DELETE ON \`${MYSQL_DATABASE}\`.\`task_record_images\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`env_configs\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`integration_settings\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT ON \`${MYSQL_DATABASE}\`.\`dev_language_rules\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`release_workflows\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT ON \`${MYSQL_DATABASE}\`.\`release_workflow_versions\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`app_config_workflows\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`task_step_records\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`auth_users\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT ON \`${MYSQL_DATABASE}\`.\`auth_identities\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`auth_sessions\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`auth_oidc_flows\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT UPDATE ON \`${MYSQL_DATABASE}\`.\`auth_bootstrap_state\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT ON \`${MYSQL_DATABASE}\`.\`audit_events\` TO '${MYSQL_RUNTIME_USER}'@'%';
 SQL
 fi
 
