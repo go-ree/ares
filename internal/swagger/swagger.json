@@ -639,13 +639,6 @@
                         "name": "config_id",
                         "in": "path",
                         "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "系统设置管理员令牌",
-                        "name": "X-Ares-Admin-Token",
-                        "in": "header",
-                        "required": true
                     }
                 ],
                 "responses": {
@@ -701,13 +694,6 @@
                         "description": "应用环境配置 ID",
                         "name": "config_id",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "系统设置管理员令牌",
-                        "name": "X-Ares-Admin-Token",
-                        "in": "header",
                         "required": true
                     },
                     {
@@ -1920,6 +1906,242 @@
                 }
             }
         },
+        "/api/v1/auth/bootstrap": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "一次性创建首次本地管理员并登录",
+                "parameters": [
+                    {
+                        "description": "首次管理员信息",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.bootstrapRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/login": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "使用本地恢复管理员账号登录",
+                "parameters": [
+                    {
+                        "description": "登录信息",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.loginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/logout": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "撤销当前服务端会话",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/oidc/callback": {
+            "get": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "完成 OIDC 回调并建立服务端会话",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "一次性 state",
+                        "name": "state",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "授权码",
+                        "name": "code",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "303": {
+                        "description": "See Other"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/oidc/start": {
+            "get": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "启动 OIDC Authorization Code + PKCE 登录",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "登录后站内回跳路径",
+                        "name": "return_to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Found"
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/options": {
+            "get": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "查询可用登录方式",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/controller.authOptionsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/password": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "修改当前本地用户密码并撤销该用户的全部会话",
+                "parameters": [
+                    {
+                        "description": "密码变更",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.changePasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/session": {
+            "get": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "查询当前服务端会话与最终权限",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/compatible/docker/info/getServiceProjectMap": {
             "get": {
                 "description": "用于替换老接口 getServiceProjectMap：按 env 查询 app_configs.code_package_type，并返回 gitAddress/projectName/projectServiceName/projectType 映射（legacy 响应：code 为字符串）",
@@ -3042,21 +3264,54 @@
                 }
             }
         },
+        "/api/v1/system/audit-events": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "按只增游标查询安全审计事件",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "上一页最后一条审计 ID",
+                        "name": "after_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "首屏返回的固定快照上界，翻页时原样传回",
+                        "name": "through_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数，最大 200",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/system/environments": {
             "get": {
                 "tags": [
                     "System"
                 ],
                 "summary": "获取系统环境目录",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "系统设置管理员令牌",
-                        "name": "X-Ares-Admin-Token",
-                        "in": "header",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3090,13 +3345,6 @@
                 ],
                 "summary": "创建环境",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "系统设置管理员令牌",
-                        "name": "X-Ares-Admin-Token",
-                        "in": "header",
-                        "required": true
-                    },
                     {
                         "description": "环境信息",
                         "name": "request",
@@ -3162,13 +3410,6 @@
                         "description": "环境代码",
                         "name": "code",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "系统设置管理员令牌",
-                        "name": "X-Ares-Admin-Token",
-                        "in": "header",
                         "required": true
                     },
                     {
@@ -3248,15 +3489,6 @@
                     "System"
                 ],
                 "summary": "获取外部集成配置与运行状态（敏感字段不回显）",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "系统设置管理员令牌",
-                        "name": "X-Ares-Admin-Token",
-                        "in": "header",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3289,13 +3521,6 @@
                 ],
                 "summary": "保存并热加载 Jenkins 配置",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "系统设置管理员令牌",
-                        "name": "X-Ares-Admin-Token",
-                        "in": "header",
-                        "required": true
-                    },
                     {
                         "description": "Jenkins 配置",
                         "name": "request",
@@ -3339,13 +3564,6 @@
                 "summary": "保存并热加载 Kubernetes 配置",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "系统设置管理员令牌",
-                        "name": "X-Ares-Admin-Token",
-                        "in": "header",
-                        "required": true
-                    },
-                    {
                         "description": "Kubernetes 配置",
                         "name": "request",
                         "in": "body",
@@ -3375,6 +3593,82 @@
                                     }
                                 }
                             ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/system/users": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "分页查询身份用户",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "偏移量",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数，最大 200",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/system/users/{user_id}": {
+            "patch": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "修改用户角色或启用状态",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "用户 ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "用户变更",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.updateUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
                         }
                     }
                 }
@@ -3442,9 +3736,16 @@
                 "owner_cn": {
                     "type": "string"
                 },
-                "page_num": {},
+                "page_num": {
+                    "description": "PageInteger distinguishes omission (use the default) from explicit null.",
+                    "type": "integer",
+                    "minimum": 1
+                },
                 "page_size": {
-                    "description": "前端可选 15 30 50 100 200"
+                    "description": "前端可选 15 30 50 100 200",
+                    "type": "integer",
+                    "maximum": 200,
+                    "minimum": 1
                 },
                 "sort": {
                     "$ref": "#/definitions/util.SortOption"
@@ -3769,6 +4070,59 @@
                 }
             }
         },
+        "controller.authOptionsResponse": {
+            "type": "object",
+            "properties": {
+                "bootstrap_available": {
+                    "type": "boolean"
+                },
+                "local_login_enabled": {
+                    "type": "boolean"
+                },
+                "oidc_enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "controller.bootstrapRequest": {
+            "type": "object",
+            "properties": {
+                "bootstrap_token": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "controller.changePasswordRequest": {
+            "type": "object",
+            "properties": {
+                "current_password": {
+                    "type": "string"
+                },
+                "new_password": {
+                    "type": "string"
+                }
+            }
+        },
+        "controller.loginRequest": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
         "controller.putWorkflowRequest": {
             "type": "object",
             "properties": {
@@ -3777,6 +4131,17 @@
                 },
                 "spec": {
                     "$ref": "#/definitions/workflow.WorkflowSpec"
+                }
+            }
+        },
+        "controller.updateUserRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "role": {
+                    "type": "string"
                 }
             }
         },
@@ -3989,6 +4354,9 @@
                 "publisher": {
                     "type": "string"
                 },
+                "publisher_user_id": {
+                    "type": "integer"
+                },
                 "rundeck_app_name": {
                     "type": "string"
                 },
@@ -4132,6 +4500,9 @@
                 "connected": {
                     "type": "boolean"
                 },
+                "credential_reentry_required": {
+                    "type": "boolean"
+                },
                 "enabled": {
                     "type": "boolean"
                 },
@@ -4152,6 +4523,9 @@
         "integration.KubernetesClusterView": {
             "type": "object",
             "properties": {
+                "credential_reentry_required": {
+                    "type": "boolean"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -4406,9 +4780,6 @@
                 },
                 "is_rundeck": {
                     "type": "boolean"
-                },
-                "publisher": {
-                    "type": "string"
                 }
             }
         },
@@ -4454,9 +4825,16 @@
                 "is_rundeck": {
                     "type": "boolean"
                 },
-                "page_num": {},
+                "page_num": {
+                    "description": "PageInteger distinguishes omission (use the default) from explicit null.",
+                    "type": "integer",
+                    "minimum": 1
+                },
                 "page_size": {
-                    "description": "前端可选 15 30 50 100 200"
+                    "description": "前端可选 15 30 50 100 200",
+                    "type": "integer",
+                    "maximum": 200,
+                    "minimum": 1
                 },
                 "publisher": {
                     "type": "string"

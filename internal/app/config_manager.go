@@ -23,7 +23,7 @@ type devLanguageRulesJSON struct {
 func loadDevLanguageRules(ctx context.Context, devLanguage string) (*devLanguageRulesJSON, error) {
 	lang := strings.ToLower(strings.TrimSpace(devLanguage))
 	if lang == "" {
-		return nil, fmt.Errorf("dev_language 不能为空")
+		return nil, NewValidationError("dev_language 不能为空")
 	}
 	var row entity.DevLanguageRule
 	has, err := db.Engine.Context(ctx).
@@ -33,7 +33,7 @@ func loadDevLanguageRules(ctx context.Context, devLanguage string) (*devLanguage
 		return nil, err
 	}
 	if !has {
-		return nil, fmt.Errorf("未配置 dev_language 规则：%s", lang)
+		return nil, NewValidationError(fmt.Sprintf("未配置 dev_language 规则：%s", lang))
 	}
 	var rules devLanguageRulesJSON
 	if err := json.Unmarshal(row.Rules, &rules); err != nil {
@@ -656,7 +656,7 @@ func validateDNSName(name string, noSingleLabel bool) error {
 // OverwriteDomainsByConfigID 覆盖写入 domains（硬删除旧数据，避免 unique(config_id,host,path) 与软删除冲突）
 func (cm *ConfigManager) OverwriteDomainsByConfigID(ctx context.Context, configID int, domains []DomainItem) error {
 	if configID <= 0 {
-		return fmt.Errorf("无效的 config_id")
+		return NewValidationError("无效的 config_id")
 	}
 
 	// 规范化 + 判重（同 host + 同 path 直接报错，避免 ingress 同域名同 location 冲突）
@@ -665,11 +665,11 @@ func (cm *ConfigManager) OverwriteDomainsByConfigID(ctx context.Context, configI
 	for _, d := range domains {
 		host, path, err := normalizeDomainHostPath(d.Host, d.Path)
 		if err != nil {
-			return err
+			return NewValidationError(err.Error())
 		}
 		key := host + " " + path
 		if _, ok := seen[key]; ok {
-			return fmt.Errorf("多域名配置重复：host=%s path=%s", host, path)
+			return NewDomainConflictError(host, path)
 		}
 		seen[key] = struct{}{}
 		rows = append(rows, entity.AppConfigDomain{
@@ -705,7 +705,7 @@ func (cm *ConfigManager) OverwriteDomainsByConfigID(ctx context.Context, configI
 func (cm *ConfigManager) CreateDomain(ctx context.Context, configID int, d DomainItem) (*entity.AppConfigDomain, error) {
 	host, path, err := normalizeDomainHostPath(d.Host, d.Path)
 	if err != nil {
-		return nil, err
+		return nil, NewValidationError(err.Error())
 	}
 
 	// 先查冲突，返回更友好的错误
@@ -716,7 +716,7 @@ func (cm *ConfigManager) CreateDomain(ctx context.Context, configID int, d Domai
 		return nil, err
 	}
 	if cnt > 0 {
-		return nil, fmt.Errorf("多域名配置已存在：host=%s path=%s", host, path)
+		return nil, NewDomainConflictError(host, path)
 	}
 
 	row := &entity.AppConfigDomain{
@@ -733,7 +733,7 @@ func (cm *ConfigManager) CreateDomain(ctx context.Context, configID int, d Domai
 // DeleteDomainByID 硬删除单条域名（避免软删除导致唯一键冲突）
 func (cm *ConfigManager) DeleteDomainByID(ctx context.Context, configID int, domainID int64) error {
 	if configID <= 0 || domainID <= 0 {
-		return fmt.Errorf("无效的参数")
+		return NewValidationError("无效的参数")
 	}
 	_, err := db.Engine.Context(ctx).Exec("DELETE FROM app_config_domains WHERE config_id = ? AND id = ?", configID, domainID)
 	if err != nil {
@@ -744,7 +744,7 @@ func (cm *ConfigManager) DeleteDomainByID(ctx context.Context, configID int, dom
 
 func (cm *ConfigManager) PatchDomainByID(ctx context.Context, configID int, domainID int64, req PatchDomainRequest) (*entity.AppConfigDomain, error) {
 	if configID <= 0 || domainID <= 0 {
-		return nil, fmt.Errorf("无效的参数")
+		return nil, NewValidationError("无效的参数")
 	}
 
 	// 取当前值
@@ -754,7 +754,7 @@ func (cm *ConfigManager) PatchDomainByID(ctx context.Context, configID int, doma
 		return nil, err
 	}
 	if !has {
-		return nil, fmt.Errorf("未找到域名记录：config_id=%d domain_id=%d", configID, domainID)
+		return nil, NewDomainNotFoundError(configID, domainID)
 	}
 
 	newHost := cur.Host
@@ -768,7 +768,7 @@ func (cm *ConfigManager) PatchDomainByID(ctx context.Context, configID int, doma
 
 	host, path, err := normalizeDomainHostPath(newHost, newPath)
 	if err != nil {
-		return nil, err
+		return nil, NewValidationError(err.Error())
 	}
 
 	// 冲突检查：排除自身
@@ -779,7 +779,7 @@ func (cm *ConfigManager) PatchDomainByID(ctx context.Context, configID int, doma
 		return nil, err
 	}
 	if cnt > 0 {
-		return nil, fmt.Errorf("多域名配置冲突：host=%s path=%s", host, path)
+		return nil, NewDomainConflictError(host, path)
 	}
 
 	// 更新（硬更新，不触发软删除机制）

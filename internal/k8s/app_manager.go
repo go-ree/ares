@@ -310,7 +310,7 @@ func (am *ApplicationManager) GetDeploymentsByLabel(ctx context.Context, namespa
 			am.logger.Warn("查询Service失败",
 				"deployment", deployment.Name,
 				"namespace", namespace,
-				"error", err.Error())
+				"error_type", fmt.Sprintf("%T", err))
 		}
 
 		results = append(results, *status)

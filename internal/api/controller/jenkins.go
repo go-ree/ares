@@ -1,19 +1,57 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"math"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-ree/ares/internal/api/util"
+	"github.com/go-ree/ares/internal/config"
 	"github.com/go-ree/ares/internal/db"
 	"github.com/go-ree/ares/internal/entity"
 	"github.com/go-ree/ares/internal/jenkins"
-	"io"
-	"net/http"
-	"strconv"
-	"strings"
-	"sync"
 )
+
+const sseSessionRevalidatorContextKey = "ares.internal.sse-session-revalidator"
+
+// "error" is reserved by EventSource for transport failures. Keep application
+// errors on a distinct event name so browser onerror handlers are not invoked
+// for a server-authored semantic error frame as well.
+const sseStreamErrorEvent = "stream-error"
+
+var jenkinsSSEAdmission = newConcurrentAdmission(32, 4)
+
+var (
+	// ErrSSESessionExpired is returned by a request-scoped revalidation hook
+	// when an authenticated SSE session is no longer usable. The handler emits
+	// auth-expired and closes the stream without exposing the underlying reason.
+	ErrSSESessionExpired = errors.New("SSE session expired")
+	errJenkinsStream     = errors.New("Jenkins log stream failed")
+)
+
+// SSESessionRevalidator rechecks the already-authenticated browser session.
+// Implementations must honor ctx and must not refresh the session's idle
+// deadline: SSE heartbeats are transport activity, not user activity.
+type SSESessionRevalidator func(ctx context.Context) error
+
+// AttachSSESessionRevalidator lets the authentication middleware attach a
+// request-scoped, authorization-aware revalidation function without coupling
+// this legacy Jenkins controller to the authentication package.
+func AttachSSESessionRevalidator(c *gin.Context, revalidator SSESessionRevalidator) {
+	if c == nil {
+		return
+	}
+	c.Set(sseSessionRevalidatorContextKey, revalidator)
+}
 
 // GetJenkinsNodeStatus
 // @Tags Jenkins
@@ -30,35 +68,11 @@ func GetJenkinsNodeStatus(c *gin.Context) {
 	}
 	nodeInfo, err := jenkins.GetJenkinsNodeStatus()
 	if err != nil {
-		c.JSON(502, util.ResponseFailure("", err.Error()))
+		respondUpstreamFailure(c, "jenkins", "list_nodes", err)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("", nodeInfo))
 }
-
-//// GetJenkinsBuildLog
-//// @Tags Publish
-//// @Summary 获取构建日志
-//// @Success 200 {object} util.ResponseTemplate{code=int,result=string} "成功"
-//// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
-//// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
-//// @Failure 502 {object} util.ResponseTemplate{code=int} "调用链异常"
-//// @Router	/api/v1/job/log/ [get]
-//func GetJenkinsBuildLog(c *gin.Context) {
-//	job := c.Param("job")
-//	idStr := c.Param("id")
-//	id, err := strconv.ParseInt(idStr, 10, 64) // 将 id 字符串转换为 int64
-//	if err != nil {
-//		c.JSON(400, util.ResponseFailure("buildNumber转换失败", err.Error()))
-//		return
-//	}
-//	log, err := jenkins.GetJenkinsBuildLog(job, id)
-//	if err != nil {
-//		c.JSON(502, util.ResponseFailure("", err.Error()))
-//		return
-//	}
-//	c.JSON(200, util.ResponseSuccessful("", log))
-//}
 
 // StreamJenkinsBuildLogHandler
 // @Tags Publish
@@ -72,6 +86,23 @@ func GetJenkinsNodeStatus(c *gin.Context) {
 // @Failure 502 {object} util.ResponseTemplate{code=int} "调用链异常"
 // @Router	/api/v1/job/stream/log [get]
 func StreamJenkinsBuildLogHandler(c *gin.Context) {
+	principal, ok := CurrentPrincipal(c)
+	if !ok || (principal.UserID <= 0 && strings.TrimSpace(principal.Username) == "") {
+		c.JSON(http.StatusUnauthorized, util.ResponseFailure("未登录或会话已失效", "unauthenticated"))
+		return
+	}
+	principalKey := "user:" + strconv.FormatInt(principal.UserID, 10)
+	if principal.UserID <= 0 {
+		principalKey = "legacy:" + principal.AuthSource + ":" + principal.Username
+	}
+	releaseAdmission, admitted := jenkinsSSEAdmission.acquire(principalKey)
+	if !admitted {
+		c.Header("Retry-After", "5")
+		c.JSON(http.StatusTooManyRequests, util.ResponseFailure("日志流连接过多", "stream capacity exceeded"))
+		return
+	}
+	defer releaseAdmission()
+
 	snapshot := jenkins.Acquire()
 	if snapshot == nil {
 		c.JSON(503, util.ResponseFailure("Jenkins 集成未启用", "jenkins integration is disabled"))
@@ -82,116 +113,341 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 		LogType string `form:"log_type" binding:"required,oneof=ci cd"`
 		Start   int64  `form:"start" binding:"omitempty,min=0"`
 	}
+	queryValues, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil || !validJenkinsStreamQuery(queryValues) {
+		c.JSON(http.StatusBadRequest, util.ResponseFailure("参数错误", "请求参数无效"))
+		return
+	}
 	if err := c.ShouldBindQuery(&request); err != nil {
-		c.JSON(400, util.ResponseFailure("参数错误", err.Error()))
+		c.JSON(http.StatusBadRequest, util.ResponseFailure("参数错误", "请求参数无效"))
+		return
+	}
+	lastEventID, present, err := parseLastEventID(c.Request.Header)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, util.ResponseFailure("参数错误", "Last-Event-ID 无效"))
 		return
 	}
 	var task entity.TaskRecord
 	has, err := db.Engine.Context(c.Request.Context()).
 		Where("task_id = ? AND deleted_at IS NULL", request.TaskID).Get(&task)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, util.ResponseFailure("查询任务失败", err.Error()))
+		c.JSON(http.StatusInternalServerError, util.ResponseFailure("查询任务失败", "internal error"))
 		return
 	}
 	if !has {
 		c.JSON(http.StatusNotFound, util.ResponseFailure("任务不存在", fmt.Sprintf("task_id=%d", request.TaskID)))
 		return
 	}
+	SetRequestAuditResourceID(c, strconv.Itoa(request.TaskID))
+	if present {
+		request.Start = lastEventID
+	}
 	query, err := taskBuildLogReference(task, request.LogType, request.Start, snapshot.Address())
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, util.ResponseFailure("任务没有对应日志", err.Error()))
+		c.JSON(http.StatusUnprocessableEntity, util.ResponseFailure("任务没有对应日志", "build log reference unavailable"))
 		return
 	}
 
-	// EventSource 断线重连会自动携带 Last-Event-ID：这里用它作为 progressiveText 的 start，实现零前端改动的断线续传
-	if lastID := c.GetHeader("Last-Event-ID"); lastID != "" {
-		if v, err := strconv.ParseInt(lastID, 10, 64); err == nil && v >= 0 {
-			query.Start = v
-		}
-	}
-
+	streamContext, cancelStream := context.WithTimeout(c.Request.Context(), config.SSEMaxDuration())
+	defer cancelStream()
 	logChan := make(chan jenkins.BuildLogChunk)
 	errChan := make(chan error, 1)
-	var mu sync.Mutex
-
-	// 创建一个完成通道，用于通知主goroutine任务完成或出错
-	doneChan := make(chan struct{})
-	var streamErr error
-
-	// 启动日志流处理
+	resultChan := make(chan error, 1)
 	go func() {
-		defer close(doneChan)
-		success := snapshot.StreamJenkinsBuildLog(c.Request.Context(), query, logChan, errChan)
-		if !success {
-			// Cancellation can make the producer return without publishing an
-			// error. Never wait indefinitely for a value that may not exist.
-			select {
-			case err := <-errChan:
-				streamErr = err
-			default:
+		if snapshot.StreamJenkinsBuildLog(streamContext, query, logChan, errChan) {
+			resultChan <- nil
+			return
+		}
+		select {
+		case streamErr := <-errChan:
+			if streamErr == nil {
+				streamErr = errJenkinsStream
 			}
+			resultChan <- streamErr
+		default:
+			resultChan <- errJenkinsStream
 		}
 	}()
 
-	// 设置 SSE 相关的响应头
+	deadlineController := http.NewResponseController(c.Writer)
+	if err := clearSSEWriteDeadline(deadlineController); err != nil {
+		cancelStream()
+		c.JSON(http.StatusInternalServerError, util.ResponseFailure("日志流不可用", "stream deadline unavailable"))
+		return
+	}
 	c.Header("Content-Type", "text/event-stream; charset=utf-8")
-	c.Header("Cache-Control", "no-cache, no-transform")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no") // 禁用 Nginx 缓冲
-	c.Writer.WriteHeaderNow()
+	c.Header("Cache-Control", "no-store, no-transform")
+	c.Header("X-Accel-Buffering", "no")
+	if err := flushSSEHeadersForRequest(c, c.Writer, deadlineController, config.SSEWriteTimeout()); err != nil {
+		return
+	}
+	if !streamJenkinsSSE(
+		c.Request.Context(), streamContext, c.Writer, deadlineController,
+		query.Start, logChan, resultChan, sseSessionRevalidator(c), configuredSSEStreamLimits(),
+	) {
+		MarkRequestAuditFailure(c)
+	}
+}
 
-	// 使用Stream方法处理响应
-	c.Stream(func(w io.Writer) bool {
+func flushSSEHeadersForRequest(
+	c *gin.Context,
+	writer gin.ResponseWriter,
+	deadlineController sseWriteDeadlineSetter,
+	writeTimeout time.Duration,
+) error {
+	err := flushSSEHeaders(writer, deadlineController, writeTimeout)
+	if err != nil {
+		MarkRequestAuditFailure(c)
+	}
+	return err
+}
+
+type sseStreamLimits struct {
+	heartbeatInterval time.Duration
+	reauthInterval    time.Duration
+	writeTimeout      time.Duration
+	idleTimeout       time.Duration
+}
+
+func configuredSSEStreamLimits() sseStreamLimits {
+	return sseStreamLimits{
+		heartbeatInterval: config.SSEHeartbeatInterval(),
+		reauthInterval:    config.SSEReauthInterval(),
+		writeTimeout:      config.SSEWriteTimeout(),
+		idleTimeout:       config.SSEIdleTimeout(),
+	}
+}
+
+func streamJenkinsSSE(
+	requestContext context.Context,
+	streamContext context.Context,
+	writer io.Writer,
+	deadlineController sseWriteDeadlineSetter,
+	initialCursor int64,
+	logChan <-chan jenkins.BuildLogChunk,
+	resultChan <-chan error,
+	revalidator SSESessionRevalidator,
+	limits sseStreamLimits,
+) bool {
+	heartbeatTicker := time.NewTicker(limits.heartbeatInterval)
+	defer heartbeatTicker.Stop()
+	idleTimer := time.NewTimer(limits.idleTimeout)
+	defer idleTimer.Stop()
+	var reauthTicker *time.Ticker
+	var reauth <-chan time.Time
+	if revalidator != nil {
+		reauthTicker = time.NewTicker(limits.reauthInterval)
+		defer reauthTicker.Stop()
+		reauth = reauthTicker.C
+	}
+
+	cursor := initialCursor
+	for {
 		select {
-		case chunk, ok := <-logChan:
-			if !ok {
+		case <-streamContext.Done():
+			if requestContext.Err() == nil && errors.Is(streamContext.Err(), context.DeadlineExceeded) {
+				return writeSSEJSON(writer, deadlineController, limits.writeTimeout, "end", &cursor,
+					map[string]string{"reason": "max_duration"}) == nil
+			}
+			return requestContext.Err() != nil
+		case <-idleTimer.C:
+			_ = writeSSEJSON(writer, deadlineController, limits.writeTimeout, "end", &cursor,
+				map[string]string{"reason": "upstream_idle"})
+			return false
+		case <-heartbeatTicker.C:
+			if err := writeSSEJSON(writer, deadlineController, limits.writeTimeout, "ping", &cursor, struct{}{}); err != nil {
 				return false
 			}
-			// 心跳：只用于保持连接，不触发前端默认 onmessage（event != message）
-			if chunk.IsPing {
-				_, _ = fmt.Fprintf(w, "event: ping\nid: %d\ndata: {}\n\n", chunk.NextStart)
-				if f, ok := w.(http.Flusher); ok {
-					f.Flush()
+		case <-reauth:
+			revalidationContext, cancelRevalidation := context.WithTimeout(streamContext, limits.writeTimeout)
+			err := revalidator(revalidationContext)
+			cancelRevalidation()
+			if err != nil {
+				if requestContext.Err() != nil {
+					return true
 				}
-				return true
+				if errors.Is(streamContext.Err(), context.DeadlineExceeded) {
+					return writeSSEJSON(writer, deadlineController, limits.writeTimeout, "end", &cursor,
+						map[string]string{"reason": "max_duration"}) == nil
+				}
+				if errors.Is(err, ErrSSESessionExpired) {
+					_ = writeSSEJSON(writer, deadlineController, limits.writeTimeout, "auth-expired", nil,
+						map[string]string{"reason": "session_expired"})
+				} else {
+					_ = writeSSEJSON(writer, deadlineController, limits.writeTimeout, sseStreamErrorEvent, nil,
+						map[string]string{"code": "session_revalidation_failed"})
+				}
+				return false
 			}
-			mu.Lock()
-			// 将日志列表包装在响应对象中
+		case chunk, ok := <-logChan:
+			if !ok {
+				logChan = nil
+				continue
+			}
+			if chunk.NextStart < cursor {
+				_ = writeSSEJSON(writer, deadlineController, limits.writeTimeout, sseStreamErrorEvent, nil,
+					map[string]string{"code": "cursor_regression"})
+				return false
+			}
+			cursor = chunk.NextStart
+			resetTimer(idleTimer, limits.idleTimeout)
+			// Jenkins' producer heartbeat proves that upstream polling is still
+			// alive. The handler owns the client-visible heartbeat cadence.
+			if chunk.IsPing {
+				continue
+			}
 			response := util.ResponseSuccessful("", chunk.Lines)
 			responseBytes, err := json.Marshal(response)
 			if err != nil {
-				mu.Unlock()
 				return false
 			}
-			// 使用 SSE id 实现断线续传（EventSource 自动携带 Last-Event-ID 重连）
-			_, err = fmt.Fprintf(w, "id: %d\ndata: %s\n\n", chunk.NextStart, string(responseBytes))
-			if err != nil {
-				mu.Unlock()
+			if err := writeSSEFrame(writer, deadlineController, limits.writeTimeout, "", &cursor, responseBytes); err != nil {
 				return false
 			}
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
+		case streamErr, ok := <-resultChan:
+			if !ok {
+				streamErr = nil
 			}
-			mu.Unlock()
-			return true
-		case <-doneChan:
-			// 如果有错误，返回错误响应
+			if requestContext.Err() != nil {
+				return true
+			}
+			if errors.Is(streamContext.Err(), context.DeadlineExceeded) {
+				return writeSSEJSON(writer, deadlineController, limits.writeTimeout, "end", &cursor,
+					map[string]string{"reason": "max_duration"}) == nil
+			}
 			if streamErr != nil {
-				errorResponse := util.ResponseFailure("", streamErr.Error())
-				responseBytes, _ := json.Marshal(errorResponse)
-				fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(responseBytes))
-				if f, ok := w.(http.Flusher); ok {
-					f.Flush()
-				}
+				_ = writeSSEJSON(writer, deadlineController, limits.writeTimeout, sseStreamErrorEvent, nil,
+					map[string]string{"code": "upstream_error"})
+				// Do not follow an upstream failure with end: completed. Browsers may
+				// already have both frames queued, in which case the terminal completed
+				// event would race the retry scheduled by the stream-error handler and
+				// permanently suppress cursor-based recovery.
+				return false
 			}
-			// 发送结束事件
-			fmt.Fprintf(w, "event: end\ndata: end of stream\n\n")
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
+			writeErr := writeSSEJSON(writer, deadlineController, limits.writeTimeout, "end", &cursor,
+				map[string]string{"reason": "completed"})
+			return writeErr == nil
+		}
+	}
+}
+
+func validJenkinsStreamQuery(values url.Values) bool {
+	allowed := map[string]struct{}{"task_id": {}, "log_type": {}, "start": {}}
+	for key, entries := range values {
+		if _, ok := allowed[key]; !ok || len(entries) != 1 || entries[0] == "" {
 			return false
 		}
+	}
+	return true
+}
+
+func parseLastEventID(header http.Header) (int64, bool, error) {
+	values, present := header[http.CanonicalHeaderKey("Last-Event-ID")]
+	if !present {
+		return 0, false, nil
+	}
+	if len(values) != 1 || values[0] == "" || len(values[0]) > 19 {
+		return 0, true, errors.New("invalid Last-Event-ID")
+	}
+	for _, character := range []byte(values[0]) {
+		if character < '0' || character > '9' {
+			return 0, true, errors.New("invalid Last-Event-ID")
+		}
+	}
+	parsed, err := strconv.ParseUint(values[0], 10, 63)
+	if err != nil || parsed > math.MaxInt64 {
+		return 0, true, errors.New("invalid Last-Event-ID")
+	}
+	return int64(parsed), true, nil
+}
+
+func sseSessionRevalidator(c *gin.Context) SSESessionRevalidator {
+	value, exists := c.Get(sseSessionRevalidatorContextKey)
+	if !exists {
+		return nil
+	}
+	revalidator, _ := value.(SSESessionRevalidator)
+	return revalidator
+}
+
+type sseWriteDeadlineSetter interface {
+	SetWriteDeadline(time.Time) error
+	Flush() error
+}
+
+func clearSSEWriteDeadline(controller sseWriteDeadlineSetter) error {
+	return controller.SetWriteDeadline(time.Time{})
+}
+
+func flushSSEHeaders(writer gin.ResponseWriter, controller sseWriteDeadlineSetter, timeout time.Duration) error {
+	return withSSEWriteDeadline(controller, timeout, func() error {
+		writer.WriteHeaderNow()
+		return controller.Flush()
 	})
+}
+
+func writeSSEJSON(
+	writer io.Writer,
+	controller sseWriteDeadlineSetter,
+	timeout time.Duration,
+	event string,
+	id *int64,
+	value any,
+) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return writeSSEFrame(writer, controller, timeout, event, id, data)
+}
+
+func writeSSEFrame(
+	writer io.Writer,
+	controller sseWriteDeadlineSetter,
+	timeout time.Duration,
+	event string,
+	id *int64,
+	data []byte,
+) error {
+	var frame strings.Builder
+	if event != "" {
+		_, _ = fmt.Fprintf(&frame, "event: %s\n", event)
+	}
+	if id != nil {
+		_, _ = fmt.Fprintf(&frame, "id: %d\n", *id)
+	}
+	_, _ = fmt.Fprintf(&frame, "data: %s\n\n", data)
+	return withSSEWriteDeadline(controller, timeout, func() error {
+		if _, err := io.WriteString(writer, frame.String()); err != nil {
+			return err
+		}
+		return controller.Flush()
+	})
+}
+
+func withSSEWriteDeadline(controller sseWriteDeadlineSetter, timeout time.Duration, write func() error) (err error) {
+	if timeout <= 0 {
+		return errors.New("SSE write timeout must be positive")
+	}
+	if deadlineErr := controller.SetWriteDeadline(time.Now().Add(timeout)); deadlineErr != nil {
+		return deadlineErr
+	}
+	defer func() {
+		if clearErr := clearSSEWriteDeadline(controller); err == nil && clearErr != nil {
+			err = clearErr
+		}
+	}()
+	return write()
+}
+
+func resetTimer(timer *time.Timer, duration time.Duration) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	timer.Reset(duration)
 }
 
 func taskBuildLogReference(task entity.TaskRecord, logType string, start int64, currentAddress string) (*jenkins.BuildLogQuery, error) {
@@ -217,28 +473,3 @@ func taskBuildLogReference(task entity.TaskRecord, logType string, start int64, 
 	}
 	return query, nil
 }
-
-//// GetBuildTaskStatus
-//// @Tags Publish
-//// @Summary 获取构建任务的状态
-//// @Success 200 {object} util.ResponseTemplate{code=int,result=string} "成功"
-//// @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
-//// @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
-//// @Failure 502 {object} util.ResponseTemplate{code=int} "调用链异常"
-//// @Router	/api/v1/deploy/query/status [get]
-//func GetBuildTaskStatus(c *gin.Context) {
-//	jobName := c.Query("job_name")
-//	buildNumberStr := c.Query("build_number")
-//
-//	buildNumber, err := strconv.ParseInt(buildNumberStr, 10, 64) // 将 id 字符串转换为 int64
-//	if err != nil {
-//		c.JSON(400, util.ResponseFailure("buildNumber转换失败:", err.Error()))
-//		return
-//	}
-//	buildStatus, err := jenkins.GetBuildStatus(jobName, buildNumber)
-//	if err != nil {
-//		c.JSON(502, util.ResponseFailure("", err.Error()))
-//		return
-//	}
-//	c.JSON(200, util.ResponseSuccessful("", buildStatus))
-//}

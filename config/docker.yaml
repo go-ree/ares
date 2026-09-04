@@ -9,6 +9,7 @@ db:
 
 web:
   address: ":8080"
+  public_url: ""
 
 log:
   level: "info"
@@ -25,3 +26,14 @@ demo_data:
 settings:
   admin_token: ""
   encryption_key: ""
+
+auth:
+  root_key: ""
+  oidc:
+    enabled: false
+  local_login:
+    enabled: false
+  bootstrap:
+    enabled: false
+  legacy_admin_token:
+    enabled: false

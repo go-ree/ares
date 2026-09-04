@@ -1,14 +1,15 @@
 package api
 
 import (
-	"github.com/go-ree/ares/internal/jenkins"
-	"github.com/go-ree/ares/internal/k8s"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-ree/ares/internal/auth"
+	"github.com/go-ree/ares/internal/jenkins"
+	"github.com/go-ree/ares/internal/k8s"
 )
 
 func TestRouterRegistersWithoutPanic(t *testing.T) {
@@ -47,8 +48,9 @@ func TestDisabledIntegrationsReturnServiceUnavailable(t *testing.T) {
 	k8s.Disable()
 
 	gin.SetMode(gin.TestMode)
+	service, _, sessions := newAuthBoundary(t)
 	router := gin.New()
-	Router(router)
+	RouterWithRuntime(router, Runtime{Auth: service})
 
 	tests := []struct {
 		method string
@@ -61,10 +63,7 @@ func TestDisabledIntegrationsReturnServiceUnavailable(t *testing.T) {
 	}
 	for _, test := range tests {
 		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
-		if test.body != "" {
-			request.Header.Set("Content-Type", "application/json")
-		}
+		request := authenticatedRequest(t, service, sessions[auth.RoleViewer], test.method, test.path, test.body)
 		router.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusServiceUnavailable {
 			t.Fatalf("%s %s returned %d, expected 503: %s", test.method, test.path, recorder.Code, recorder.Body.String())
@@ -78,12 +77,12 @@ func TestPublishIsNotGloballyGatedByJenkins(t *testing.T) {
 	jenkins.Disable()
 
 	gin.SetMode(gin.TestMode)
+	service, _, sessions := newAuthBoundary(t)
 	router := gin.New()
-	Router(router)
+	RouterWithRuntime(router, Runtime{Auth: service})
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/deploy/publish",
-		strings.NewReader(`{"app_name":"demo-api","branch":"main","env":"invalid env","publisher":"demo"}`))
-	request.Header.Set("Content-Type", "application/json")
+	request := authenticatedRequest(t, service, sessions[auth.RoleReleaser], http.MethodPost,
+		"/api/v1/deploy/publish", `{"app_name":"demo-api","branch":"main","env":"invalid env"}`)
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusUnprocessableEntity {
@@ -91,5 +90,18 @@ func TestPublishIsNotGloballyGatedByJenkins(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(recorder.Body.String()), "jenkins") {
 		t.Fatalf("publish is still globally gated by Jenkins: %s", recorder.Body.String())
+	}
+}
+
+func TestRouterWithoutRuntimeFailsClosed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	Router(router)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/compatible/metadata/relation/all", nil)
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("Router without auth runtime returned %d, want 503: %s", recorder.Code, recorder.Body.String())
 	}
 }

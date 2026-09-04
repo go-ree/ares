@@ -224,7 +224,7 @@ func (c *Coordinator) reconcile(ctx context.Context, taskID int, step entity.Tas
 		Release:           release,
 	})
 	if err != nil {
-		return AdvanceResult{}, err
+		return c.finishExecutorError(ctx, taskID, step, err)
 	}
 	return c.applyResult(ctx, taskID, step, result)
 }

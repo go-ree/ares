@@ -21,10 +21,8 @@ type Config struct {
 		AccessLogfile  string `yaml:"accessLogfile"`
 		RuntimeLogfile string `yaml:"runtimeLogfile"`
 	} `yaml:"log"`
-	Web struct {
-		Address string `yaml:"address"`
-	} `yaml:"web"`
-	DB struct {
+	Web WebConfig `yaml:"web"`
+	DB  struct {
 		ConnStr                string `yaml:"conn_str"`
 		MigrationConnStr       string `yaml:"migration_conn_str"`
 		MigrationAdminConnStr  string `yaml:"migration_admin_conn_str"`
@@ -38,9 +36,14 @@ type Config struct {
 		Enabled bool `yaml:"enabled"`
 	} `yaml:"demo_data"`
 	Settings struct {
-		AdminToken    string `yaml:"admin_token"`
-		EncryptionKey string `yaml:"encryption_key"`
+		AdminToken        string `yaml:"admin_token"`
+		AdminTokenFile    string `yaml:"admin_token_file"`
+		EncryptionKey     string `yaml:"encryption_key"`
+		EncryptionKeyFile string `yaml:"encryption_key_file"`
 	} `yaml:"settings"`
+	Auth AuthConfig `yaml:"auth"`
+
+	resolvedSecrets resolvedSecrets
 }
 
 var Main = &Config{}
@@ -92,6 +95,25 @@ func applyEnvironmentOverrides(cfg *Config) error {
 	}
 
 	overrideString("ARES_WEB_ADDRESS", &cfg.Web.Address)
+	overrideString("ARES_WEB_PUBLIC_URL", &cfg.Web.PublicURL)
+	if value, ok := os.LookupEnv("ARES_WEB_TRUSTED_PROXY_CIDRS"); ok {
+		cfg.Web.TrustedProxyCIDRs = splitCommaSeparated(value)
+	}
+	overrideString("ARES_WEB_READ_HEADER_TIMEOUT", &cfg.Web.ReadHeaderTimeout)
+	overrideString("ARES_WEB_READ_TIMEOUT", &cfg.Web.ReadTimeout)
+	overrideString("ARES_WEB_WRITE_TIMEOUT", &cfg.Web.WriteTimeout)
+	overrideString("ARES_WEB_IDLE_TIMEOUT", &cfg.Web.IdleTimeout)
+	if err := overrideOptionalInt("ARES_WEB_MAX_HEADER_BYTES", &cfg.Web.MaxHeaderBytes); err != nil {
+		return err
+	}
+	if err := overrideOptionalInt64("ARES_WEB_MAX_JSON_BODY_BYTES", &cfg.Web.MaxJSONBodyBytes); err != nil {
+		return err
+	}
+	overrideString("ARES_WEB_SSE_HEARTBEAT_INTERVAL", &cfg.Web.SSE.HeartbeatInterval)
+	overrideString("ARES_WEB_SSE_REAUTH_INTERVAL", &cfg.Web.SSE.ReauthInterval)
+	overrideString("ARES_WEB_SSE_WRITE_TIMEOUT", &cfg.Web.SSE.WriteTimeout)
+	overrideString("ARES_WEB_SSE_IDLE_TIMEOUT", &cfg.Web.SSE.IdleTimeout)
+	overrideString("ARES_WEB_SSE_MAX_DURATION", &cfg.Web.SSE.MaxDuration)
 	overrideString("ARES_DB_CONN_STR", &cfg.DB.ConnStr)
 	overrideString("ARES_DB_MIGRATION_CONN_STR", &cfg.DB.MigrationConnStr)
 	overrideString("ARES_DB_MIGRATION_ADMIN_CONN_STR", &cfg.DB.MigrationAdminConnStr)
@@ -100,8 +122,75 @@ func applyEnvironmentOverrides(cfg *Config) error {
 	overrideString("ARES_LOG_LEVEL", &cfg.Log.Level)
 	overrideString("ARES_LOG_ACCESS_FILE", &cfg.Log.AccessLogfile)
 	overrideString("ARES_LOG_RUNTIME_FILE", &cfg.Log.RuntimeLogfile)
-	overrideString("ARES_SETTINGS_ADMIN_TOKEN", &cfg.Settings.AdminToken)
-	overrideString("ARES_SETTINGS_ENCRYPTION_KEY", &cfg.Settings.EncryptionKey)
+	if err := overrideSecretSource(
+		"ARES_SETTINGS_ADMIN_TOKEN", "ARES_SETTINGS_ADMIN_TOKEN_FILE",
+		&cfg.Settings.AdminToken, &cfg.Settings.AdminTokenFile,
+	); err != nil {
+		return err
+	}
+	if err := overrideSecretSource(
+		"ARES_SETTINGS_ENCRYPTION_KEY", "ARES_SETTINGS_ENCRYPTION_KEY_FILE",
+		&cfg.Settings.EncryptionKey, &cfg.Settings.EncryptionKeyFile,
+	); err != nil {
+		return err
+	}
+	if err := overrideSecretSource(
+		"ARES_AUTH_ROOT_KEY", "ARES_AUTH_ROOT_KEY_FILE",
+		&cfg.Auth.RootKey, &cfg.Auth.RootKeyFile,
+	); err != nil {
+		return err
+	}
+	if err := overrideOptionalBool("ARES_AUTH_OIDC_ENABLED", &cfg.Auth.OIDC.Enabled); err != nil {
+		return err
+	}
+	overrideString("ARES_AUTH_OIDC_ISSUER_URL", &cfg.Auth.OIDC.IssuerURL)
+	overrideString("ARES_AUTH_OIDC_CLIENT_ID", &cfg.Auth.OIDC.ClientID)
+	if err := overrideSecretSource(
+		"ARES_AUTH_OIDC_CLIENT_SECRET", "ARES_AUTH_OIDC_CLIENT_SECRET_FILE",
+		&cfg.Auth.OIDC.ClientSecret, &cfg.Auth.OIDC.ClientSecretFile,
+	); err != nil {
+		return err
+	}
+	if value, ok := os.LookupEnv("ARES_AUTH_OIDC_SCOPES"); ok {
+		cfg.Auth.OIDC.Scopes = splitCommaSeparated(value)
+	}
+	if value, ok := os.LookupEnv("ARES_AUTH_OIDC_ALLOWED_SIGNING_ALGORITHMS"); ok {
+		cfg.Auth.OIDC.AllowedSigningAlgorithms = splitCommaSeparated(value)
+	}
+	if err := overrideOptionalBool("ARES_AUTH_OIDC_REQUIRE_VERIFIED_EMAIL", &cfg.Auth.OIDC.RequireVerifiedEmail); err != nil {
+		return err
+	}
+	if err := overrideOptionalBool("ARES_AUTH_OIDC_AUTO_PROVISION", &cfg.Auth.OIDC.AutoProvision); err != nil {
+		return err
+	}
+	overrideString("ARES_AUTH_OIDC_FLOW_TTL", &cfg.Auth.OIDC.FlowTTL)
+	overrideString("ARES_AUTH_OIDC_HTTP_TIMEOUT", &cfg.Auth.OIDC.HTTPTimeout)
+	overrideString("ARES_AUTH_OIDC_MAX_CLOCK_SKEW", &cfg.Auth.OIDC.MaxClockSkew)
+	overrideString("ARES_AUTH_SESSION_IDLE_TIMEOUT", &cfg.Auth.Session.IdleTimeout)
+	overrideString("ARES_AUTH_SESSION_ABSOLUTE_TIMEOUT", &cfg.Auth.Session.AbsoluteTimeout)
+	overrideString("ARES_AUTH_SESSION_TOUCH_INTERVAL", &cfg.Auth.Session.TouchInterval)
+	if err := overrideOptionalBool("ARES_AUTH_LOCAL_LOGIN_ENABLED", &cfg.Auth.LocalLogin.Enabled); err != nil {
+		return err
+	}
+	if err := overrideOptionalBool("ARES_AUTH_BOOTSTRAP_ENABLED", &cfg.Auth.Bootstrap.Enabled); err != nil {
+		return err
+	}
+	if err := overrideSecretSource(
+		"ARES_AUTH_BOOTSTRAP_TOKEN", "ARES_AUTH_BOOTSTRAP_TOKEN_FILE",
+		&cfg.Auth.Bootstrap.Token, &cfg.Auth.Bootstrap.TokenFile,
+	); err != nil {
+		return err
+	}
+	if err := overrideOptionalBool("ARES_AUTH_LEGACY_ADMIN_TOKEN_ENABLED", &cfg.Auth.LegacyAdminToken.Enabled); err != nil {
+		return err
+	}
+	if err := overrideSecretSource(
+		"ARES_AUTH_LEGACY_ADMIN_TOKEN", "ARES_AUTH_LEGACY_ADMIN_TOKEN_FILE",
+		&cfg.Auth.LegacyAdminToken.Token, &cfg.Auth.LegacyAdminToken.TokenFile,
+	); err != nil {
+		return err
+	}
+	overrideString("ARES_AUTH_LEGACY_ADMIN_TOKEN_SUNSET_AT", &cfg.Auth.LegacyAdminToken.SunsetAt)
 	if err := overrideOptionalBool("ARES_DEMO_DATA_ENABLED", &cfg.DemoData.Enabled); err != nil {
 		return err
 	}
@@ -111,7 +200,7 @@ func applyEnvironmentOverrides(cfg *Config) error {
 	if _, err := parsePositiveDuration("db.migration_lock_timeout", cfg.DB.MigrationLockTimeout, 30*time.Second); err != nil {
 		return err
 	}
-	return nil
+	return normalizeAndValidateSecurityConfig(cfg)
 }
 
 func overrideString(name string, target *string) {
@@ -128,6 +217,32 @@ func overrideOptionalBool(name string, target *bool) error {
 	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
 	if err != nil {
 		return fmt.Errorf("invalid boolean value for %s: %w", name, err)
+	}
+	*target = parsed
+	return nil
+}
+
+func overrideOptionalInt(name string, target *int) error {
+	value, ok := os.LookupEnv(name)
+	if !ok {
+		return nil
+	}
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return fmt.Errorf("invalid integer value for %s: %w", name, err)
+	}
+	*target = parsed
+	return nil
+}
+
+func overrideOptionalInt64(name string, target *int64) error {
+	value, ok := os.LookupEnv(name)
+	if !ok {
+		return nil
+	}
+	parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid integer value for %s: %w", name, err)
 	}
 	*target = parsed
 	return nil
@@ -170,10 +285,22 @@ func DBMigrationLockTimeout() time.Duration {
 }
 
 func SettingsAdminToken() string {
+	if Main == nil {
+		return ""
+	}
+	if Main.resolvedSecrets.settingsAdminToken != "" {
+		return strings.TrimSpace(Main.resolvedSecrets.settingsAdminToken)
+	}
 	return strings.TrimSpace(Main.Settings.AdminToken)
 }
 
 func SettingsEncryptionKey() string {
+	if Main == nil {
+		return ""
+	}
+	if Main.resolvedSecrets.settingsEncryptionKey != "" {
+		return strings.TrimSpace(Main.resolvedSecrets.settingsEncryptionKey)
+	}
 	return strings.TrimSpace(Main.Settings.EncryptionKey)
 }
 

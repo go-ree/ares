@@ -8,48 +8,45 @@ import (
 	"testing"
 
 	"github.com/go-ree/ares/internal/api/util"
-	"github.com/go-ree/ares/internal/config"
 
 	"github.com/gin-gonic/gin"
 )
 
 func TestIntegrationSettingsAdminToken(t *testing.T) {
-	originalToken := config.Main.Settings.AdminToken
-	t.Cleanup(func() { config.Main.Settings.AdminToken = originalToken })
-
 	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	Router(router)
+	service, _, _ := newAuthBoundary(t)
+	configuredToken := strings.Repeat("legacy-admin-token-", 2)
 
 	tests := []struct {
 		name           string
-		configured     string
+		enabled        bool
 		provided       string
 		wantHTTPCode   int
 		wantResultCode int
 	}{
 		{
-			name:           "endpoint disabled without server token",
-			wantHTTPCode:   http.StatusServiceUnavailable,
+			name:           "legacy authentication disabled by default",
+			provided:       configuredToken,
+			wantHTTPCode:   http.StatusUnauthorized,
 			wantResultCode: 0,
 		},
 		{
 			name:           "missing client token",
-			configured:     "server-side-admin-token",
+			enabled:        true,
 			wantHTTPCode:   http.StatusUnauthorized,
 			wantResultCode: 0,
 		},
 		{
 			name:           "wrong client token of equal length",
-			configured:     "server-side-admin-token",
-			provided:       "xxxxxxxxxxxxxxxxxxxxxxx",
+			enabled:        true,
+			provided:       strings.Repeat("x", len(configuredToken)),
 			wantHTTPCode:   http.StatusUnauthorized,
 			wantResultCode: 0,
 		},
 		{
 			name:           "valid client token",
-			configured:     "server-side-admin-token",
-			provided:       "server-side-admin-token",
+			enabled:        true,
+			provided:       configuredToken,
 			wantHTTPCode:   http.StatusOK,
 			wantResultCode: 1,
 		},
@@ -57,7 +54,11 @@ func TestIntegrationSettingsAdminToken(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			config.Main.Settings.AdminToken = test.configured
+			router := gin.New()
+			RouterWithRuntime(router, Runtime{
+				Auth: service, LegacyAdminTokenEnabled: test.enabled,
+				LegacyAdminToken: configuredToken,
+			})
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodGet, "/api/v1/system/integrations", nil)
 			if test.provided != "" {
@@ -76,23 +77,26 @@ func TestIntegrationSettingsAdminToken(t *testing.T) {
 			if response.Code != test.wantResultCode {
 				t.Fatalf("response code = %d, want %d", response.Code, test.wantResultCode)
 			}
+			if test.wantHTTPCode == http.StatusOK && recorder.Header().Get("Deprecation") != "true" {
+				t.Fatal("successful legacy authentication omitted Deprecation header")
+			}
 		})
 	}
 }
 
 func TestIntegrationSettingsRejectsOversizedRequest(t *testing.T) {
-	originalToken := config.Main.Settings.AdminToken
-	config.Main.Settings.AdminToken = "server-side-admin-token"
-	t.Cleanup(func() { config.Main.Settings.AdminToken = originalToken })
-
 	gin.SetMode(gin.TestMode)
+	service, _, _ := newAuthBoundary(t)
+	legacyToken := strings.Repeat("legacy-admin-token-", 2)
 	router := gin.New()
-	Router(router)
+	RouterWithRuntime(router, Runtime{
+		Auth: service, LegacyAdminTokenEnabled: true, LegacyAdminToken: legacyToken,
+	})
 
 	body := `{"enabled":false,"token":"` + strings.Repeat("x", 256*1024) + `"}`
 	request := httptest.NewRequest(http.MethodPut, "/api/v1/system/integrations/jenkins", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Ares-Admin-Token", "server-side-admin-token")
+	request.Header.Set("X-Ares-Admin-Token", legacyToken)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, request)
@@ -102,13 +106,13 @@ func TestIntegrationSettingsRejectsOversizedRequest(t *testing.T) {
 }
 
 func TestWorkflowSettingsRoutesRequireAdminToken(t *testing.T) {
-	originalToken := config.Main.Settings.AdminToken
-	config.Main.Settings.AdminToken = "server-side-admin-token"
-	t.Cleanup(func() { config.Main.Settings.AdminToken = originalToken })
-
 	gin.SetMode(gin.TestMode)
+	service, _, _ := newAuthBoundary(t)
+	legacyToken := strings.Repeat("legacy-admin-token-", 2)
 	router := gin.New()
-	Router(router)
+	RouterWithRuntime(router, Runtime{
+		Auth: service, LegacyAdminTokenEnabled: true, LegacyAdminToken: legacyToken,
+	})
 
 	tests := []struct {
 		method string

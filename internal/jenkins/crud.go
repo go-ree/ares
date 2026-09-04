@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 )
+
+const maxProgressiveTextResponseBytes = int64(256 * 1024)
 
 // JenkinsManager jenkins管理器
 type JenkinsManager struct {
@@ -60,21 +63,21 @@ func (jm *JenkinsManager) GetJenkinsNodeStatus() (*Nodes, error) {
 	}
 	nodes, err := runtime.Client.GetAllNodes(ctx)
 	if err != nil {
-		slog.Error("Failed to get all nodes", slog.Any("error", err))
+		slog.Error("Failed to get all nodes", "error_type", fmt.Sprintf("%T", err))
 		return nil, err
 	}
 	var nodeInfo Nodes
 	for _, node := range nodes {
 		poll, err := node.Poll(ctx)
 		if err != nil {
-			slog.Error("Failed to poll node", slog.Any("error", err))
+			slog.Error("Failed to poll node", "error_type", fmt.Sprintf("%T", err))
 			return nil, err
 		}
 		slog.Debug("获取node信息，poll的值为：", slog.Any("poll", poll))
 		slog.Debug("当前node为：", slog.Any("node", node.Base))
 		nodeStatus, err := node.IsOnline(ctx)
 		if err != nil {
-			slog.Error("Failed to get node status", slog.Any("error", err))
+			slog.Error("Failed to get node status", "error_type", fmt.Sprintf("%T", err))
 			return nil, err
 		}
 		if nodeStatus {
@@ -105,21 +108,21 @@ func GetJenkinsNodeStatus() (*Nodes, error) {
 	}
 	nodes, err := runtime.Client.GetAllNodes(ctx)
 	if err != nil {
-		slog.Error("Failed to get all nodes", slog.Any("error", err))
+		slog.Error("Failed to get all nodes", "error_type", fmt.Sprintf("%T", err))
 		return nil, err
 	}
 	var nodeInfo Nodes
 	for _, node := range nodes {
 		poll, err := node.Poll(ctx)
 		if err != nil {
-			slog.Error("Failed to poll node", slog.Any("error", err))
+			slog.Error("Failed to poll node", "error_type", fmt.Sprintf("%T", err))
 			return nil, err
 		}
 		slog.Debug("获取node信息，poll的值为：", slog.Any("poll", poll))
 		slog.Debug("当前node为：", slog.Any("node", node.Base))
 		nodeStatus, err := node.IsOnline(ctx)
 		if err != nil {
-			slog.Error("Failed to get node status", slog.Any("error", err))
+			slog.Error("Failed to get node status", "error_type", fmt.Sprintf("%T", err))
 			return nil, err
 		}
 		if nodeStatus {
@@ -143,12 +146,12 @@ func GetJenkinsBuildLog(jobName string, buildId int64) (string, error) {
 	}
 	job, err := runtime.Client.GetJob(ctx, jobName)
 	if err != nil {
-		slog.Error("获取 Job 失败", slog.Any("error", err))
+		slog.Error("获取 Job 失败", "error_type", fmt.Sprintf("%T", err))
 		return "", err
 	}
 	build, err := job.GetBuild(ctx, buildId)
 	if err != nil {
-		slog.Error("获取 Job 构建失败", slog.Any("error", err))
+		slog.Error("获取 Job 构建失败", "error_type", fmt.Sprintf("%T", err))
 		return "", err
 	}
 	log := build.GetConsoleOutput(ctx)
@@ -181,13 +184,13 @@ func (s *ClientSnapshot) StreamJenkinsBuildLog(ctx context.Context, req *BuildLo
 	}
 	job, err := clientForContext(runtime, ctx).GetJob(ctx, jobParts[len(jobParts)-1], jobParts[:len(jobParts)-1]...)
 	if err != nil {
-		slog.Error("获取Job失败", "job_name", req.JobName, "build_id", req.BuildId, "err", err)
+		slog.Error("获取Job失败", "job_name", req.JobName, "build_id", req.BuildId, "error_type", fmt.Sprintf("%T", err))
 		sendJenkinsStreamError(ctx, errChan, err)
 		return false
 	}
 	build, err := job.GetBuild(ctx, req.BuildId)
 	if err != nil {
-		slog.Error("获取buildId失败", "job_name", req.JobName, "build_id", req.BuildId, "err", err)
+		slog.Error("获取buildId失败", "job_name", req.JobName, "build_id", req.BuildId, "error_type", fmt.Sprintf("%T", err))
 		sendJenkinsStreamError(ctx, errChan, err)
 		return false
 	}
@@ -344,20 +347,29 @@ func (s *ClientSnapshot) StreamJenkinsBuildLog(ctx context.Context, req *BuildLo
 			}
 			if !build.Raw.Building {
 				finalText, finalNext, _, err := getProgressiveText(ctx, runtime, req.JobName, req.BuildId, start)
-				if err == nil && finalNext >= start {
-					if finalText != "" {
-						segs := splitToSegments(finalText, start, finalNext)
-						for _, s := range segs {
-							if len(s.lines) == 0 {
-								continue
-							}
-							if !sendJenkinsLogChunk(ctx, logChan, BuildLogChunk{Lines: s.lines, NextStart: s.nextFrom}) {
-								return true
-							}
+				if err != nil {
+					if ctx.Err() != nil {
+						return true
+					}
+					sendJenkinsStreamError(ctx, errChan, err)
+					return false
+				}
+				if finalNext < start {
+					sendJenkinsStreamError(ctx, errChan, errors.New("jenkins progressiveText returned a regressing offset"))
+					return false
+				}
+				if finalText != "" {
+					segs := splitToSegments(finalText, start, finalNext)
+					for _, s := range segs {
+						if len(s.lines) == 0 {
+							continue
+						}
+						if !sendJenkinsLogChunk(ctx, logChan, BuildLogChunk{Lines: s.lines, NextStart: s.nextFrom}) {
+							return true
 						}
 					}
-					start = finalNext
 				}
+				start = finalNext
 				return true
 			}
 			if !waitForJenkinsPoll(ctx, time.Second) {
@@ -406,6 +418,9 @@ func waitForJenkinsPoll(ctx context.Context, delay time.Duration) bool {
 // GET /job/<job>/<build>/logText/progressiveText?start=<offset>
 // 返回：增量文本、nextStart(X-Text-Size)、moreData(X-More-Data)
 func getProgressiveText(ctx context.Context, runtime *Runtime, jobName string, buildID int64, start int64) (string, int64, bool, error) {
+	if runtime == nil || runtime.Client == nil || start < 0 {
+		return "", start, false, errors.New("invalid Jenkins progressiveText request")
+	}
 	base := runtime.Config.Address
 	jobPath := buildJobPath(jobName)
 	u := base + jobPath + "/" + strconv.FormatInt(buildID, 10) + "/logText/progressiveText"
@@ -425,6 +440,9 @@ func getProgressiveText(ctx context.Context, runtime *Runtime, jobName string, b
 	// Jenkins token 作为 password 使用 basic auth
 	req.SetBasicAuth(runtime.Config.Username, runtime.Config.Token)
 	req.Header.Set("Accept", "text/plain")
+	// Disable transparent compression so X-Text-Size and the bounded body are
+	// measured in the same Jenkins console-log byte offsets.
+	req.Header.Set("Accept-Encoding", "identity")
 
 	client := &http.Client{Timeout: runtime.Config.Timeout}
 	if runtime.Client.Requester != nil && runtime.Client.Requester.Client != nil {
@@ -440,20 +458,66 @@ func getProgressiveText(ctx context.Context, runtime *Runtime, jobName string, b
 		return "", start, false, errors.New("jenkins progressiveText 请求失败：" + resp.Status)
 	}
 
-	bodyBytes, err := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxProgressiveTextResponseBytes+1))
 	if err != nil {
 		return "", start, false, err
 	}
-	text := string(bodyBytes)
+	nextStart, err := parseProgressiveTextSize(resp.Header.Values("X-Text-Size"))
+	if err != nil {
+		return "", start, false, err
+	}
+	more, err := parseProgressiveMoreData(resp.Header.Values("X-More-Data"))
+	if err != nil {
+		return "", start, false, err
+	}
 
-	nextStart := start
-	if v := resp.Header.Get("X-Text-Size"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			nextStart = n
+	if int64(len(bodyBytes)) > maxProgressiveTextResponseBytes {
+		if start > math.MaxInt64-maxProgressiveTextResponseBytes {
+			return "", start, false, errors.New("jenkins progressiveText offset overflow")
+		}
+		boundedNext := start + maxProgressiveTextResponseBytes
+		if nextStart < boundedNext {
+			return "", start, false, errors.New("jenkins progressiveText returned an inconsistent offset")
+		}
+		return string(bodyBytes[:maxProgressiveTextResponseBytes]), boundedNext, true, nil
+	}
+	if int64(len(bodyBytes)) > math.MaxInt64-start || nextStart != start+int64(len(bodyBytes)) {
+		return "", start, false, errors.New("jenkins progressiveText returned an inconsistent offset")
+	}
+	return string(bodyBytes), nextStart, more, nil
+}
+
+func parseProgressiveTextSize(values []string) (int64, error) {
+	if len(values) != 1 || values[0] == "" || len(values[0]) > 19 {
+		return 0, errors.New("jenkins progressiveText omitted a valid X-Text-Size")
+	}
+	for _, character := range []byte(values[0]) {
+		if character < '0' || character > '9' {
+			return 0, errors.New("jenkins progressiveText returned an invalid X-Text-Size")
 		}
 	}
-	more := strings.EqualFold(resp.Header.Get("X-More-Data"), "true")
-	return text, nextStart, more, nil
+	value, err := strconv.ParseInt(values[0], 10, 64)
+	if err != nil {
+		return 0, errors.New("jenkins progressiveText returned an invalid X-Text-Size")
+	}
+	return value, nil
+}
+
+func parseProgressiveMoreData(values []string) (bool, error) {
+	if len(values) == 0 {
+		return false, nil
+	}
+	if len(values) != 1 {
+		return false, errors.New("jenkins progressiveText returned an invalid X-More-Data")
+	}
+	switch strings.ToLower(values[0]) {
+	case "true":
+		return true, nil
+	case "false", "":
+		return false, nil
+	default:
+		return false, errors.New("jenkins progressiveText returned an invalid X-More-Data")
+	}
 }
 
 // buildJobPath 将 "a/b/c" 转换为 Jenkins 的 "/job/a/job/b/job/c"
@@ -573,7 +637,7 @@ func (s *ClientSnapshot) QueueBuildTaskContext(ctx context.Context, jobName stri
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		slog.Error("任务构建失败", slog.String("job", jobName), slog.Any("error", err))
+		slog.Error("任务构建失败", slog.String("job", jobName), "error_type", fmt.Sprintf("%T", err))
 		return 0, "", fmt.Errorf("触发 Jenkins Job %s: %w", jobName, err)
 	}
 	defer response.Body.Close()
@@ -808,13 +872,13 @@ func (s *ClientSnapshot) GetBuildStatusContext(ctx context.Context, jobName stri
 	}
 	job, err := clientForContext(s.runtime, ctx).GetJob(ctx, jobParts[len(jobParts)-1], jobParts[:len(jobParts)-1]...)
 	if err != nil {
-		slog.Error("获取 Job 失败", slog.Any("error", err))
+		slog.Error("获取 Job 失败", "error_type", fmt.Sprintf("%T", err))
 		return "", err
 	}
 	// 获取具体构建实例
 	build, err := job.GetBuild(ctx, buildId)
 	if err != nil {
-		slog.Error("获取 Job 构建失败", slog.Any("error", err))
+		slog.Error("获取 Job 构建失败", "error_type", fmt.Sprintf("%T", err))
 		return "", err
 	}
 

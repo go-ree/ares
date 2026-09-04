@@ -2,11 +2,11 @@ package controller
 
 import (
 	"errors"
-	"github.com/go-ree/ares/internal/api/util"
-	"github.com/go-ree/ares/internal/environment"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-ree/ares/internal/api/util"
+	"github.com/go-ree/ares/internal/environment"
 )
 
 type EnvironmentController struct {
@@ -29,7 +29,7 @@ func NewEnvironmentController() *EnvironmentController {
 func (ec *EnvironmentController) ListCatalog(c *gin.Context) {
 	rows, err := ec.service.List(c.Request.Context(), true)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, util.ResponseFailure("查询环境失败", err.Error()))
+		writeInternalFailure(c, http.StatusInternalServerError, "查询环境失败", "database", "list_environments", err)
 		return
 	}
 	c.JSON(http.StatusOK, util.ResponseSuccessful("查询成功", rows))
@@ -38,13 +38,12 @@ func (ec *EnvironmentController) ListCatalog(c *gin.Context) {
 // ListAll 返回系统设置需要的完整环境目录（包括停用项）。
 // @Tags System
 // @Summary 获取系统环境目录
-// @Param X-Ares-Admin-Token header string true "系统设置管理员令牌"
 // @Success 200 {object} util.ResponseTemplate{code=int,result=[]environment.View}
 // @Router /api/v1/system/environments [get]
 func (ec *EnvironmentController) ListAll(c *gin.Context) {
 	rows, err := ec.service.List(c.Request.Context(), true)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, util.ResponseFailure("查询环境失败", err.Error()))
+		writeInternalFailure(c, http.StatusInternalServerError, "查询环境失败", "database", "list_system_environments", err)
 		return
 	}
 	c.JSON(http.StatusOK, util.ResponseSuccessful("查询成功", rows))
@@ -53,7 +52,6 @@ func (ec *EnvironmentController) ListAll(c *gin.Context) {
 // Create 创建一个环境目录项，环境代码创建后不可修改。
 // @Tags System
 // @Summary 创建环境
-// @Param X-Ares-Admin-Token header string true "系统设置管理员令牌"
 // @Param request body environment.CreateRequest true "环境信息"
 // @Success 201 {object} util.ResponseTemplate{code=int,result=environment.View}
 // @Failure 422 {object} util.ResponseTemplate{code=int}
@@ -65,7 +63,7 @@ func (ec *EnvironmentController) Create(c *gin.Context) {
 	}
 	row, err := ec.service.Create(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, util.ResponseFailure("创建环境失败", err.Error()))
+		writeEnvironmentError(c, "创建环境失败", err)
 		return
 	}
 	c.JSON(http.StatusCreated, util.ResponseSuccessful("创建成功", row))
@@ -75,7 +73,6 @@ func (ec *EnvironmentController) Create(c *gin.Context) {
 // @Tags System
 // @Summary 更新环境
 // @Param code path string true "环境代码"
-// @Param X-Ares-Admin-Token header string true "系统设置管理员令牌"
 // @Param request body environment.UpdateRequest true "待更新字段"
 // @Success 200 {object} util.ResponseTemplate{code=int,result=environment.View}
 // @Failure 404 {object} util.ResponseTemplate{code=int}
@@ -88,12 +85,20 @@ func (ec *EnvironmentController) Update(c *gin.Context) {
 	}
 	row, err := ec.service.Update(c.Request.Context(), c.Param("code"), req)
 	if err != nil {
-		status := http.StatusUnprocessableEntity
-		if errors.Is(err, environment.ErrNotFound) {
-			status = http.StatusNotFound
-		}
-		c.JSON(status, util.ResponseFailure("更新环境失败", err.Error()))
+		writeEnvironmentError(c, "更新环境失败", err)
 		return
 	}
 	c.JSON(http.StatusOK, util.ResponseSuccessful("更新成功", row))
+}
+
+func writeEnvironmentError(c *gin.Context, message string, err error) {
+	var validationError *environment.ValidationError
+	switch {
+	case errors.As(err, &validationError):
+		c.JSON(http.StatusUnprocessableEntity, util.ResponseFailure(message, validationError.Error()))
+	case errors.Is(err, environment.ErrNotFound):
+		c.JSON(http.StatusNotFound, util.ResponseFailure(message, environment.ErrNotFound.Error()))
+	default:
+		writeInternalFailure(c, http.StatusInternalServerError, message, "database", "environment", err)
+	}
 }

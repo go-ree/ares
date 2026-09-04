@@ -20,15 +20,18 @@ func IsSensitiveKey(key string) bool {
 	}
 	for _, word := range words {
 		switch word {
-		case "password", "passwords", "passwd", "secret", "secrets", "credential", "credentials",
-			"token", "tokens", "authorization", "cookie", "cookies", "jwt":
+		case "password", "passwords", "passwd", "pwd", "pass", "passphrase", "passphrases",
+			"secret", "secrets", "credential", "credentials",
+			"token", "tokens", "pat", "pats", "authorization", "auth", "bearer", "oauth",
+			"login", "logins", "cookie", "cookies", "jwt", "kubeconfig",
+			"dockerconfigjson":
 			return true
 		}
 	}
 	for index := 0; index+1 < len(words); index++ {
 		if (words[index] == "api" || words[index] == "private" || words[index] == "access" ||
 			words[index] == "client" || words[index] == "ssh" || words[index] == "signing" ||
-			words[index] == "encryption") &&
+			words[index] == "encryption" || words[index] == "tls") &&
 			(words[index+1] == "key" || words[index+1] == "keys") {
 			return true
 		}
@@ -41,9 +44,10 @@ func IsSensitiveKey(key string) bool {
 	// deliberately limited to well-known credential suffixes/prefixes.
 	compact := strings.Join(words, "")
 	for _, marker := range []string{
-		"password", "passwords", "passwd", "secret", "secrets",
-		"credential", "credentials", "token", "tokens", "authorization",
-		"cookie", "cookies", "jwt", "sessionid",
+		"password", "passwords", "passwd", "pwd", "passphrase", "passphrases", "secret", "secrets",
+		"credential", "credentials", "token", "tokens", "personalaccesstoken", "authorization",
+		"authorization", "basicauth", "registryauth", "cookie", "cookies", "jwt", "sessionid",
+		"bearer", "oauth", "login", "kubeconfig", "dockerconfigjson",
 	} {
 		if strings.HasSuffix(compact, marker) {
 			return true

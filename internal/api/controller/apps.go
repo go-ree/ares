@@ -2,11 +2,12 @@ package controller
 
 import (
 	"errors"
+	"net/http"
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-ree/ares/internal/api/util"
 	"github.com/go-ree/ares/internal/app"
-	"log/slog"
-	"strconv"
 )
 
 type AppsController struct {
@@ -74,12 +75,14 @@ func (ac *AppsController) CreateApps(c *gin.Context) {
 // handleAppCreationError 辅助函数，处理应用创建错误
 func handleAppCreationError(c *gin.Context, err error) {
 	var duplicateAppError *app.DuplicateAppError
+	var validationError *app.ValidationError
 	switch {
+	case errors.As(err, &validationError):
+		c.JSON(http.StatusBadRequest, util.ResponseFailure("参数验证失败", validationError.Error()))
 	case errors.As(err, &duplicateAppError):
-		c.JSON(400, util.ResponseFailure("应用已存在", err.Error()))
+		c.JSON(http.StatusBadRequest, util.ResponseFailure("应用已存在", duplicateAppError.Error()))
 	default:
-		c.JSON(500, util.ResponseFailure("应用创建失败", err.Error()))
-		slog.Error("应用创建失败", "error", err.Error())
+		writeInternalFailure(c, http.StatusInternalServerError, "应用创建失败", "database", "create_app", err)
 	}
 }
 
@@ -104,8 +107,7 @@ func (ac *AppsController) QueryApps(c *gin.Context) {
 	// 调用应用管理器查询应用
 	result, err := ac.appManager.QueryApps(ctx, params)
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("查询应用失败", err.Error()))
-		slog.Error("查询应用失败", "error", err)
+		ac.handleAppError(c, err)
 		return
 	}
 
@@ -131,16 +133,14 @@ func (ac *AppsController) GetAppByID(c *gin.Context) {
 	appIDStr := c.Param("app_id")
 	appID, err := strconv.ParseInt(appIDStr, 10, 64)
 	if err != nil {
-		c.JSON(400, util.ResponseFailure("无效的应用ID", err.Error()))
+		c.JSON(http.StatusBadRequest, util.ResponseFailure("无效的应用ID", "invalid app id"))
 		return
 	}
 
 	// 调用应用管理器获取应用
 	apps, err := ac.appManager.GetAppByID(ctx, appID)
 	if err != nil {
-		ac.handleAppError(c, err, map[string]interface{}{
-			"app_id": appID,
-		})
+		ac.handleAppError(c, err)
 		return
 	}
 
@@ -172,9 +172,7 @@ func (ac *AppsController) GetAppByName(c *gin.Context) {
 	// 调用应用管理器获取应用
 	apps, err := ac.appManager.GetAppByName(ctx, appName)
 	if err != nil {
-		ac.handleAppError(c, err, map[string]interface{}{
-			"app_name": appName,
-		})
+		ac.handleAppError(c, err)
 		return
 	}
 
@@ -195,8 +193,7 @@ func (ac *AppsController) GetAppNameList(c *gin.Context) {
 
 	appNames, err := ac.appManager.GetAppNameList(ctx)
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("查询应用失败", err.Error()))
-		slog.Error("查询应用失败", "error", err)
+		writeInternalFailure(c, http.StatusInternalServerError, "查询应用失败", "database", "list_app_names", err)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("", appNames))
@@ -218,14 +215,12 @@ func (ac *AppsController) GetAppConfigOptions(c *gin.Context) {
 	appIDStr := c.Param("app_id")
 	appID, err := strconv.ParseInt(appIDStr, 10, 64)
 	if err != nil {
-		c.JSON(400, util.ResponseFailure("无效的应用ID", err.Error()))
+		c.JSON(http.StatusBadRequest, util.ResponseFailure("无效的应用ID", "invalid app id"))
 		return
 	}
 	opts, err := ac.appManager.GetAppConfigOptions(ctx, appID)
 	if err != nil {
-		ac.handleAppError(c, err, map[string]interface{}{
-			"app_id": appID,
-		})
+		ac.handleAppError(c, err)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("查询成功", opts))
@@ -250,7 +245,7 @@ func (ac *AppsController) PatchAppByID(c *gin.Context) {
 	appIDStr := c.Param("app_id")
 	appID, err := strconv.ParseInt(appIDStr, 10, 64)
 	if err != nil {
-		c.JSON(400, util.ResponseFailure("无效的应用ID", err.Error()))
+		c.JSON(http.StatusBadRequest, util.ResponseFailure("无效的应用ID", "invalid app id"))
 		return
 	}
 
@@ -261,26 +256,23 @@ func (ac *AppsController) PatchAppByID(c *gin.Context) {
 
 	row, err := ac.appManager.PatchAppByID(ctx, appID, req)
 	if err != nil {
-		ac.handleAppError(c, err, map[string]interface{}{
-			"app_id": appID,
-		})
+		ac.handleAppError(c, err)
 		return
 	}
 	c.JSON(200, util.ResponseSuccessful("更新成功", row))
 }
 
 // handleAppError 统一处理应用相关错误
-func (ac *AppsController) handleAppError(c *gin.Context, err error, context map[string]interface{}) {
+func (ac *AppsController) handleAppError(c *gin.Context, err error) {
 	var validationError *app.ValidationError
 	var notFoundError *app.AppNotFoundError
 
 	switch {
 	case errors.As(err, &validationError):
-		c.JSON(400, util.ResponseFailure("参数验证失败", err.Error()))
+		c.JSON(http.StatusBadRequest, util.ResponseFailure("参数验证失败", validationError.Error()))
 	case errors.As(err, &notFoundError):
-		c.JSON(200, util.ResponseFailure("应用不存在", err.Error()))
+		c.JSON(http.StatusOK, util.ResponseFailure("应用不存在", notFoundError.Error()))
 	default:
-		c.JSON(500, util.ResponseFailure("获取应用失败", err.Error()))
-		slog.Error("获取应用失败", "error", err, "context", context)
+		writeInternalFailure(c, http.StatusInternalServerError, "获取应用失败", "database", "get_app", err)
 	}
 }
