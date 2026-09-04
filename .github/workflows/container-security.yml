@@ -48,7 +48,7 @@ jobs:
 
       - name: 生成后端镜像 SBOM
         if: ${{ always() && steps.build-images.outcome == 'success' }}
-        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: ares-api:local
           format: spdx-json
@@ -60,7 +60,7 @@ jobs:
 
       - name: 生成前端运行时镜像 SBOM
         if: ${{ always() && steps.build-images.outcome == 'success' }}
-        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: ares-web:local
           format: spdx-json
@@ -72,7 +72,7 @@ jobs:
 
       - name: 生成前端应用依赖 SBOM
         if: ${{ always() && steps.build-images.outcome == 'success' }}
-        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           path: ./frontend
           format: spdx-json
