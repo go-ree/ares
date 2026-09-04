@@ -1,7 +1,7 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W01 仓库实现已合并、管理项阻塞；W04 已合并，W02 已创建中文 [PR #23](https://github.com/go-ree/ares/pull/23)，正在等待自动化与维护者验收
+> - 当前状态：W01 仓库实现已合并、管理项阻塞；W04 已合并，W02 中文 [PR #23](https://github.com/go-ree/ares/pull/23) 的自动化已通过，正在等待维护者验收
 > - 基线版本：`main@0e66fae`，已合并 [PR #22：建立版本化数据库迁移与运行时兼容边界](https://github.com/go-ree/ares/pull/22)
 > - 最后更新：2026-09-05
 
@@ -52,7 +52,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 
 ### 2.2 当前主要缺口
 
-- W02 分支已用服务端会话、RBAC 与审计替换浏览器伪身份，本地全量门禁与真实部署验收已经完成，PR 自动化和主线合并尚待完成。
+- W02 分支已用服务端会话、RBAC 与审计替换浏览器伪身份，本地全量门禁、真实部署验收和 PR 自动化已经完成，维护者验收与主线合并尚待完成。
 - v2 任务日志尚未通过通用步骤能力读取，前端仍保留固定 CI/CD 的 Jenkins 日志兼容逻辑。
 - W04 已落地独立 migrator、运行时只读检查和显式 schema manifest，本地 MySQL 8.4 中断、并发、历史库与 Compose 验收矩阵及 GitHub 检查均已通过，[PR #22](https://github.com/go-ree/ares/pull/22) 已合并。
 - 发布接口尚无客户端幂等键和统一预检，重复请求可能创建不同任务。
@@ -192,7 +192,7 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 - [x] 完成全量 Go/前端/Swagger/漏洞门禁、真实 MySQL 8.4 与全新 Compose 端到端验收。
 - [x] 创建中文 PR 并回填关联链接；等待 PR 自动化与维护者验收。
 
-2026-09-05 进度记录：密码轮换、登录与改密并发互斥、密码入口专用门禁、凭据格式升级、外连 URL/重定向/响应体边界、公开入口请求合并、SSE 最长 60 秒复验、严格有界分页、统一错误脱敏、本地静态资源路径约束和匿名指标关闭均已通过冻结回归。[PR #23](https://github.com/go-ree/ares/pull/23) 已创建；在 PR 自动化与维护者验收完成前保持 `待验收`。
+2026-09-05 进度记录：密码轮换、登录与改密并发互斥、密码入口专用门禁、凭据格式升级、外连 URL/重定向/响应体边界、公开入口请求合并、SSE 最长 60 秒复验、严格有界分页、统一错误脱敏、本地静态资源路径约束和匿名指标关闭均已通过冻结回归。[PR #23](https://github.com/go-ree/ares/pull/23) 已创建且首轮自动化全部通过；在维护者验收和合并完成前保持 `待验收`。
 
 非目标：首版不实现复杂的应用级自定义角色和外部策略引擎。
 
@@ -442,7 +442,7 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 
 ## 8. 下一步
 
-[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。[PR #22](https://github.com/go-ree/ares/pull/22) 已合并，W04 的 schema 所有权、独立 migrator 与启动兼容性检查成为主线基线。W02 的身份、会话、RBAC、可信操作主体、审计、前端权限界面和 Compose 初始化已经落地，本地完整门禁与 fresh-volume 安全 E2E 均已通过；中文 [PR #23](https://github.com/go-ree/ares/pull/23) 正在等待自动化与维护者验收，不在合并前提前标记 `已完成`。
+[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。[PR #22](https://github.com/go-ree/ares/pull/22) 已合并，W04 的 schema 所有权、独立 migrator 与启动兼容性检查成为主线基线。W02 的身份、会话、RBAC、可信操作主体、审计、前端权限界面和 Compose 初始化已经落地，本地完整门禁、fresh-volume 安全 E2E 和 PR 自动化均已通过；中文 [PR #23](https://github.com/go-ree/ares/pull/23) 正在等待维护者验收，不在合并前提前标记 `已完成`。
 
 ## 9. 进度记录
 
@@ -454,7 +454,8 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 - 前端门禁：ESLint、Prettier、Type Check、生产构建和 91 项 Vitest 全部通过；完整 npm audit 为 0 个漏洞。Element Plus 生产 chunk 仍有体积告警，但不影响正确性，后续性能优化不阻塞 W02。
 - 数据库门禁：MySQL 8.4.10 的完整 `make db-integration` 与最小权限账号矩阵均通过，账号矩阵额外连续重复 5 轮；最终修复后的集成用例逐一读取 12 份 Demo 工作流并重新执行 schema 兼容检查。epoch 1～4 checksum/实现指纹保持已发布原值。
 - Compose E2E：最终镜像在全新 volume 上按完整依赖链启动，3 个应用、4 个环境、12 个 AppConfig 和 12 份两步 Noop 工作流均可读。Bootstrap 仅首次成功，匿名 401/越权与 CSRF 拒绝、可选 Jenkins/Kubernetes 关闭、改密全会话撤销、审计追加和 `/metrics` 非暴露均符合契约；精确重启 API/Web 后服务恢复健康，会话与 Bootstrap 状态保持，Demo 数据及 12 份工作流规范化响应逐条零差异。测试 OIDC callback 返回预期 401 且带 `no-store`/`no-referrer`，Nginx 与后端日志均未记录 marker、原始 query、Referer 或测试秘密。测试容器、网络、数据卷和临时文件均已清理。
-- 关联 PR：[PR #23](https://github.com/go-ree/ares/pull/23)；等待自动化检查与维护者验收，不直接合并。
+- PR 自动化：[质量门禁运行 #33910044630](https://github.com/go-ree/ares/actions/runs/33910044630) 的工作流语法、后端、MySQL 8.4 迁移与恢复、MySQL 8.4 最小权限账号、关键包 race、Go 漏洞和前端七项作业全部通过；[镜像与供应链运行 #33910044692](https://github.com/go-ree/ares/actions/runs/33910044692) 同样通过。
+- 关联 PR：[PR #23](https://github.com/go-ree/ares/pull/23)；自动化已通过，等待维护者验收，不直接合并。
 
 ### 2026-09-04：W02 核心实现落地并进入最终回归
 
