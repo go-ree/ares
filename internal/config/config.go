@@ -1,14 +1,15 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-ree/ares/internal/cli"
 	"github.com/go-ree/ares/internal/swagger"
 
 	"gopkg.in/yaml.v3"
@@ -25,7 +26,10 @@ type Config struct {
 	} `yaml:"web"`
 	DB struct {
 		ConnStr                string `yaml:"conn_str"`
+		MigrationConnStr       string `yaml:"migration_conn_str"`
+		MigrationAdminConnStr  string `yaml:"migration_admin_conn_str"`
 		SchemaMigrationTimeout string `yaml:"schema_migration_timeout"`
+		MigrationLockTimeout   string `yaml:"migration_lock_timeout"`
 	} `yaml:"db"`
 	Job map[string]struct {
 		Cron string `yaml:"cron"`
@@ -41,8 +45,7 @@ type Config struct {
 
 var Main = &Config{}
 
-func Init() error {
-	configPath := cli.ConfigFilePath
+func Init(configPath string) error {
 	slog.Info("config load start", "path", configPath)
 	yamlData, err := os.ReadFile(configPath)
 	if err != nil {
@@ -50,20 +53,35 @@ func Init() error {
 		return err
 	}
 
-	err = yaml.Unmarshal(yamlData, Main)
-	if err != nil {
-		slog.Error("yaml unmarshal error", "path", configPath, slog.Any("error", err))
+	loaded := &Config{}
+	decoder := yaml.NewDecoder(bytes.NewReader(yamlData))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(loaded); err != nil {
+		slog.Error("yaml decode error", "path", configPath, slog.Any("error", err))
 		return err
 	}
-	if err := applyEnvironmentOverrides(Main); err != nil {
+	var extraDocument any
+	if err := decoder.Decode(&extraDocument); err != io.EOF {
+		if err == nil {
+			err = fmt.Errorf("configuration must contain exactly one YAML document")
+		}
+		slog.Error("yaml document validation error", "path", configPath, slog.Any("error", err))
+		return err
+	}
+	if err := applyEnvironmentOverrides(loaded); err != nil {
 		slog.Error("apply environment overrides error", slog.Any("error", err))
 		return err
 	}
 
+	// Only replace the active configuration after the complete candidate has
+	// been parsed and validated. This prevents callers from observing a partial
+	// configuration after a failed reload.
+	Main = loaded
+
 	// 注意：不要把完整配置打印到日志（包含 token/密码等敏感信息）
 	slog.Info("load config successfully",
 		"path", configPath,
-		"web.address", Main.Web.Address,
+		"web.address", loaded.Web.Address,
 	)
 	return nil
 }
@@ -75,7 +93,10 @@ func applyEnvironmentOverrides(cfg *Config) error {
 
 	overrideString("ARES_WEB_ADDRESS", &cfg.Web.Address)
 	overrideString("ARES_DB_CONN_STR", &cfg.DB.ConnStr)
+	overrideString("ARES_DB_MIGRATION_CONN_STR", &cfg.DB.MigrationConnStr)
+	overrideString("ARES_DB_MIGRATION_ADMIN_CONN_STR", &cfg.DB.MigrationAdminConnStr)
 	overrideString("ARES_DB_SCHEMA_MIGRATION_TIMEOUT", &cfg.DB.SchemaMigrationTimeout)
+	overrideString("ARES_DB_MIGRATION_LOCK_TIMEOUT", &cfg.DB.MigrationLockTimeout)
 	overrideString("ARES_LOG_LEVEL", &cfg.Log.Level)
 	overrideString("ARES_LOG_ACCESS_FILE", &cfg.Log.AccessLogfile)
 	overrideString("ARES_LOG_RUNTIME_FILE", &cfg.Log.RuntimeLogfile)
@@ -85,6 +106,9 @@ func applyEnvironmentOverrides(cfg *Config) error {
 		return err
 	}
 	if _, err := parsePositiveDuration("db.schema_migration_timeout", cfg.DB.SchemaMigrationTimeout, 2*time.Minute); err != nil {
+		return err
+	}
+	if _, err := parsePositiveDuration("db.migration_lock_timeout", cfg.DB.MigrationLockTimeout, 30*time.Second); err != nil {
 		return err
 	}
 	return nil
@@ -125,6 +149,22 @@ func DBSchemaMigrationTimeout() time.Duration {
 	timeout, err := parsePositiveDuration("db.schema_migration_timeout", Main.DB.SchemaMigrationTimeout, 2*time.Minute)
 	if err != nil {
 		return 2 * time.Minute
+	}
+	return timeout
+}
+
+func DBMigrationConnStr() string {
+	return strings.TrimSpace(Main.DB.MigrationConnStr)
+}
+
+func DBMigrationAdminConnStr() string {
+	return strings.TrimSpace(Main.DB.MigrationAdminConnStr)
+}
+
+func DBMigrationLockTimeout() time.Duration {
+	timeout, err := parsePositiveDuration("db.migration_lock_timeout", Main.DB.MigrationLockTimeout, 30*time.Second)
+	if err != nil {
+		return 30 * time.Second
 	}
 	return timeout
 }

@@ -1,7 +1,11 @@
 db:
-  # Required at runtime; Docker Compose provides it through ARES_DB_CONN_STR.
+  # Runtime and migrator credentials are deliberately separate. Compose
+  # injects only the connection required by the selected command.
   conn_str: ""
+  migration_conn_str: ""
+  migration_admin_conn_str: ""
   schema_migration_timeout: "2m"
+  migration_lock_timeout: "30s"
 
 web:
   address: ":8080"

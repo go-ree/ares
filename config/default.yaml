@@ -1,7 +1,13 @@
 db:
-  # Set ARES_DB_CONN_STR or provide a local, untracked configuration file.
+  # Set runtime and migration credentials independently. migrate up never
+  # falls back to conn_str when migration_conn_str is empty.
   conn_str: ""
+  migration_conn_str: ""
+  # Optional one-shot DBA connection. When set, migrate up authenticates a
+  # single ephemeral migrator session and keeps the account locked throughout.
+  migration_admin_conn_str: ""
   schema_migration_timeout: "2m"
+  migration_lock_timeout: "30s"
 
 web:
   address: ":8080"

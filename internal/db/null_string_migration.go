@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -16,6 +15,32 @@ const (
 	legacyNullStringMigrationVersion = "20260902_001_cleanup_legacy_null_strings"
 	migrationBatchSize               = 500
 )
+
+// newLegacyNullStringSchemaMigration keeps the immutable epoch metadata and
+// the concrete Up/verify wiring beside their implementation. This file (and
+// its cross-package normalizer) is source-fingerprinted by the catalog test.
+func newLegacyNullStringSchemaMigration(implementationID string) schemaMigration {
+	return schemaMigration{
+		epoch: 1, version: legacyNullStringMigrationVersion,
+		description: "治理历史 NULL 字符串", compatibleMin: 1, compatibleMax: 1,
+		payload:          "null-string-algorithm-v1|required-and-optional-text-columns|batch-size-500",
+		implementationID: implementationID,
+		preflight:        func(session *migrationSession) error { return session.verifyLegacyNullStringResumeState() },
+		up:               func(session *migrationSession) error { return session.migrateLegacyNullStrings() },
+		verify:           func(session *migrationSession) error { return session.verifyLegacyNullStringPostconditions() },
+	}
+}
+
+func (s *migrationSession) verifyLegacyNullStringResumeState() error {
+	return s.verifySemanticSchema("NULL 字符串迁移恢复状态", epoch1SemanticSchemaManifest)
+}
+
+func (s *migrationSession) verifyLegacyNullStringPostconditions() error {
+	if err := s.verifySemanticSchema("NULL 字符串迁移后置条件", epoch1SemanticSchemaManifest); err != nil {
+		return err
+	}
+	return s.verifyEpochDataContracts(1)
+}
 
 type textColumnMigration struct {
 	table    string
@@ -64,109 +89,29 @@ var optionalTextTables = []optionalTextTableMigration{
 	{table: "task_record", primaryKey: "task_id", columns: []string{"rundeck_app_name", "message", "ci_job_name", "cd_job_name", "products"}},
 }
 
-func legacyRequiredTextBackfillReadyBeforeSync() (bool, error) {
-	prerequisites := map[string]map[string]struct{}{
-		"apps": {
-			"app_id":       {},
-			"app_name":     {},
-			"app_name_cn":  {},
-			"dev_language": {},
-			"updated_at":   {},
-		},
-		"app_configs": {
-			"config_id":         {},
-			"app_id":            {},
-			"code_package_type": {},
-			"updated_at":        {},
-		},
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), migrationOperationTimeout())
-	defer cancel()
-	rows, err := migrationDatabase().QueryContext(ctx, `SELECT TABLE_NAME, COLUMN_NAME
-		FROM information_schema.COLUMNS
-		WHERE TABLE_SCHEMA = DATABASE()
-			AND TABLE_NAME IN ('apps', 'app_configs')`)
-	if err != nil {
-		return false, fmt.Errorf("inspect legacy null-string migration prerequisites: %w", err)
-	}
-	defer rows.Close()
-
-	found := make(map[string]map[string]struct{})
-	for rows.Next() {
-		var table, column string
-		if err := rows.Scan(&table, &column); err != nil {
-			return false, fmt.Errorf("scan legacy null-string migration prerequisite: %w", err)
-		}
-		if found[table] == nil {
-			found[table] = make(map[string]struct{})
-		}
-		found[table][column] = struct{}{}
-	}
-	if err := rows.Err(); err != nil {
-		return false, fmt.Errorf("iterate legacy null-string migration prerequisites: %w", err)
-	}
-	if len(found) == 0 {
-		return false, nil
-	}
-
-	missing := make([]string, 0)
-	for table, columns := range prerequisites {
-		for column := range columns {
-			if _, exists := found[table][column]; !exists {
-				missing = append(missing, table+"."+column)
-			}
-		}
-	}
-	if len(missing) > 0 {
-		sort.Strings(missing)
-		hasBusinessRows := false
-		for _, table := range []string{"apps", "app_configs"} {
-			if found[table] == nil {
-				continue
-			}
-			var tableHasRows bool
-			if err := queryScalar(fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM `%s` LIMIT 1)", table), &tableHasRows); err != nil {
-				return false, fmt.Errorf("inspect partial legacy table %s: %w", table, err)
-			}
-			if tableHasRows {
-				hasBusinessRows = true
-				break
-			}
-		}
-		if !hasBusinessRows {
-			// Sync2 creates tables one at a time. If an initial empty-database
-			// boot stopped midway, let the ordinary schema initializer resume.
-			return false, nil
-		}
-		return false, fmt.Errorf("cannot safely migrate partial legacy schema; missing prerequisites: %s", strings.Join(missing, ", "))
-	}
-	return true, nil
-}
-
-func migrateLegacyNullStrings() error {
-	languageDefaults, err := loadMigrationLanguageDefaults()
+func (s *migrationSession) migrateLegacyNullStrings() error {
+	languageDefaults, err := s.loadMigrationLanguageDefaults()
 	if err != nil {
 		return err
 	}
-	if err := validateRequiredTextBackfills(languageDefaults); err != nil {
+	if err := s.validateRequiredTextBackfills(languageDefaults); err != nil {
 		return err
 	}
-	if err := backfillRequiredTextColumns(languageDefaults); err != nil {
+	if err := s.backfillRequiredTextColumns(languageDefaults); err != nil {
 		return err
 	}
-	if err := ensureTextColumnDefinitions(optionalTextColumns); err != nil {
+	if err := s.ensureTextColumnDefinitions(optionalTextColumns); err != nil {
 		return err
 	}
 	for _, table := range optionalTextTables {
-		if err := cleanOptionalTextTable(table); err != nil {
+		if err := s.cleanOptionalTextTable(table); err != nil {
 			return err
 		}
 	}
-	if err := ensureTextColumnDefinitions(requiredTextColumns); err != nil {
+	if err := s.ensureTextColumnDefinitions(requiredTextColumns); err != nil {
 		return err
 	}
-	return verifyCanonicalTextValues()
+	return s.verifyCanonicalTextValues()
 }
 
 type migrationLanguageRule struct {
@@ -174,10 +119,10 @@ type migrationLanguageRule struct {
 	Default string   `json:"default"`
 }
 
-func loadMigrationLanguageDefaults() (map[string]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), migrationOperationTimeout())
+func (s *migrationSession) loadMigrationLanguageDefaults() (map[string]string, error) {
+	ctx, cancel := s.operationContext()
 	defer cancel()
-	rows, err := migrationDatabase().QueryContext(ctx, `SELECT dev_language, rules
+	rows, err := s.executor.QueryContext(ctx, `SELECT dev_language, rules
 		FROM dev_language_rules WHERE deleted_at IS NULL ORDER BY dev_language`)
 	if err != nil {
 		return nil, fmt.Errorf("load language rules for null-string migration: %w", err)
@@ -248,8 +193,8 @@ func loadMigrationLanguageDefaults() (map[string]string, error) {
 	return defaults, nil
 }
 
-func validateRequiredTextBackfills(languageDefaults map[string]string) error {
-	invalidAppIDs, err := queryInt64s(`SELECT app_id FROM apps
+func (s *migrationSession) validateRequiredTextBackfills(languageDefaults map[string]string) error {
+	invalidAppIDs, err := s.queryInt64s(`SELECT app_id FROM apps
 		WHERE ` + legacyNullishSQL("app_name_cn") + `
 			AND ` + legacyNullishSQL("app_name") + `
 		ORDER BY app_id LIMIT 21`)
@@ -260,9 +205,9 @@ func validateRequiredTextBackfills(languageDefaults map[string]string) error {
 		return fmt.Errorf("cannot backfill app_name_cn because app_name is also empty for app_ids=%s", summarizeIDs(invalidAppIDs))
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), migrationOperationTimeout())
+	ctx, cancel := s.operationContext()
 	defer cancel()
-	rows, err := migrationDatabase().QueryContext(ctx, `SELECT c.config_id, a.dev_language
+	rows, err := s.executor.QueryContext(ctx, `SELECT c.config_id, a.dev_language
 		FROM app_configs c
 		LEFT JOIN apps a ON a.app_id = c.app_id
 		WHERE `+legacyNullishSQL("c.code_package_type")+`
@@ -298,9 +243,9 @@ func validateRequiredTextBackfills(languageDefaults map[string]string) error {
 	return nil
 }
 
-func backfillRequiredTextColumns(languageDefaults map[string]string) error {
+func (s *migrationSession) backfillRequiredTextColumns(languageDefaults map[string]string) error {
 	appWhere := legacyNullishSQL("app_name_cn")
-	if err := updateIDsInBatches("apps", "app_id", appWhere,
+	if err := s.updateIDsInBatches("apps", "app_id", appWhere,
 		"app_name_cn = CASE WHEN "+appWhere+" THEN REGEXP_REPLACE(app_name, '^[[:space:]]+|[[:space:]]+$', '') ELSE app_name_cn END, updated_at = updated_at", nil); err != nil {
 		return fmt.Errorf("backfill apps.app_name_cn: %w", err)
 	}
@@ -313,12 +258,18 @@ func backfillRequiredTextColumns(languageDefaults map[string]string) error {
 	for _, language := range languages {
 		where := legacyNullishSQL("c.code_package_type") +
 			" AND LOWER(REGEXP_REPLACE(a.dev_language, '^[[:space:]]+|[[:space:]]+$', '')) = ?"
-		lastID := int64(0)
+		var lastID *int64
 		for {
-			ids, err := queryInt64s(`SELECT c.config_id FROM app_configs c
+			query := `SELECT c.config_id FROM app_configs c
 				JOIN apps a ON a.app_id = c.app_id
-				WHERE (`+where+`) AND c.config_id > ?
-				ORDER BY c.config_id LIMIT `+fmt.Sprint(migrationBatchSize), language, lastID)
+				WHERE (` + where + `)`
+			args := []any{language}
+			if lastID != nil {
+				query += " AND c.config_id > ?"
+				args = append(args, *lastID)
+			}
+			query += " ORDER BY c.config_id LIMIT " + fmt.Sprint(migrationBatchSize)
+			ids, err := s.queryInt64s(query, args...)
 			if err != nil {
 				return fmt.Errorf("select %s code_package_type backfill batch: %w", language, err)
 			}
@@ -326,17 +277,18 @@ func backfillRequiredTextColumns(languageDefaults map[string]string) error {
 				break
 			}
 			setArgs := []any{languageDefaults[language]}
-			if err := updateRowsByIDs("app_configs", "config_id",
+			if err := s.updateRowsByIDs("app_configs", "config_id",
 				"code_package_type = CASE WHEN "+legacyNullishSQL("code_package_type")+" THEN ? ELSE code_package_type END, updated_at = updated_at", setArgs, ids); err != nil {
 				return fmt.Errorf("backfill %s code_package_type: %w", language, err)
 			}
-			lastID = ids[len(ids)-1]
+			cursor := ids[len(ids)-1]
+			lastID = &cursor
 		}
 	}
 	return nil
 }
 
-func cleanOptionalTextTable(spec optionalTextTableMigration) error {
+func (s *migrationSession) cleanOptionalTextTable(spec optionalTextTableMigration) error {
 	conditions := make([]string, 0, len(spec.columns))
 	assignments := make([]string, 0, len(spec.columns)+1)
 	for _, column := range spec.columns {
@@ -346,27 +298,37 @@ func cleanOptionalTextTable(spec optionalTextTableMigration) error {
 			fmt.Sprintf("`%s` = CASE WHEN %s THEN NULL ELSE `%s` END", column, condition, column))
 	}
 	assignments = append(assignments, "updated_at = updated_at")
-	return updateIDsInBatches(spec.table, spec.primaryKey, strings.Join(conditions, " OR "),
+	return s.updateIDsInBatches(spec.table, spec.primaryKey, strings.Join(conditions, " OR "),
 		strings.Join(assignments, ", "), nil)
 }
 
-func updateIDsInBatches(table, primaryKey, where, assignments string, assignmentArgs []any) error {
+func (s *migrationSession) updateIDsInBatches(table, primaryKey, where, assignments string, assignmentArgs []any) error {
 	total := int64(0)
-	lastID := int64(0)
+	// A nil cursor deliberately means "no lower bound". Starting at zero or
+	// math.MinInt64 would skip valid signed primary keys at or below the
+	// sentinel and could leave an epoch permanently dirty during verification.
+	var lastID *int64
 	for {
-		ids, err := queryInt64s(fmt.Sprintf("SELECT `%s` FROM `%s` WHERE (%s) AND `%s` > ? ORDER BY `%s` LIMIT %d",
-			primaryKey, table, where, primaryKey, primaryKey, migrationBatchSize), lastID)
+		query := fmt.Sprintf("SELECT `%s` FROM `%s` WHERE (%s)", primaryKey, table, where)
+		args := make([]any, 0, 1)
+		if lastID != nil {
+			query += fmt.Sprintf(" AND `%s` > ?", primaryKey)
+			args = append(args, *lastID)
+		}
+		query += fmt.Sprintf(" ORDER BY `%s` LIMIT %d", primaryKey, migrationBatchSize)
+		ids, err := s.queryInt64s(query, args...)
 		if err != nil {
 			return err
 		}
 		if len(ids) == 0 {
 			break
 		}
-		if err := updateRowsByIDs(table, primaryKey, assignments, assignmentArgs, ids); err != nil {
+		if err := s.updateRowsByIDs(table, primaryKey, assignments, assignmentArgs, ids); err != nil {
 			return err
 		}
 		total += int64(len(ids))
-		lastID = ids[len(ids)-1]
+		cursor := ids[len(ids)-1]
+		lastID = &cursor
 	}
 	if total > 0 {
 		slog.Info("normalized legacy null-string rows", "table", table, "rows", total)
@@ -374,29 +336,29 @@ func updateIDsInBatches(table, primaryKey, where, assignments string, assignment
 	return nil
 }
 
-func updateRowsByIDs(table, primaryKey, assignments string, assignmentArgs []any, ids []int64) error {
+func (s *migrationSession) updateRowsByIDs(table, primaryKey, assignments string, assignmentArgs []any, ids []int64) error {
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
 	query := fmt.Sprintf("UPDATE `%s` SET %s WHERE `%s` IN (%s)", table, assignments, primaryKey, placeholders)
 	args := append([]any(nil), assignmentArgs...)
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), migrationOperationTimeout())
+	ctx, cancel := s.operationContext()
 	defer cancel()
-	if _, err := migrationDatabase().ExecContext(ctx, query, args...); err != nil {
+	if _, err := s.executor.ExecContext(ctx, query, args...); err != nil {
 		return err
 	}
 	return nil
 }
 
-func ensureTextColumnDefinitions(columns []textColumnMigration) error {
-	noBackslashEscapes, err := migrationUsesNoBackslashEscapes()
+func (s *migrationSession) ensureTextColumnDefinitions(columns []textColumnMigration) error {
+	noBackslashEscapes, err := s.migrationUsesNoBackslashEscapes()
 	if err != nil {
 		return err
 	}
 	byTable := make(map[string][]string)
 	for _, column := range columns {
-		state, err := inspectTextColumn(column)
+		state, err := s.inspectTextColumn(column)
 		if err != nil {
 			return err
 		}
@@ -424,8 +386,8 @@ func ensureTextColumnDefinitions(columns []textColumnMigration) error {
 	}
 	sort.Strings(tables)
 	for _, table := range tables {
-		ctx, cancel := context.WithTimeout(context.Background(), migrationOperationTimeout())
-		_, err := migrationDatabase().ExecContext(ctx, fmt.Sprintf("ALTER TABLE `%s` %s", table, strings.Join(byTable[table], ", ")))
+		ctx, cancel := s.operationContext()
+		_, err := s.executor.ExecContext(ctx, fmt.Sprintf("ALTER TABLE `%s` %s", table, strings.Join(byTable[table], ", ")))
 		cancel()
 		if err != nil {
 			return fmt.Errorf("normalize nullability for %s: %w", table, err)
@@ -434,11 +396,11 @@ func ensureTextColumnDefinitions(columns []textColumnMigration) error {
 	return nil
 }
 
-func migrationUsesNoBackslashEscapes() (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), migrationOperationTimeout())
+func (s *migrationSession) migrationUsesNoBackslashEscapes() (bool, error) {
+	ctx, cancel := s.operationContext()
 	defer cancel()
 	var sqlMode string
-	if err := migrationDatabase().QueryRowContext(ctx, "SELECT @@SESSION.sql_mode").Scan(&sqlMode); err != nil {
+	if err := s.executor.QueryRowContext(ctx, "SELECT @@SESSION.sql_mode").Scan(&sqlMode); err != nil {
 		return false, fmt.Errorf("inspect SQL mode for schema migration: %w", err)
 	}
 	for _, mode := range strings.Split(sqlMode, ",") {
@@ -449,11 +411,11 @@ func migrationUsesNoBackslashEscapes() (bool, error) {
 	return false, nil
 }
 
-func inspectTextColumn(column textColumnMigration) (*textColumnState, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), migrationOperationTimeout())
+func (s *migrationSession) inspectTextColumn(column textColumnMigration) (*textColumnState, error) {
+	ctx, cancel := s.operationContext()
 	defer cancel()
 	var state textColumnState
-	err := migrationDatabase().QueryRowContext(ctx, `SELECT COLUMN_TYPE, CHARACTER_SET_NAME,
+	err := s.executor.QueryRowContext(ctx, `SELECT COLUMN_TYPE, CHARACTER_SET_NAME,
 			COLLATION_NAME, COLUMN_COMMENT, EXTRA, IS_NULLABLE, COLUMN_DEFAULT
 		FROM information_schema.COLUMNS
 		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
@@ -535,14 +497,55 @@ func safeSQLIdentifier(value string) bool {
 	return true
 }
 
-func verifyCanonicalTextValues() error {
-	if err := verifyTextColumns("required", requiredTextColumns, legacyNullishSQL); err != nil {
+func (s *migrationSession) verifyCanonicalTextValues() error {
+	if err := s.verifyTextColumnDefinitions(append(
+		append([]textColumnMigration(nil), requiredTextColumns...), optionalTextColumns...)); err != nil {
 		return err
 	}
-	return verifyTextColumns("optional", optionalTextColumns, legacyNonNullTextSQL)
+	if err := s.verifyTextColumns("required", requiredTextColumns, legacyNullishSQL); err != nil {
+		return err
+	}
+	return s.verifyTextColumns("optional", optionalTextColumns, legacyNonNullTextSQL)
 }
 
-func verifyTextColumns(kind string, columns []textColumnMigration, condition func(string) string) error {
+func (s *migrationSession) verifyTextColumnDefinitions(columns []textColumnMigration) error {
+	problems := make([]string, 0)
+	for _, column := range columns {
+		state, err := s.inspectTextColumn(column)
+		if err != nil {
+			return err
+		}
+		columnType := strings.ToLower(strings.TrimSpace(state.columnType))
+		if !strings.HasPrefix(columnType, "varchar(") || !strings.HasSuffix(columnType, ")") {
+			problems = append(problems, fmt.Sprintf(
+				"列 %s.%s 类型为 %s，epoch 1 仅支持 VARCHAR", column.table, column.column, state.columnType))
+		}
+		wantNullable := "NO"
+		if column.nullable {
+			wantNullable = "YES"
+		}
+		if !strings.EqualFold(state.nullable, wantNullable) {
+			problems = append(problems, fmt.Sprintf(
+				"列 %s.%s IS_NULLABLE=%s，epoch 1 期望 %s",
+				column.table, column.column, state.nullable, wantNullable))
+		}
+		if state.defaultValue.Valid {
+			problems = append(problems, fmt.Sprintf(
+				"列 %s.%s 仍保留默认值 %s，epoch 1 期望无默认值",
+				column.table, column.column, state.defaultValue.String))
+		}
+		if strings.Contains(strings.ToLower(state.extra), "generated") {
+			problems = append(problems, fmt.Sprintf(
+				"列 %s.%s 不应为生成列", column.table, column.column))
+		}
+	}
+	if len(problems) > 0 {
+		return &SchemaStateError{Problems: problems}
+	}
+	return nil
+}
+
+func (s *migrationSession) verifyTextColumns(kind string, columns []textColumnMigration, condition func(string) string) error {
 	byTable := make(map[string][]string)
 	for _, column := range columns {
 		byTable[column.table] = append(byTable[column.table], column.column)
@@ -560,20 +563,21 @@ func verifyTextColumns(kind string, columns []textColumnMigration, condition fun
 		var exists bool
 		query := fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM `%s` WHERE %s LIMIT 1)",
 			table, strings.Join(conditions, " OR "))
-		if err := queryScalar(query, &exists); err != nil {
+		if err := s.queryScalar(query, &exists); err != nil {
 			return fmt.Errorf("verify %s text columns in %s: %w", kind, table, err)
 		}
 		if exists {
-			return fmt.Errorf("%s text columns in %s still contain non-canonical empty values", kind, table)
+			return &SchemaStateError{Problems: []string{fmt.Sprintf(
+				"%s text columns in %s still contain non-canonical empty values", kind, table)}}
 		}
 	}
 	return nil
 }
 
-func queryInt64s(query string, args ...any) ([]int64, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), migrationOperationTimeout())
+func (s *migrationSession) queryInt64s(query string, args ...any) ([]int64, error) {
+	ctx, cancel := s.operationContext()
 	defer cancel()
-	rows, err := migrationDatabase().QueryContext(ctx, query, args...)
+	rows, err := s.executor.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -589,10 +593,10 @@ func queryInt64s(query string, args ...any) ([]int64, error) {
 	return values, rows.Err()
 }
 
-func queryScalar(query string, target any, args ...any) error {
-	ctx, cancel := context.WithTimeout(context.Background(), migrationOperationTimeout())
+func (s *migrationSession) queryScalar(query string, target any, args ...any) error {
+	ctx, cancel := s.operationContext()
 	defer cancel()
-	return migrationDatabase().QueryRowContext(ctx, query, args...).Scan(target)
+	return s.executor.QueryRowContext(ctx, query, args...).Scan(target)
 }
 
 func legacyNullishSQL(expression string) string {

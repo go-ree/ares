@@ -50,13 +50,19 @@ func TestLegacyWorkflowNameFitsSchemaAndKeepsStableIdentity(t *testing.T) {
 }
 
 func TestPluggableCICDMigrationRunsAfterNullCleanup(t *testing.T) {
-	if len(schemaMigrations) < 2 {
-		t.Fatalf("schemaMigrations has %d entries, want at least 2", len(schemaMigrations))
+	if len(schemaMigrations) != int(ApplicationSchemaEpoch) {
+		t.Fatalf("schemaMigrations has %d entries, want %d", len(schemaMigrations), ApplicationSchemaEpoch)
 	}
-	if schemaMigrations[len(schemaMigrations)-2].version != pluggableCICDMigrationVersion {
-		t.Fatalf("penultimate migration = %q, want %q", schemaMigrations[len(schemaMigrations)-2].version, pluggableCICDMigrationVersion)
+	if schemaMigrations[0].version != legacyNullStringMigrationVersion {
+		t.Fatalf("epoch 1 migration = %q, want %q", schemaMigrations[0].version, legacyNullStringMigrationVersion)
 	}
-	if schemaMigrations[len(schemaMigrations)-1].version != cicdRuntimeHardeningMigrationVersion {
-		t.Fatalf("last migration = %q, want %q", schemaMigrations[len(schemaMigrations)-1].version, cicdRuntimeHardeningMigrationVersion)
+	if schemaMigrations[1].version != pluggableCICDMigrationVersion {
+		t.Fatalf("epoch 2 migration = %q, want %q", schemaMigrations[1].version, pluggableCICDMigrationVersion)
+	}
+	if schemaMigrations[2].version != cicdRuntimeHardeningMigrationVersion {
+		t.Fatalf("epoch 3 migration = %q, want %q", schemaMigrations[2].version, cicdRuntimeHardeningMigrationVersion)
+	}
+	if schemaMigrations[3].version != versionedSchemaMigrationVersion {
+		t.Fatalf("epoch 4 migration = %q, want %q", schemaMigrations[3].version, versionedSchemaMigrationVersion)
 	}
 }
