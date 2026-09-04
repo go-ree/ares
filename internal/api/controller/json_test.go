@@ -21,6 +21,8 @@ func TestBindJSONStrictBoundary(t *testing.T) {
 		{name: "valid", contentType: "application/json", body: `{"name":"demo"}`, wantStatus: http.StatusNoContent},
 		{name: "vendor json", contentType: "application/problem+json", body: `{"name":"demo"}`, wantStatus: http.StatusNoContent},
 		{name: "unknown field", contentType: "application/json", body: `{"name":"demo","role":"admin"}`, wantStatus: http.StatusBadRequest},
+		{name: "duplicate field", contentType: "application/json", body: `{"name":"demo","name":"admin"}`, wantStatus: http.StatusBadRequest},
+		{name: "nested duplicate field", contentType: "application/json", body: `{"name":"demo","metadata":{"role":"viewer","role":"admin"}}`, wantStatus: http.StatusBadRequest},
 		{name: "second value", contentType: "application/json", body: `{"name":"demo"}{"name":"again"}`, wantStatus: http.StatusBadRequest},
 		{name: "oversized", contentType: "application/json", body: `{"name":"demo"}`, limit: 4, wantStatus: http.StatusRequestEntityTooLarge},
 		{name: "missing content type", body: `{"name":"demo"}`, wantStatus: http.StatusUnsupportedMediaType},
