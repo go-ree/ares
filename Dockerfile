@@ -35,7 +35,8 @@ COPY --chown=ares:ares config/docker.yaml /app/config/default.yaml
 USER ares
 EXPOSE 8080
 
-CMD ["/app/ares"]
+ENTRYPOINT ["/app/ares"]
+CMD ["serve"]
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD wget -q -O - http://127.0.0.1:8080/health/live | grep -q '^OK$' || exit 1

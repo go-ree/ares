@@ -25,7 +25,7 @@ go mod download
 npm --prefix frontend ci
 ```
 
-本地运行与 Compose 部署方式见 [README](README.md) 和 [部署指南](docs/operations/deployment.md)。
+本地运行与 Compose 部署方式见 [README](README.md) 和 [部署指南](docs/operations/deployment.md)。涉及数据库结构时，还必须阅读[数据库迁移与恢复手册](docs/operations/database-migrations.md)和 [ADR-0001](docs/architecture/decisions/0001-versioned-database-migrations.md)。
 
 ## 分支、提交与 PR
 
@@ -44,6 +44,15 @@ npm --prefix frontend ci
 ```bash
 make fmt-check mod-check test vet race vuln swagger-check
 ```
+
+数据库 migration 还需在一次性 MySQL 8.4 测试实例上执行真实集成测试；DSN 必须使用可创建/删除测试数据库和临时测试账号的管理员连接：
+
+```bash
+ARES_TEST_MYSQL_DSN='root:<密码>@tcp(127.0.0.1:3306)/mysql?parseTime=true' \
+  make db-integration
+```
+
+测试只创建带 `ares_w04_it_` 前缀的隔离数据库，并在结束时清理。不要指向包含业务数据的数据库实例。
 
 前端：
 
@@ -66,6 +75,8 @@ docker compose build
 - 新增后端领域逻辑、迁移、鉴权或并发行为时必须包含自动化测试；并发路径应纳入 Race 检查。
 - 前端目前缺少完整单元测试体系。涉及交互的变更除静态检查与构建外，还需在 Compose 环境中进行人工验收并记录结果。
 - 涉及数据库结构时，需要验证空库升级、历史库升级、重复执行与失败恢复。
+- 数据库结构只能由新增的版本化 migration 改变；禁止在 `serve` 启动路径重新加入 `Sync`/`Sync2` 或其他 DDL，也不能修改已经发布迁移的版本、payload 或 checksum。
+- 每个 schema PR 必须同时更新 migration、schema manifest、固定 checksum 测试、升级/恢复说明和进度文档。真实 MySQL 8.4 验证结果应记录在 PR 中，不能只以 mock 或 SQLite 测试替代。
 - 涉及外部系统时，测试不得依赖真实生产凭据或不可控的公网服务。
 
 ## 文档与兼容性

@@ -30,12 +30,14 @@
 ## 迁移与兼容
 
 - 迁移版本：`20260902_001_cleanup_legacy_null_strings`
-- 迁移在数据库初始化锁内执行。旧库会在 Xorm 结构同步前先补齐默认语言规则，并幂等预回填两个必填字段，避免收紧 `NOT NULL` 时被真实 SQL `NULL` 阻断；其余字段在 Xorm 补齐旧版本可能缺少的列后，再执行完整版本化迁移。全新空库先建表，两条路径都在 Demo 数据写入前完成。
-- `schema_migrations` 只在全部步骤完成后记录版本；MySQL DDL 可能隐式提交，因此每一步都设计为可重复执行。
-- 版本已记录后，后续启动只做轻量版本检查，不再扫描 `apps` / `app_configs` 做预回填。
-- 数据按主键分批清理，并显式保持 `updated_at` 不变。
+- W04 起，本迁移作为 epoch 1 由独立的 `ares migrate up` 在数据库级锁内执行；`serve` 不再运行 Xorm 结构同步或迁移。全新空库先由显式 bootstrap 建表并补齐默认语言规则，再按 epoch 校验；受支持的旧两列 ledger 会在验证后置条件后被收养。
+- migrator 会在第一条操作前写入包含固定 checksum 的 dirty 记录；MySQL DDL 可能隐式提交，因此每一步都设计为可重复执行，成功通过后置校验后才清除 dirty。
+- 版本已记录后，后续启动只做只读 ledger 和 schema manifest 检查，不再扫描 `apps` / `app_configs` 做预回填。
+- 数据按主键分批清理，并显式保持 `updated_at` 不变；首批不设置人为下界，因而 `0`、负 INT 和最小 BIGINT 等完整带符号主键范围都不会被 keyset 游标跳过。
 - 前后端写入会把空串、纯空白及大小写不敏感的 `"NULL"` 统一视为空；可选字段写 SQL `NULL`，必填字段拒绝空值。
 - 历史 `pipeline_param` 不直接批量重写；读取或重新触发任务时，仅对白名单中的遗留可空参数做兼容归一。
+
+当前迁移命令、停机升级和 dirty 恢复流程以[数据库迁移与恢复手册](../operations/database-migrations.md)为准。
 
 ## 部署前检查
 

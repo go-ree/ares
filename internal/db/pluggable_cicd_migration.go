@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,28 +10,57 @@ import (
 
 const pluggableCICDMigrationVersion = "20260903_001_pluggable_cicd"
 
+func newPluggableCICDSchemaMigration(implementationID string) schemaMigration {
+	return schemaMigration{
+		epoch: 2, version: pluggableCICDMigrationVersion,
+		description: "建立可插拔 CI/CD 结构", compatibleMin: 2, compatibleMax: 2,
+		payload:          "pluggable-cicd-algorithm-v1|dynamic-environments|workflow-v1|legacy-import",
+		implementationID: implementationID,
+		preflight:        func(session *migrationSession) error { return session.verifyPluggableCICDResumeState() },
+		up:               func(session *migrationSession) error { return session.migratePluggableCICD() },
+		verify:           func(session *migrationSession) error { return session.verifyPluggableCICDPostconditions() },
+	}
+}
+
 // migratePluggableCICD is an expand-only migration. Legacy pipeline tables and
 // task_record CI/CD columns intentionally remain available while existing
 // runs are drained by the v1 worker.
-func migratePluggableCICD() error {
-	if err := ensurePluggableCICDColumns(); err != nil {
+func (s *migrationSession) migratePluggableCICD() error {
+	if err := s.ensurePluggableCICDColumns(); err != nil {
 		return err
 	}
-	if err := normalizeEnvironmentCatalog(); err != nil {
+	if err := s.normalizeEnvironmentCatalog(); err != nil {
 		return err
 	}
 	for _, statement := range pluggableCICDTables() {
-		if err := execMigrationStatement(statement); err != nil {
+		if err := s.execMigrationStatement(statement); err != nil {
 			return err
 		}
 	}
-	if err := importLegacyWorkflowBindings(); err != nil {
+	if err := s.importLegacyWorkflowBindings(); err != nil {
 		return err
 	}
-	if err := ensureActiveAppEnvironmentUniqueness(); err != nil {
+	if err := s.ensureActiveAppEnvironmentUniqueness(); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (s *migrationSession) verifyPluggableCICDResumeState() error {
+	if err := s.verifySemanticSchemaStates("可插拔 CI/CD 迁移恢复状态", epoch2ResumeSchemaStates()); err != nil {
+		return err
+	}
+	return s.verifyEpochDataContracts(1)
+}
+
+// verifyPluggableCICDPostconditions is the immutable, complete epoch-2
+// contract. It composes epoch 1's retained data invariant and owns an
+// independent deep-cloned exact schema snapshot.
+func (s *migrationSession) verifyPluggableCICDPostconditions() error {
+	if err := s.verifySemanticSchema("可插拔 CI/CD 迁移后置条件", epoch2SemanticSchemaManifest); err != nil {
+		return err
+	}
+	return s.verifyEpochDataContracts(2)
 }
 
 type legacyWorkflowImport struct {
@@ -62,11 +90,11 @@ type importedWorkflowStep struct {
 // importLegacyWorkflowBindings turns the historical package-type CI/CD pair
 // into an ordinary two-slot workflow. No external system is contacted here.
 // Existing bindings always win, making the import safe to resume.
-func importLegacyWorkflowBindings() error {
-	ctx, cancel := context.WithTimeout(context.Background(), migrationOperationTimeout())
+func (s *migrationSession) importLegacyWorkflowBindings() error {
+	ctx, cancel := s.operationContext()
 	defer cancel()
 
-	rows, err := migrationDatabase().QueryContext(ctx, `SELECT c.config_id, a.app_name, c.env,
+	rows, err := s.executor.QueryContext(ctx, `SELECT c.config_id, a.app_name, c.env,
 		combination.ci_job_name, combination.cd_job_name
 		FROM app_configs c
 		JOIN apps a ON a.app_id = c.app_id AND a.deleted_at IS NULL
@@ -99,7 +127,7 @@ func importLegacyWorkflowBindings() error {
 		return nil
 	}
 
-	tx, err := migrationDatabase().BeginTx(ctx, nil)
+	tx, err := s.executor.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin legacy workflow import: %w", err)
 	}
@@ -166,7 +194,7 @@ func legacyWorkflowName(appName, env string, configID int) string {
 	return string(runes[:prefixLength]) + string(suffix)
 }
 
-func ensurePluggableCICDColumns() error {
+func (s *migrationSession) ensurePluggableCICDColumns() error {
 	columns := []struct {
 		table, column, definition string
 	}{
@@ -176,7 +204,7 @@ func ensurePluggableCICDColumns() error {
 		{"task_record", "workflow_version_id", "BIGINT NOT NULL DEFAULT 0 AFTER `engine_version`"},
 	}
 	for _, column := range columns {
-		if err := ensureMigrationColumn(column.table, column.column, column.definition); err != nil {
+		if err := s.ensureMigrationColumn(column.table, column.column, column.definition); err != nil {
 			return err
 		}
 	}
@@ -190,14 +218,14 @@ func ensurePluggableCICDColumns() error {
 			table: "env_configs", column: column, nullable: true,
 		})
 	}
-	if err := ensureTextColumnDefinitions(legacyEnvironmentColumns); err != nil {
+	if err := s.ensureTextColumnDefinitions(legacyEnvironmentColumns); err != nil {
 		return fmt.Errorf("make legacy environment tool fields optional: %w", err)
 	}
 	return nil
 }
 
-func normalizeEnvironmentCatalog() error {
-	invalidCodes, err := findInvalidActiveEnvironmentCodes()
+func (s *migrationSession) normalizeEnvironmentCatalog() error {
+	invalidCodes, err := s.findInvalidActiveEnvironmentCodes()
 	if err != nil {
 		return err
 	}
@@ -209,7 +237,7 @@ func normalizeEnvironmentCatalog() error {
 	}
 
 	var duplicate string
-	err = queryScalar(`SELECT COALESCE(GROUP_CONCAT(CONCAT(app_id, ':', normalized_env) ORDER BY app_id, normalized_env SEPARATOR ', '), '')
+	err = s.queryScalar(`SELECT COALESCE(GROUP_CONCAT(CONCAT(app_id, ':', normalized_env) ORDER BY app_id, normalized_env SEPARATOR ', '), '')
 		FROM (
 			SELECT app_id, LOWER(TRIM(env)) AS normalized_env
 			FROM app_configs
@@ -225,7 +253,7 @@ func normalizeEnvironmentCatalog() error {
 	}
 
 	var duplicateEnvironment string
-	err = queryScalar(`SELECT COALESCE(GROUP_CONCAT(normalized_env ORDER BY normalized_env SEPARATOR ', '), '')
+	err = s.queryScalar(`SELECT COALESCE(GROUP_CONCAT(normalized_env ORDER BY normalized_env SEPARATOR ', '), '')
 		FROM (
 			SELECT LOWER(TRIM(env)) AS normalized_env
 			FROM env_configs
@@ -238,12 +266,31 @@ func normalizeEnvironmentCatalog() error {
 	if duplicateEnvironment != "" {
 		return fmt.Errorf("cannot normalize environment catalog; duplicate normalized values: %s", duplicateEnvironment)
 	}
+	var deletedEnvironmentReferences string
+	err = s.queryScalar(`SELECT COALESCE(GROUP_CONCAT(c.config_id ORDER BY c.config_id SEPARATOR ', '), '')
+		FROM app_configs c
+		JOIN env_configs deleted_environment
+			ON LOWER(TRIM(deleted_environment.env)) = LOWER(TRIM(c.env))
+			AND deleted_environment.deleted_at IS NOT NULL
+		LEFT JOIN env_configs active_environment
+			ON LOWER(TRIM(active_environment.env)) = LOWER(TRIM(c.env))
+			AND active_environment.deleted_at IS NULL
+		WHERE c.deleted_at IS NULL AND active_environment.id IS NULL`, &deletedEnvironmentReferences)
+	if err != nil {
+		return fmt.Errorf("inspect active app configs referencing deleted environments: %w", err)
+	}
+	if deletedEnvironmentReferences != "" {
+		return fmt.Errorf(
+			"cannot migrate active app configs that reference soft-deleted environments; restore or reassign config_ids=%s",
+			deletedEnvironmentReferences,
+		)
+	}
 
 	for _, statement := range []string{
 		"UPDATE env_configs SET env = LOWER(TRIM(env)), updated_at = updated_at WHERE BINARY env <> BINARY LOWER(TRIM(env))",
 		"UPDATE app_configs SET env = LOWER(TRIM(env)), updated_at = updated_at WHERE BINARY env <> BINARY LOWER(TRIM(env))",
 	} {
-		if err := execMigrationStatement(statement); err != nil {
+		if err := s.execMigrationStatement(statement); err != nil {
 			return fmt.Errorf("normalize environment codes: %w", err)
 		}
 	}
@@ -263,11 +310,12 @@ func normalizeEnvironmentCatalog() error {
 			FROM task_record
 			WHERE TRIM(env) <> ''
 				AND CHAR_LENGTH(LOWER(TRIM(env))) <= 63
-				AND LOWER(TRIM(env)) REGEXP '^[a-z][a-z0-9._-]{0,62}$'
+				AND REGEXP_LIKE(LOWER(TRIM(env)), '^[a-z]', 'c')
+				AND NOT REGEXP_LIKE(LOWER(TRIM(env)), '[^a-z0-9._-]', 'c')
 		) source
 		LEFT JOIN env_configs existing ON existing.env = source.env
 		WHERE existing.id IS NULL`
-	if err := execMigrationStatement(backfill); err != nil {
+	if err := s.execMigrationStatement(backfill); err != nil {
 		return fmt.Errorf("backfill environment catalog: %w", err)
 	}
 	return nil
@@ -277,23 +325,25 @@ func normalizeEnvironmentCatalog() error {
 // truncate an old app/task environment into env_configs. Historical task rows
 // remain readable even when their value is no longer a valid catalog code;
 // active catalog and app-config rows must be manageable through the current API.
-func findInvalidActiveEnvironmentCodes() ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), migrationOperationTimeout())
+func (s *migrationSession) findInvalidActiveEnvironmentCodes() ([]string, error) {
+	ctx, cancel := s.operationContext()
 	defer cancel()
-	rows, err := migrationDatabase().QueryContext(ctx, `SELECT source
+	rows, err := s.executor.QueryContext(ctx, `SELECT source
 		FROM (
 			SELECT CONCAT('env_configs:', id, '=', env) AS source
 			FROM env_configs
 			WHERE deleted_at IS NULL AND (
 				CHAR_LENGTH(LOWER(TRIM(env))) NOT BETWEEN 1 AND 63
-				OR LOWER(TRIM(env)) NOT REGEXP '^[a-z][a-z0-9._-]{0,62}$'
+				OR NOT REGEXP_LIKE(LOWER(TRIM(env)), '^[a-z]', 'c')
+				OR REGEXP_LIKE(LOWER(TRIM(env)), '[^a-z0-9._-]', 'c')
 			)
 			UNION ALL
 			SELECT CONCAT('app_configs:', config_id, '=', env) AS source
 			FROM app_configs
 			WHERE deleted_at IS NULL AND (
 				CHAR_LENGTH(LOWER(TRIM(env))) NOT BETWEEN 1 AND 63
-				OR LOWER(TRIM(env)) NOT REGEXP '^[a-z][a-z0-9._-]{0,62}$'
+				OR NOT REGEXP_LIKE(LOWER(TRIM(env)), '^[a-z]', 'c')
+				OR REGEXP_LIKE(LOWER(TRIM(env)), '[^a-z0-9._-]', 'c')
 			)
 		) invalid
 		ORDER BY source
@@ -319,31 +369,138 @@ func findInvalidActiveEnvironmentCodes() ([]string, error) {
 	return values, nil
 }
 
-func ensureActiveAppEnvironmentUniqueness() error {
-	if err := ensureMigrationColumn("app_configs", "active_env",
+func (s *migrationSession) verifyNormalizedActiveEnvironmentCodes() error {
+	ctx, cancel := s.operationContext()
+	defer cancel()
+	rows, err := s.executor.QueryContext(ctx, `SELECT source
+		FROM (
+			SELECT CONCAT('env_configs:', id, '=', env) AS source
+			FROM env_configs
+			WHERE deleted_at IS NULL AND (
+				BINARY env <> BINARY LOWER(TRIM(env))
+				OR CHAR_LENGTH(env) NOT BETWEEN 1 AND 63
+				OR NOT REGEXP_LIKE(env, '^[a-z]', 'c')
+				OR REGEXP_LIKE(env, '[^a-z0-9._-]', 'c')
+			)
+			UNION ALL
+			SELECT CONCAT('app_configs:', config_id, '=', env) AS source
+			FROM app_configs
+			WHERE deleted_at IS NULL AND (
+				BINARY env <> BINARY LOWER(TRIM(env))
+				OR CHAR_LENGTH(env) NOT BETWEEN 1 AND 63
+				OR NOT REGEXP_LIKE(env, '^[a-z]', 'c')
+				OR REGEXP_LIKE(env, '[^a-z0-9._-]', 'c')
+			)
+		) invalid
+		ORDER BY source
+		LIMIT 21`)
+	if err != nil {
+		return fmt.Errorf("verify normalized active environment codes: %w", err)
+	}
+	defer rows.Close()
+	problems := make([]string, 0, 21)
+	for rows.Next() {
+		var source string
+		if err := rows.Scan(&source); err != nil {
+			return fmt.Errorf("scan non-canonical active environment code: %w", err)
+		}
+		problems = append(problems, source)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate non-canonical active environment codes: %w", err)
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	if len(problems) > 20 {
+		problems = append(problems[:20], "...")
+	}
+	return &SchemaStateError{Problems: []string{
+		"active environment codes are not canonical lowercase values matching ^[a-z][a-z0-9._-]{0,62}$: " +
+			strings.Join(problems, ", "),
+	}}
+}
+
+func (s *migrationSession) verifyActiveAppEnvironmentsResolveToCatalog() error {
+	ctx, cancel := s.operationContext()
+	defer cancel()
+	rows, err := s.executor.QueryContext(ctx, `SELECT c.config_id, c.env
+		FROM app_configs c
+		LEFT JOIN env_configs environment
+			ON BINARY environment.env = BINARY c.env
+			AND environment.deleted_at IS NULL
+		WHERE c.deleted_at IS NULL AND environment.id IS NULL
+		ORDER BY c.config_id
+		LIMIT 21`)
+	if err != nil {
+		return fmt.Errorf("verify active app environment catalog references: %w", err)
+	}
+	defer rows.Close()
+	problems := make([]string, 0, 21)
+	for rows.Next() {
+		var configID int64
+		var environment string
+		if err := rows.Scan(&configID, &environment); err != nil {
+			return fmt.Errorf("scan unresolved active app environment: %w", err)
+		}
+		problems = append(problems, fmt.Sprintf("app_configs:%d=%s", configID, environment))
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate unresolved active app environments: %w", err)
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	if len(problems) > 20 {
+		problems = append(problems[:20], "...")
+	}
+	return &SchemaStateError{Problems: []string{
+		"active app environments do not resolve to visible catalog entries: " + strings.Join(problems, ", "),
+	}}
+}
+
+func (s *migrationSession) ensureActiveAppEnvironmentUniqueness() error {
+	if err := s.ensureMigrationColumn("app_configs", "active_env",
 		"VARCHAR(100) GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, `env`, NULL)) STORED AFTER `env`"); err != nil {
 		return err
 	}
-	var exists bool
-	if err := queryScalar(`SELECT EXISTS(
-		SELECT 1 FROM information_schema.STATISTICS
-		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'app_configs'
-			AND INDEX_NAME = 'uk_app_active_env'
-	)`, &exists); err != nil {
+	exists, err := s.hasEquivalentMigrationIndex(
+		"app_configs", uniqueIndex("app_id", "active_env"))
+	if err != nil {
 		return fmt.Errorf("inspect app environment unique index: %w", err)
 	}
 	if exists {
 		return nil
 	}
-	return execMigrationStatement("ALTER TABLE app_configs ADD UNIQUE INDEX uk_app_active_env (app_id, active_env)")
+	return s.execMigrationStatement("ALTER TABLE app_configs ADD UNIQUE INDEX uk_app_active_env (app_id, active_env)")
 }
 
-func ensureMigrationColumn(table, column, definition string) error {
+// hasEquivalentMigrationIndex intentionally ignores operator-chosen index
+// names. Migration idempotency is defined by primary/unique/normal kind and
+// ordered columns, matching the schema manifest contract.
+func (s *migrationSession) hasEquivalentMigrationIndex(
+	table string,
+	expected schemaIndexManifest,
+) (bool, error) {
+	if !safeSQLIdentifier(table) {
+		return false, fmt.Errorf("unsafe migration table identifier %s", table)
+	}
+	ctx, cancel := s.operationContext()
+	defer cancel()
+	snapshot := schemaSnapshot{indexes: make(map[string][]schemaIndexState)}
+	if err := readSchemaIndexes(ctx, s.executor, &snapshot); err != nil {
+		return false, err
+	}
+	return len(compareIndexDefinitions(
+		table, snapshot.indexes[table], []schemaIndexManifest{expected}, false)) == 0, nil
+}
+
+func (s *migrationSession) ensureMigrationColumn(table, column, definition string) error {
 	if !safeSQLIdentifier(table) || !safeSQLIdentifier(column) {
 		return fmt.Errorf("unsafe migration column identifier %s.%s", table, column)
 	}
 	var exists bool
-	if err := queryScalar(`SELECT EXISTS(
+	if err := s.queryScalar(`SELECT EXISTS(
 		SELECT 1 FROM information_schema.COLUMNS
 		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
 	)`, &exists, table, column); err != nil {
@@ -352,13 +509,13 @@ func ensureMigrationColumn(table, column, definition string) error {
 	if exists {
 		return nil
 	}
-	return execMigrationStatement(fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN `%s` %s", table, column, definition))
+	return s.execMigrationStatement(fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN `%s` %s", table, column, definition))
 }
 
-func execMigrationStatement(statement string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), migrationOperationTimeout())
+func (s *migrationSession) execMigrationStatement(statement string) error {
+	ctx, cancel := s.operationContext()
 	defer cancel()
-	if _, err := migrationDatabase().ExecContext(ctx, statement); err != nil {
+	if _, err := s.executor.ExecContext(ctx, statement); err != nil {
 		return fmt.Errorf("execute migration statement %q: %w", compactSQL(statement), err)
 	}
 	return nil

@@ -4,7 +4,9 @@ package entity
 const (
 	TableApps                = "apps"
 	TableAppConfigs          = "app_configs"
+	TableAppConfigDomains    = "app_config_domains"
 	TableTaskRecord          = "task_record"
+	TableTaskRecordImages    = "task_record_images"
 	TablePipelines           = "pipelines"
 	TablePipelineJobs        = "pipelines_job_combination"
 	TableEnvConfigs          = "env_configs"

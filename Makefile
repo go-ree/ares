@@ -23,9 +23,9 @@ NPM_VERSION ?= 11.19.1
 SYFT_VERSION ?= v1.51.1
 TRIVY_VERSION ?= v0.74.0
 GO_PACKAGES ?= . ./internal/...
-RACE_PACKAGES ?= ./internal/workflow ./internal/executor/... ./internal/integration ./internal/jenkins ./internal/k8s ./internal/publish ./internal/environment ./internal/api/...
+RACE_PACKAGES ?= ./internal/cli ./internal/config ./internal/db ./internal/workflow ./internal/executor/... ./internal/integration ./internal/jenkins ./internal/k8s ./internal/publish ./internal/environment ./internal/api/...
 
-.PHONY: help all clean fmt-check mod-check test vet race vuln toolchain-check workflow-check backend-check frontend-install frontend-check frontend-audit swagger swagger-check compose-config build build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-windows-amd64 docker docker-build syft-version-check trivy-version-check sbom image-scan verify
+.PHONY: help all clean fmt-check mod-check test db-integration db-account-integration vet race vuln toolchain-check workflow-check backend-check frontend-install frontend-check frontend-audit swagger swagger-check compose-config build build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-windows-amd64 docker docker-build syft-version-check trivy-version-check sbom image-scan verify
 
 help: ## 显示可用命令
 	@awk 'BEGIN {FS = ":.*## "; printf "Ares 开发命令\n\n"} /^[a-zA-Z0-9_.-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -42,7 +42,8 @@ clean: ## 删除仓库 build 目录下的构建产物
 	rm -rf -- "$$repo_root/build"
 
 fmt-check: ## 检查 Go 源码格式
-	@unformatted_files="$$(git ls-files -z '*.go' | xargs -0 gofmt -l --)"; \
+	@set -eu; \
+	unformatted_files="$$(git ls-files -z '*.go' | xargs -0 gofmt -l --)"; \
 	if [ -n "$$unformatted_files" ]; then \
 		echo "以下 Go 文件需要执行 gofmt："; \
 		echo "$$unformatted_files"; \
@@ -55,6 +56,16 @@ mod-check: ## 校验 Go 模块内容及 go.mod/go.sum 一致性
 
 test: ## 运行 Go 全量测试
 	$(GO) test -count=1 $(GO_PACKAGES)
+
+db-integration: ## 在 MySQL 8.4 上运行数据库迁移集成测试（需要 ARES_TEST_MYSQL_DSN）
+	@test -n "$$ARES_TEST_MYSQL_DSN" || { echo "请设置 MySQL 8.4 管理员 DSN：ARES_TEST_MYSQL_DSN"; exit 1; }
+	$(GO) test -count=1 -run '^(TestPreW04FixtureIsImmutable|TestMySQL84Migrations)$$' ./internal/db
+	$(GO) test -count=1 -run '^(TestMigrationCLIExitCodesAndSafeOutput|TestServeRejectsEmptySchemaBeforeStartingRuntime)$$' .
+
+db-account-integration: ## 在 MySQL 8.4 容器中动态验证最小权限账号初始化
+	@test -n "$$ARES_TEST_MYSQL_CONTAINER" || { echo "请设置 MySQL 8.4 容器名：ARES_TEST_MYSQL_CONTAINER"; exit 1; }
+	@test -n "$$ARES_TEST_MYSQL_ROOT_PASSWORD" || { echo "请设置容器 root 密码：ARES_TEST_MYSQL_ROOT_PASSWORD"; exit 1; }
+	DOCKER_BIN="$(DOCKER)" bash deploy/compose/mysql/account-init-integration.sh
 
 vet: ## 运行 Go 静态检查
 	$(GO) vet $(GO_PACKAGES)
@@ -135,6 +146,8 @@ swagger-check: swagger ## 校验 Swagger 已提交且可重复生成
 	fi
 
 compose-config: ## 校验 Docker Compose 配置
+	bash -n deploy/compose/mysql/01-create-users.sh
+	bash -n deploy/compose/mysql/account-init-integration.sh
 	$(DOCKER) compose config --quiet
 
 build: ## 构建当前平台二进制

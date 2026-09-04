@@ -39,6 +39,38 @@ make verify
 - Swagger 固定版本重复生成检查；
 - Docker Compose 配置校验。
 
+仓库根目录的 `.gitattributes` 将 Go、Shell、SQL、YAML、Markdown 和 JSON 文本统一固定为 LF。迁移 checksum、实现/引擎源码指纹和 Shell 容器执行都依赖稳定字节边界；不得用平台默认换行静默重写这些文件。
+
+数据库 migration 需要真实 MySQL 8.4 语义，因此不放进无数据库依赖的 `make verify`。在一次性测试实例上另行执行：
+
+```bash
+ARES_TEST_MYSQL_DSN='root:<密码>@tcp(127.0.0.1:3306)/mysql?parseTime=true' \
+  make db-integration
+```
+
+该 DSN 必须是能够创建/删除隔离测试数据库和临时账号的 MySQL 8.4 管理连接，不得指向包含业务数据的实例。自动化矩阵会校验：
+
+- 空库只读 status、epoch 1 bootstrap、顺序迁移、重复 up 与 bootstrap 中断续跑；
+- 固定 W04 前历史库和每个旧 ledger 连续前缀的精确契约，未知版本/断档/畸形 ledger、历史数据或任意 schema 漂移均在新 dirty 行前零写入拒绝；历史 NULL 批处理覆盖 `0`、负 INT 和最小 BIGINT 主键；
+- dirty 的显式恢复、目标对象定义和语句顺序边界、首次 `started_at` 保留、初始 `last_error=NULL` marker、checksum/兼容区间/未知 epoch fail-closed，以及失败后的真实 dirty 状态；
+- 全列定义、精确字符集/排序规则、CHECK、视图、主键/唯一索引及其他索引的类型/方向/可见性、出向及外部入向外键语义、活动环境代码，以及未删除 AppConfig 必须指向未删除环境目录项的数据不变量；活动环境代码末尾的 LF/CR/CRLF 必须被拒绝，同类历史任务值不得回填为目录；结构必须先于依赖它的数据查询被分类为 schema 漂移；
+- 两个独立 OS 进程和独立连接经同一 MySQL 实例执行时的 migrator 并发收敛、精确锁超时零写入、MySQL 版本拒绝、错误脱敏，以及运行时业务 DML 正常、DDL 与 ledger 写入均被 MySQL 拒绝；
+- 通过真实 `realMain` 入口验证 `status`、`up`、`serve`、用法错误和连接故障的退出码、stdout/stderr 与敏感值脱敏，而不只测试内部函数。
+
+历史夹具来自 `main@e2cfd2a`，内容由 SHA-256 测试锁定；改变基线必须先做显式架构决策，不能直接覆盖夹具。每个 epoch 的 manifest/data-contract、bootstrap 和迁移实现都有独立 golden；共享引擎指纹额外覆盖 runner、ledger 收养、manifest 比较、迁移目录调度和 dirty 恢复路径，安全修复必须显式更新审计基线。MySQL 会对低权限账号隐藏部分 trigger/event/routine 和外部入向外键元数据，因此账号有效权限、特权对象及入向依赖缺失还必须执行管理员 E2E，不能以普通 manifest 查询替代。guarded 数据库身份还要在 `lower_case_table_names=1` 的 MySQL 8.4 实例上验证：DSN 大小写可由服务端归一化，但 migrator、管理员和清理连接的实际 `DATABASE()` 必须一致。配置单元测试同时固定严格 YAML 契约：未知顶层/嵌套字段、多文档均失败且不替换活动配置。
+
+账号脚本另有真实 MySQL 8.4 动态检查，可在隔离容器上执行：
+
+```bash
+ARES_TEST_MYSQL_CONTAINER='<容器名>' \
+ARES_TEST_MYSQL_ROOT_PASSWORD='<root 密码>' \
+  make db-account-integration
+```
+
+该检查验证未知旧 schema grantee 在任何写入前被拒绝、migrator 初始化及重跑后均锁定且无会话、长期密码无法登录、有效权限精确且无 `DROP`，以及开启 `general_log` 时密码语句仅留下 MySQL 重写的 `<secret>`、不出现明文或可逆十六进制中间值。它还会拒绝缺任一直接全局 `PROCESS`、`CREATE USER`、`SELECT`、`TRIGGER`、`EVENT`、`SHOW VIEW`、`CONNECTION_ADMIN`/`SUPER` 或带 partial Restrictions 的管理员身份。GitHub Actions 的 `MySQL 8.4 最小权限账号检查` 会在专用临时容器中自动运行同一入口。
+
+发起数据库相关 PR 前还应在一次性隔离 Compose 环境记录完整 E2E 证据：新 volume 的完整依赖链与重复启动、旧 volume 在旧授权未撤销时零写入拒绝及 DBA 撤权后的升级、3 个 Demo 应用/4 个环境/12 个 AppConfig、runtime 业务 DML 与 DDL/ledger 拒绝、guarded migrator 成功/失败后均锁定且无会话，以及账号脚本对 mandatory roles、匿名/同名 Host、双密码、旧会话、出向 role/PROXY/DEFINER、管理员元数据权限/Restrictions、schema 可执行对象和外部入向外键的 fail-closed 行为。所有账号与迁移连接必须固定到同一 single-writer MySQL 8.4 实例；多写拓扑另需外部分布式互斥。备份恢复需分别证明 epoch 4 dump 可由 W04 `status`/`serve` 使用，以及迁移前 dump 可由创建备份的精确旧二进制健康启动并完成关键读写。旧二进制启动恢复仍是发布前本地 E2E，不由当前 GitHub Actions 自动执行。
+
 当前后端 Go 源码位于模块根目录和 `internal/`，因此门禁显式使用 `. ./internal/...`，避免误扫 `frontend/node_modules` 中第三方包附带的 Go 示例。后续新增 `cmd/`、`pkg/` 等 Go 源码目录时，必须在同一个 PR 中扩展 `GO_PACKAGES` 并更新本文。
 
 镜像相关检查单独执行，避免日常代码检查隐式修改或启动本地容器：
@@ -63,7 +95,7 @@ make image-scan
 
 仓库包含两条工作流：
 
-- `质量门禁`：检查 Actions 语法、后端、关键包竞态、Go 可达漏洞和前端；
+- `质量门禁`：检查 Actions 语法、后端、MySQL 8.4 迁移与恢复、MySQL 8.4 最小权限账号、关键包竞态、Go 可达漏洞和前端；
 - `镜像与供应链`：校验 Compose、构建前后端镜像、生成 SPDX JSON SBOM，并使用 Trivy 扫描 high/critical 漏洞。
 
 工作流在指向 `main` 的 PR 和 `main` 推送上运行；镜像扫描还会每周执行一次。供应链工作流分别保存后端运行时镜像、前端 Nginx 运行时镜像和前端 lockfile 应用依赖三份 SBOM，避免压缩后的前端 bundle 丢失 npm 元数据。SBOM 与扫描报告作为 Actions Artifact 保留 14 天。工作流只有 `contents: read` 权限，不使用 PR 代码可访问的写权限或发布凭据。
@@ -72,10 +104,12 @@ make image-scan
 
 1. `工作流语法检查`
 2. `后端测试与静态检查`
-3. `关键包竞态检查`
-4. `Go 漏洞检查`
-5. `前端质量检查`
-6. `Compose、镜像与供应链检查`
+3. `MySQL 8.4 迁移与恢复检查`
+4. `MySQL 8.4 最小权限账号检查`
+5. `关键包竞态检查`
+6. `Go 漏洞检查`
+7. `前端质量检查`
+8. `Compose、镜像与供应链检查`
 
 Required Checks 只能在本 PR 合并、对应检查至少成功运行一次后由仓库维护者启用。在保护规则启用前，这份清单是目标配置，不代表 GitHub 已经强制执行。
 
@@ -105,6 +139,7 @@ Go 以 govulncheck 的可达调用结果为合并门禁，同时保留模块级�
 
 - 工具链、依赖管理器或最低运行版本；
 - Makefile 验证入口；
+- `.gitattributes` 的文本与换行策略；
 - 工作流、Job 名称或 Required Checks；
 - 漏洞阈值、SBOM 格式、报告保留周期或豁免；
 - 分支保护和合并策略。

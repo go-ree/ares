@@ -1,5 +1,13 @@
 name: ares
 
+x-ares-backend: &ares-backend
+  image: ares-api:local
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+
 services:
   mysql:
     image: mysql:8.4
@@ -7,8 +15,6 @@ services:
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-ares}
-      MYSQL_USER: ${MYSQL_USER:-ares}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ares-demo-password}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-ares-root-password}
     command:
       - --character-set-server=utf8mb4
@@ -16,7 +22,7 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mysql --protocol=tcp --host=127.0.0.1 --user=root --connect-timeout=5 --batch --skip-column-names --execute='SELECT 1' | grep -qx '1'"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -24,25 +30,114 @@ services:
     networks:
       - ares
 
+  database-migrator-user:
+    image: mysql:8.4
+    restart: "no"
+    init: true
+    entrypoint: ["/bin/bash", "/opt/ares/ensure-users.sh"]
+    environment:
+      ARES_DATABASE_ACCOUNT_ROLE: migrator
+      ARES_DATABASE_ACCOUNT_CONNECT_TIMEOUT_SECONDS: ${ARES_DATABASE_ACCOUNT_CONNECT_TIMEOUT_SECONDS:-5}
+      ARES_DATABASE_ACCOUNT_LOCK_TIMEOUT_SECONDS: ${ARES_DATABASE_ACCOUNT_LOCK_TIMEOUT_SECONDS:-30}
+      ARES_DATABASE_ACCOUNT_INIT_TIMEOUT_SECONDS: ${ARES_DATABASE_ACCOUNT_INIT_TIMEOUT_SECONDS:-60}
+      MYSQL_HOST: mysql
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ares}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-ares-root-password}
+      MYSQL_RUNTIME_USER: ${MYSQL_RUNTIME_USER:-ares_runtime}
+      MYSQL_MIGRATION_USER: ${MYSQL_MIGRATION_USER:-ares_migrator}
+      MYSQL_MIGRATION_PASSWORD: ${MYSQL_MIGRATION_PASSWORD:-ares-migrator-demo-password}
+    volumes:
+      - ./deploy/compose/mysql/01-create-users.sh:/opt/ares/ensure-users.sh:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    networks:
+      - ares
+
+  migrate:
+    <<: *ares-backend
+    command: ["migrate", "up"]
+    restart: "no"
+    init: true
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      ARES_DB_MIGRATION_CONN_STR: "${MYSQL_MIGRATION_USER:-ares_migrator}:${MYSQL_MIGRATION_PASSWORD:-ares-migrator-demo-password}@tcp(mysql:3306)/${MYSQL_DATABASE:-ares}?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai&timeout=5s&readTimeout=10s&writeTimeout=10s"
+      ARES_DB_MIGRATION_ADMIN_CONN_STR: "root:${MYSQL_ROOT_PASSWORD:-ares-root-password}@tcp(mysql:3306)/${MYSQL_DATABASE:-ares}?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai&timeout=5s&readTimeout=10s&writeTimeout=10s"
+      ARES_DB_CONN_STR: "root:${MYSQL_ROOT_PASSWORD:-ares-root-password}@tcp(mysql:3306)/${MYSQL_DATABASE:-ares}?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai&timeout=5s&readTimeout=10s&writeTimeout=10s"
+      ARES_DB_SCHEMA_MIGRATION_TIMEOUT: ${ARES_DB_SCHEMA_MIGRATION_TIMEOUT:-2m}
+      ARES_DB_MIGRATION_LOCK_TIMEOUT: ${ARES_DB_MIGRATION_LOCK_TIMEOUT:-30s}
+    depends_on:
+      database-migrator-user:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    networks:
+      - ares
+
+  database-runtime-user:
+    image: mysql:8.4
+    restart: "no"
+    init: true
+    entrypoint: ["/bin/bash", "/opt/ares/ensure-users.sh"]
+    environment:
+      ARES_DATABASE_ACCOUNT_ROLE: runtime
+      ARES_DATABASE_ACCOUNT_CONNECT_TIMEOUT_SECONDS: ${ARES_DATABASE_ACCOUNT_CONNECT_TIMEOUT_SECONDS:-5}
+      ARES_DATABASE_ACCOUNT_LOCK_TIMEOUT_SECONDS: ${ARES_DATABASE_ACCOUNT_LOCK_TIMEOUT_SECONDS:-30}
+      ARES_DATABASE_ACCOUNT_INIT_TIMEOUT_SECONDS: ${ARES_DATABASE_ACCOUNT_INIT_TIMEOUT_SECONDS:-60}
+      MYSQL_HOST: mysql
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ares}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-ares-root-password}
+      MYSQL_RUNTIME_USER: ${MYSQL_RUNTIME_USER:-ares_runtime}
+      MYSQL_RUNTIME_PASSWORD: ${MYSQL_RUNTIME_PASSWORD:-ares-runtime-demo-password}
+      MYSQL_MIGRATION_USER: ${MYSQL_MIGRATION_USER:-ares_migrator}
+    volumes:
+      - ./deploy/compose/mysql/01-create-users.sh:/opt/ares/ensure-users.sh:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    networks:
+      - ares
+
   ares:
-    image: ares-api:local
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    <<: *ares-backend
+    command: ["serve"]
     restart: unless-stopped
     init: true
     environment:
       TZ: ${TZ:-Asia/Shanghai}
-      ARES_DB_CONN_STR: "${MYSQL_USER:-ares}:${MYSQL_PASSWORD:-ares-demo-password}@tcp(mysql:3306)/${MYSQL_DATABASE:-ares}?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai&timeout=5s&readTimeout=10s&writeTimeout=10s"
+      ARES_DB_CONN_STR: "${MYSQL_RUNTIME_USER:-ares_runtime}:${MYSQL_RUNTIME_PASSWORD:-ares-runtime-demo-password}@tcp(mysql:3306)/${MYSQL_DATABASE:-ares}?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai&timeout=5s&readTimeout=10s&writeTimeout=10s"
       ARES_DB_SCHEMA_MIGRATION_TIMEOUT: ${ARES_DB_SCHEMA_MIGRATION_TIMEOUT:-2m}
       ARES_DEMO_DATA_ENABLED: ${ARES_DEMO_DATA_ENABLED:-true}
       ARES_SETTINGS_ADMIN_TOKEN: ${ARES_SETTINGS_ADMIN_TOKEN:-ares-local-admin-token}
       ARES_SETTINGS_ENCRYPTION_KEY: ${ARES_SETTINGS_ENCRYPTION_KEY:-ares-local-encryption-key-change-me-32chars}
     depends_on:
-      mysql:
-        condition: service_healthy
+      database-runtime-user:
+        condition: service_completed_successfully
     expose:
       - "8080"
     ports:
@@ -52,7 +147,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 36
-      start_period: ${ARES_DB_SCHEMA_MIGRATION_TIMEOUT:-2m}
+      start_period: 30s
     security_opt:
       - no-new-privileges:true
     read_only: true

@@ -63,6 +63,84 @@ jobs:
       - name: 执行后端质量检查
         run: make fmt-check mod-check test vet swagger-check
 
+  mysql-migrations:
+    name: MySQL 8.4 迁移与恢复检查
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ares-integration-root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="MYSQL_PWD=ares-integration-root mysql --protocol=tcp --host=127.0.0.1 --user=root --connect-timeout=5 --batch --skip-column-names --execute='SELECT 1' | grep -qx '1'"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      ARES_TEST_MYSQL_DSN: root:ares-integration-root@tcp(127.0.0.1:3306)/mysql?parseTime=true
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: 安装 Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: 验证版本化迁移、旧库升级与故障恢复
+        run: make db-integration
+
+  mysql-accounts:
+    name: MySQL 8.4 最小权限账号检查
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      ARES_TEST_MYSQL_CONTAINER: ares-account-init-mysql
+      ARES_TEST_MYSQL_ROOT_PASSWORD: ares-account-integration-root
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: 启动 MySQL 8.4
+        run: |
+          docker run --detach \
+            --name "$ARES_TEST_MYSQL_CONTAINER" \
+            --env "MYSQL_ROOT_PASSWORD=$ARES_TEST_MYSQL_ROOT_PASSWORD" \
+            --health-cmd='MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=tcp --host=127.0.0.1 --user=root --connect-timeout=5 --batch --skip-column-names --execute="SELECT 1" | grep -qx 1' \
+            --health-interval=3s \
+            --health-timeout=5s \
+            --health-retries=30 \
+            mysql:8.4
+          for _ in {1..40}; do
+            status="$(docker inspect --format '{{.State.Health.Status}}' "$ARES_TEST_MYSQL_CONTAINER")"
+            if [ "$status" = healthy ]; then
+              exit 0
+            fi
+            if [ "$status" = unhealthy ]; then
+              docker logs "$ARES_TEST_MYSQL_CONTAINER"
+              exit 1
+            fi
+            sleep 3
+          done
+          docker logs "$ARES_TEST_MYSQL_CONTAINER"
+          exit 1
+
+      - name: 动态验证账号初始化安全边界
+        run: make db-account-integration
+
+      - name: 清理 MySQL 8.4
+        if: always()
+        run: docker rm --force "$ARES_TEST_MYSQL_CONTAINER" >/dev/null 2>&1 || true
+
   race:
     name: 关键包竞态检查
     runs-on: ubuntu-24.04

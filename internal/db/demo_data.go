@@ -154,6 +154,7 @@ func nonEmptyDemoBusinessTables(session *xorm.Session) ([]string, error) {
 		name string
 		bean any
 	}{
+		{"env_configs", new(entity.EnvConfigs)},
 		{"apps", new(entity.Apps)},
 		{"app_configs", new(entity.AppConfigs)},
 		{"app_config_domains", new(entity.AppConfigDomain)},

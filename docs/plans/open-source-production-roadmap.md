@@ -1,9 +1,9 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W00 已完成，W01 实现已收口、仓库管理项阻塞
-> - 基线版本：`main@4d97008`，已合并 [PR #5：建立开源化与生产能力开发计划](https://github.com/go-ree/ares/pull/5)
-> - 最后更新：2026-09-03
+> - 当前状态：W01 仓库实现已合并、管理项阻塞，W04 的 GitHub 检查已通过，[PR #22](https://github.com/go-ree/ares/pull/22) 待维护者验收
+> - 基线版本：`main@e2cfd2a`，已合并 [PR #6：建立开源质量门禁与供应链基线](https://github.com/go-ree/ares/pull/6)
+> - 最后更新：2026-09-04
 
 本文承接 [可插拔 CI/CD 实施路线](pluggable-cicd-roadmap.md)。上一阶段已经完成动态环境、版本化工作流、通用串行编排和 Jenkins Adapter 的主链路；本计划负责把 Ares 从“可运行的开源 CI/CD 基础”推进到“可安全公开部署、可持续扩展、可进行生产化验证”的状态。
 
@@ -54,7 +54,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 
 - 当前登录身份来自浏览器本地数据，尚不能作为公开部署的身份与权限边界。
 - v2 任务日志尚未通过通用步骤能力读取，前端仍保留固定 CI/CD 的 Jenkins 日志兼容逻辑。
-- 存量表仍可能经过 Xorm 结构同步，结构变更尚未完全收敛到版本化迁移。
+- W04 已落地独立 migrator、运行时只读检查和显式 schema manifest，本地 MySQL 8.4 中断、并发、历史库与 Compose 验收矩阵及 GitHub 检查均已通过，[PR #22](https://github.com/go-ree/ares/pull/22) 正在等待维护者验收。
 - 发布接口尚无客户端幂等键和统一预检，重复请求可能创建不同任务。
 - Worker 只有步骤认领 CAS，没有完整 owner、lease、fencing 和多副本公平调度。
 - `attempt`、超时基础字段已经存在，但尚无完整重试、退避、取消与尝试历史。
@@ -72,19 +72,19 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 
 ## 3. 总进度看板
 
-| 工作包 | 主题                         | 依赖               | 状态     | 关联 PR                                        | 主要交付结果                                    |
-| ------ | ---------------------------- | ------------------ | -------- | ---------------------------------------------- | ----------------------------------------------- |
-| W00    | 后续路线与进度机制           | PR #4              | `已完成` | [PR #5](https://github.com/go-ree/ares/pull/5) | 建立本计划、状态口径和验收规则                  |
-| W01    | 开源工程与质量门禁           | W00                | `阻塞`   | [PR #6](https://github.com/go-ree/ares/pull/6) | 开源治理文件、Required Checks、依赖与供应链基线 |
-| W02    | 认证、RBAC 与审计            | W01                | `未开始` | 待创建                                         | 可信身份、服务端授权、真实发布人和审计记录      |
-| W03    | 通用步骤日志                 | W02                | `未开始` | 待创建                                         | 通过 `task_id + step_key` 读取任意执行器日志    |
-| W04    | 数据库迁移机制收敛           | W01                | `未开始` | 待创建                                         | 存量结构只由版本化 migration 改变               |
-| W05    | AppConfig 核心的幂等发布     | W02、W04           | `未开始` | 待创建                                         | 预检、`config_id` 发布、`Idempotency-Key`       |
-| W06    | 多副本 Worker 与租约         | W04、W05           | `未开始` | 待创建                                         | 公平领取、lease、fencing、故障接管              |
-| W07    | 重试、取消、超时与尝试历史   | W03、W06           | `未开始` | 待创建                                         | 可控的失败恢复和执行器取消能力                  |
-| W08    | Secret Resolver 与密钥轮换   | W02、W04           | `未开始` | 待创建                                         | 工作流只保存 Secret 引用，运行时按版本解析      |
-| W09    | 执行器开发套件与扩展生态     | W03、W07、W08      | `未开始` | 待创建                                         | 契约测试、模板及新增执行器                      |
-| W10    | 可观测性、正式发行与生产示例 | W01、W06、W07、W08 | `未开始` | 待创建                                         | 指标、告警、签名镜像、生产部署与升级工具        |
+| 工作包 | 主题                         | 依赖               | 状态     | 关联 PR                                          | 主要交付结果                                    |
+| ------ | ---------------------------- | ------------------ | -------- | ------------------------------------------------ | ----------------------------------------------- |
+| W00    | 后续路线与进度机制           | PR #4              | `已完成` | [PR #5](https://github.com/go-ree/ares/pull/5)   | 建立本计划、状态口径和验收规则                  |
+| W01    | 开源工程与质量门禁           | W00                | `阻塞`   | [PR #6](https://github.com/go-ree/ares/pull/6)   | 开源治理文件、Required Checks、依赖与供应链基线 |
+| W02    | 认证、RBAC 与审计            | W01                | `未开始` | 待创建                                           | 可信身份、服务端授权、真实发布人和审计记录      |
+| W03    | 通用步骤日志                 | W02                | `未开始` | 待创建                                           | 通过 `task_id + step_key` 读取任意执行器日志    |
+| W04    | 数据库迁移机制收敛           | W01                | `待验收` | [PR #22](https://github.com/go-ree/ares/pull/22) | 存量结构只由版本化 migration 改变               |
+| W05    | AppConfig 核心的幂等发布     | W02、W04           | `未开始` | 待创建                                           | 预检、`config_id` 发布、`Idempotency-Key`       |
+| W06    | 多副本 Worker 与租约         | W04、W05           | `未开始` | 待创建                                           | 公平领取、lease、fencing、故障接管              |
+| W07    | 重试、取消、超时与尝试历史   | W03、W06           | `未开始` | 待创建                                           | 可控的失败恢复和执行器取消能力                  |
+| W08    | Secret Resolver 与密钥轮换   | W02、W04           | `未开始` | 待创建                                           | 工作流只保存 Secret 引用，运行时按版本解析      |
+| W09    | 执行器开发套件与扩展生态     | W03、W07、W08      | `未开始` | 待创建                                           | 契约测试、模板及新增执行器                      |
+| W10    | 可观测性、正式发行与生产示例 | W01、W06、W07、W08 | `未开始` | 待创建                                           | 指标、告警、签名镜像、生产部署与升级工具        |
 
 依赖关系如下：
 
@@ -151,7 +151,7 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 - [ ] 确认 D-001 并合入对应 `LICENSE`。
 - [ ] 启用 GitHub Private vulnerability reporting，或提供真实、受控的安全邮箱。
 - [ ] 为行为准则事件提供独立的受控邮箱或私密表单，并明确利益冲突回避机制。
-- [ ] 本 PR 的六项检查至少成功运行一次后，为 `main` 启用 PR-only、Required Checks、禁止 force push/删除等保护规则。
+- [ ] 当前八项检查（PR #6 的六项基线，加 W04 的 `MySQL 8.4 迁移与恢复检查`、`MySQL 8.4 最小权限账号检查`）至少成功运行一次后，为 `main` 启用 PR-only、Required Checks、禁止 force push/删除等保护规则。
 
 非目标：本工作包不改变发布领域模型、任务状态机和运行时部署依赖。
 
@@ -227,12 +227,13 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 
 范围：
 
-- [ ] Xorm 只创建不存在的表；已存在表不再执行自动 ALTER/DROP。
-- [ ] 把剩余字段、类型、索引、外键和字符集修复全部迁移到版本化 SQL migration。
-- [ ] 提供独立的 `migrate status`、`migrate up` 和启动时只读兼容性检查。
-- [ ] migration 记录增加 checksum、started/finished、dirty 状态和 schema 兼容范围。
-- [ ] 生产运行账号不要求 DDL 权限，迁移使用独立授权账号或作业。
-- [ ] 补齐 expand/contract、前向修复、备份恢复和中断恢复文档。
+- [x] 形成 [ADR-0001：版本化数据库迁移与运行时兼容性检查](../architecture/decisions/0001-versioned-database-migrations.md)，固化 epoch、ledger、dirty 恢复、权限和发布边界。
+- [x] 从 `serve` 删除 Xorm Sync 和结构 DDL，改为只读兼容性检查；MySQL 8.4 与 Compose 已证明第二次启动不改 schema。
+- [x] 用显式 bootstrap、epoch 4 和 schema manifest 收口字段、类型、索引、外键及字符集；历史库、每个连续前缀和漂移矩阵均已通过。
+- [x] 提供独立的 `migrate status`、`migrate up` 和启动时只读兼容性检查；真实 `realMain` 已覆盖退出码和脱敏输出。
+- [x] migration ledger 增加 checksum、started/finished、dirty 状态和 schema 兼容范围；新库、旧两列 ledger 收养和故障恢复矩阵均已通过。
+- [x] 生产运行账号不要求 DDL 权限，迁移使用默认锁定的独立账号和管理员守护的单会话作业；动态账号测试与 Compose 权限探针均已通过。
+- [x] 补齐 expand/contract、前向修复、备份恢复和中断恢复文档，统一维护在[数据库迁移与恢复手册](../operations/database-migrations.md)。
 
 非目标：本阶段不删除旧业务表或旧发布字段；破坏性 contract 迁移另行评审。
 
@@ -396,14 +397,14 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 
 ## 6. 决策记录
 
-| 编号  | 决策               | 状态     | 结论或建议                                                                 | 影响工作包    |
-| ----- | ------------------ | -------- | -------------------------------------------------------------------------- | ------------- |
-| D-001 | 开源许可证         | `待确认` | 建议 Apache-2.0，由维护者最终确认                                          | W01           |
-| D-002 | 首个正式身份源     | `待设计` | 建议 OIDC + 本地 bootstrap 管理员                                          | W02           |
-| D-003 | 流式日志认证       | `待设计` | 建议同源 HttpOnly Cookie 或短时一次性流令牌                                | W02、W03      |
-| D-004 | migration 运行模式 | `待设计` | 建议独立 migrator，应用启动仅做兼容性检查                                  | W04           |
-| D-005 | 多副本交付语义     | `待固化` | Ares 提供 at-least-once；执行器必须配合幂等键，lease 使用 fencing 防陈旧写 | W05、W06、W07 |
-| D-006 | 中间件策略         | `待固化` | 默认不依赖 Redis/RabbitMQ；通知与队列能力通过可选 Adapter 扩展             | W09、W10      |
+| 编号  | 决策               | 状态     | 结论或建议                                                                                                                 | 影响工作包    |
+| ----- | ------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| D-001 | 开源许可证         | `待确认` | 建议 Apache-2.0，由维护者最终确认                                                                                          | W01           |
+| D-002 | 首个正式身份源     | `待设计` | 建议 OIDC + 本地 bootstrap 管理员                                                                                          | W02           |
+| D-003 | 流式日志认证       | `待设计` | 建议同源 HttpOnly Cookie 或短时一次性流令牌                                                                                | W02、W03      |
+| D-004 | migration 运行模式 | `已确定` | [ADR-0001](../architecture/decisions/0001-versioned-database-migrations.md)：独立 migrator、运行时只读检查、dirty 前向恢复 | W04           |
+| D-005 | 多副本交付语义     | `待固化` | Ares 提供 at-least-once；执行器必须配合幂等键，lease 使用 fencing 防陈旧写                                                 | W05、W06、W07 |
+| D-006 | 中间件策略         | `待固化` | 默认不依赖 Redis/RabbitMQ；通知与队列能力通过可选 Adapter 扩展                                                             | W09、W10      |
 
 每项架构决策形成 ADR 后，在本表补充文档链接并将状态更新为 `已确定`。若推翻既有结论，必须新增决策记录，不覆盖历史原因。
 
@@ -426,13 +427,50 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 
 ## 8. 下一步
 
-W01 的仓库内实现、本地验收和 [PR #6](https://github.com/go-ree/ares/pull/6) 的六项自动化检查均已通过，下一步是处理评审反馈和三类仓库管理条件。W01 当前被许可证、安全漏洞与行为事件两类私密报告渠道、`main` 保护规则三类仓库管理条件阻塞，全部完成并验证前不能标记为 `待验收` 或 `已完成`。W01 进入稳定状态后，W02 与 W04 可以分别开始设计。
+[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。W04 的 schema 所有权、独立 migrator 与启动兼容性检查已由 [PR #22](https://github.com/go-ree/ares/pull/22) 提交评审，自动化检查已通过，当前等待维护者验收；合并后再按依赖顺序启动 W02，确保新增用户、会话和审计结构从第一天进入版本化 migration。
 
 ## 9. 进度记录
 
+### 2026-09-03：W04 设计完成并进入开发
+
+- 分支：`codex/w04-versioned-migrations`。
+- 状态：W04 从 `未开始` 经 `设计中` 进入 `开发中`；[ADR-0001](../architecture/decisions/0001-versioned-database-migrations.md) 已接受，生产代码尚未完成。
+- 顺序调整依据：W02 将新增身份、会话和只增审计事件等持久化结构；先完成 W04 可以让这些新表从第一天就进入版本化 migration，避免新增隐式 DDL 后再迁移。
+- 审计结论：当前 `serve` 会执行 Xorm `Sync2`、显式 DDL 和 migration；旧 ledger 只有 `version/applied_at`；根目录 `init.sql` 已遗漏 `integration_settings`，且 `task_record.env` 等结构与真实数据库漂移，不能继续作为 schema 真相源。
+- 设计结论：使用独立 migrator、专用连接持有数据库级锁、checksum/dirty/兼容区间和 schema manifest；运行时只做只读校验，未知状态一律 fail-closed，不提供 `down` 或 `force clean`。
+- 基线证据：已用 `main@e2cfd2a` 在隔离的 MySQL 8.4 Compose 空卷中成功启动并导出真实结构，确认 14 张业务表、三条旧 ledger 记录及 Demo 数据；临时容器、网络和卷已删除。该结构将固化为上一版升级测试 fixture。
+- 实现计划：依次完成 CLI/配置解耦、迁移 runner 与旧 ledger 收养、epoch 4 收口与 manifest、运行时去 DDL、Compose 双账号和 MySQL 8.4 验收；所有阶段证据持续回填本节。
+- 关联 PR：待创建。
+
+### 2026-09-03：W04 实现落地并进入验收矩阵
+
+- 分支：`codex/w04-versioned-migrations`；状态继续保持 `开发中`，关联 PR 待创建。
+- 命令与配置：已实现无副作用 CLI 解析以及 `serve`、`migrate status`、`migrate up`、精确 `--resume-dirty`；配置区分运行时 DSN、迁移 DSN、操作超时和锁等待超时，迁移 DSN 缺失时不回退；YAML 使用已知字段与单文档严格解码，关键 DSN 拼写错误不会被环境变量覆盖后静默接受。
+- schema 所有权：`serve` 已移除 Sync/Sync2 和结构修复，只在只读 manifest 检查通过后执行参考/Demo DML；空库 bootstrap 建立 10 表 epoch 1 基线，再由普通迁移扩展至 epoch 4 的 14 张业务表，每个 clean epoch 均有独立完整契约。
+- 迁移安全：新 ledger 包含 epoch、checksum、dirty、开始/结束时间、兼容区间和最近错误；旧两列 ledger 支持受控收养，migrator 使用专用连接和按数据库隔离的 MySQL named lock。
+- 部署边界：Compose 已拆分运行时/迁移账号，并按 `mysql → database-migrator-user → migrate → database-runtime-user → ares → web` 启动；runtime 只能读取 ledger，不能修改 ledger 或执行 DDL，应用容器不注入 root/迁移 DSN，当前 migrator 不授予 `DROP`。后续复审将旧 volume 策略收紧为“先审计撤销旧 schema grantee，再升级”，不再把旧 `MYSQL_USER` 撤权留到发布收尾。
+- 运维文档：新增[数据库迁移与恢复手册](../operations/database-migrations.md)，覆盖命令退出码、停机升级、双账号权限、备份、dirty 前向恢复、回滚原则和故障排查；部署指南、README 与贡献指南已同步。
+- 阶段性验证：Go CLI、配置、bootstrap、manifest 和迁移相关单元测试已通过；隔离 MySQL 8.4 空库已验证只读 status 不写表、首次 up、重复 up、serve 与 Demo 初始化。后续安全复审发现的完整 epoch 契约、dirty 中间状态、账号有效权限和特权 schema 对象边界已进入 2026-09-04 收敛轮次。
+- 集成测试：已新增 SHA-256 固定的 `main@e2cfd2a` 历史库 fixture 和独立的 `MySQL 8.4 迁移与恢复检查`；最终覆盖范围与本地 E2E 证据见下一条进度记录。本分支 GitHub CI 和中文 PR 尚待形成最终证据。
+
+### 2026-09-04：W04 安全复审与本地验收收敛
+
+- 分支：`codex/w04-versioned-migrations`；实现提交为 `ba9108e`，本地完成定义已满足；已创建中文 [PR #22](https://github.com/go-ree/ares/pull/22)，状态进入 `待验收`。
+- epoch 契约：bootstrap 改为真正的 10 表 epoch 1 基线，epoch 2～4 通过普通迁移演进到 14 表；每个 epoch 使用独立深拷贝的完整精确 manifest，只校验最高连续前缀，后续 verifier 显式继承历史 NULL 值、活动环境代码，以及“未删除 AppConfig 必须对应未删除环境目录项”等仍有效数据不变量。迁移实现、实体目录、bootstrap 和规范化 manifest/data-contract 均设置独立 golden；共享引擎指纹覆盖 runner、ledger 收养、manifest 比较、目录调度和 dirty 恢复。
+- 中断安全：dirty preflight 只接受上一 clean epoch 和按迁移语句顺序枚举的精确中间状态，已存在目标对象必须验证完整定义；不安全恢复会在任何新 DML/DDL 或 ledger 更新前拒绝。resume 保留首次 `started_at`，并接受进程刚写 dirty 后崩溃形成的 `finished_at/last_error=NULL` 初始 marker；迁移失败后尽力刷新真实 dirty 状态并记录脱敏、限长错误。所有 verifier 先检查结构再查询数据契约，缺表/缺列稳定归类为退出码 `3` 的 schema 漂移而非 SQL 故障。
+- schema 边界：完整比较所有受管列、精确字符集/排序规则、CHECK、视图、索引主键/唯一性/列序/方向/可见性/类型及外键动作；专用 schema 的未知基础表和对象、出向跨 schema 外键及外部 schema 反向引用受管表/ledger 的入向外键均 fail-closed。运行路径限定 MySQL 8.4.x；最小权限无法看全的 trigger/event/routine/inbound FK 由 root 账号任务或 guarded 管理员权威审计。`AUTO_INCREMENT` 只从 `SHOW CREATE TABLE` 的非引号表选项解析，表注释不能伪造下限。
+- 账号边界：两个账号任务在任何写前拒绝 mandatory roles、匿名或同名多 Host 身份、出向 role/PROXY、任意 schema 中的目标 DEFINER、目标身份的外部 schema/全局权限、Ares schema 可执行对象/视图，以及 runtime/migrator 外仍持有目标 schema 权限的主体。管理员还必须直接持有全局 `PROCESS`、`CREATE USER`、`SELECT`、`TRIGGER`、`EVENT`、`SHOW VIEW` 和 `CONNECTION_ADMIN`/`SUPER`，且没有 partial Restrictions。账号任务在同一条禁用重连的 root 物理连接上持有按用户名派生、全局排序的账号锁并完成全部特权操作；连接丢失时只有新连接非阻塞拿齐原锁集合才可收敛。数据库级授权按 `partial_revokes` 对 LIKE 元字符使用安全字面 pattern，guarded Go preflight 会独立复验。migrator 授权后常态锁定；迁移作业持有相同账号锁，拒绝 root/同名管理员、影子身份、角色/PROXY/DEFINER 和 `locked+active` 接管，并核对 `CURRENT_USER()`、数据库与 `server_uuid`，再用管理员连接设置随机一次性密码、短暂建立唯一迁移会话后立即重新锁号并轮换密码；数据库身份以管理员物理连接的 `DATABASE()` 规范值为准，兼容服务端大小写归一化但不放宽跨 schema 校验。watchdog 持续证明锁 ownership；成功/失败退出都在独立清理 context 中关闭、清理和复核会话，管理员连接失效时只允许非阻塞重取锁，无法证明成功则返回操作性故障。runtime 仍通过回连核对 `CURRENT_USER()` 与无可激活角色，且只能在 migrator 已锁定且无会话后配置。MySQL named lock 仅在单实例生效，因此所有连接与并发 Job 必须固定到同一 stable single-writer 端点；多写拓扑需外部全局互斥。
+- 密码与源码边界：账号脚本不再经用户变量或十六进制 `PREPARE` 传递密码，改为让 MySQL 8.4 `general_log` 自动把直接密码语句重写为 `<secret>`，动态测试同时扫描明文与可逆十六进制；新增 `.gitattributes` 将 Go/Shell/SQL/YAML/Markdown/JSON 固定为 LF，避免跨平台换行改写源码指纹。
+- MySQL 8.4 自动化矩阵：最终冻结后执行 `make db-integration` 成功，覆盖非法完整/旧空 ledger、bootstrap 连续中断、旧 ledger 每个 epoch 前缀、等价索引名、主键与唯一索引语义、索引方向/可见性、CHECK/视图、活动环境目录引用及末尾 LF/CR/CRLF 拒绝、历史畸形任务环境不回填、`0`/负 INT/最小 BIGINT 主键上的历史 NULL 值、dirty 初始 NULL marker 与合法/非法语句边界、结构优先分类、checksum/兼容区间/未知 epoch、外部入向外键、管理员元数据权限限制、独立 OS 进程并发与精确锁超时，以及 runtime DML 成功、DDL/ledger 写入拒绝。`lower_case_table_names=1` 的独立 MySQL 8.4.10 实例还验证了服务端规范库名。真实 `realMain` 测试覆盖 status/up/serve/用法/连接故障退出码和输出脱敏；`make db-account-integration` 的完整账号安全矩阵通过。
+- Compose 本地 E2E：最终冻结镜像在全新独立 volume 按依赖顺序启动，三个一次性任务均退出 `0`，MySQL、API、Web 健康；Demo 精确为 3 个应用、4 个环境、12 个 AppConfig，四个 epoch 均 clean。runtime 业务 DML 成功，DDL 与 ledger 写入被数据库拒绝，migrator 锁定且无会话；完整重放后 Demo 和 ledger checksum/dirty/起止时间不变。额外加入旧版宽权限 schema grantee 时，账号任务在首写前拒绝且 migrator/ledger 不变，DBA 删除旧授权后成功恢复。测试容器、网络与 volume 均已清理。
+- 备份恢复：epoch 4 dump 恢复后 W04 `migrate status` 与 `serve` 通过；W04 前 fixture dump roundtrip 通过，并已把它恢复到新库，用创建备份的精确 `main@e2cfd2a` 二进制实际启动，`/health/live`、`/health/ready`、夹具应用/环境读取及受控环境创建写入均成功，验证后数据与临时 worktree 已清理。
+- 本地质量门禁：工作流/actionlint、Go 格式与模块一致性、全量单测、vet、race、govulncheck（0 个可达漏洞）、Swagger 可重复生成、前端 lint/Prettier/type-check/生产构建、Compose 配置和差异检查均通过。仓库锁定的 npm 11.19.1 可访问普通 registry，但本机对官方 audit POST 端点两次分别在 30 秒和 120 秒超时，未将网络失败记为审计通过；由 PR 的 `前端质量检查` 在独立网络环境给出最终结果。
+- PR 自动化检查：首轮 `工作流语法检查` 的 actionlint/shellcheck 报告 MySQL 健康等待循环变量未使用（SC2034），修复提交 `3327c51` 将其改为匿名占位符。本地 `make workflow-check` 通过；修复后的 [质量门禁运行 #33853296319](https://github.com/go-ree/ares/actions/runs/33853296319) 七项作业全部成功，包括完整 npm 依赖审计与两项 MySQL 8.4 检查；[镜像与供应链运行 #33853296338](https://github.com/go-ree/ares/actions/runs/33853296338) 同样成功。
+- 待完成：等待 [PR #22](https://github.com/go-ree/ares/pull/22) 的维护者验收；不在 PR 合并前标记 `已完成`。
+
 ### 2026-09-03：W01 PR 首轮 CI 修复
 
-- 状态：[PR #6](https://github.com/go-ree/ares/pull/6) 的六项自动化检查已通过；W01 仍受三类仓库管理条件阻塞。
+- 状态：[PR #6](https://github.com/go-ree/ares/pull/6) 已合并且六项自动化检查通过；W01 仍受三类仓库管理条件阻塞。
 - 首轮结果：工作流语法、后端测试与静态检查、关键包竞态、Go 漏洞和前端质量均通过；供应链检查在后端 Trivy 扫描步骤失败。
 - 根因：Trivy Action 的 SARIF 模式默认移除 `severity` 过滤，导致 `UNKNOWN` 且调用不可达的模块公告 `GO-2026-5932` 也触发退出码 1，与文档约定的 HIGH/CRITICAL 镜像门禁不一致；镜像本身未检出 HIGH/CRITICAL。
 - 修复：后端和前端两次 Trivy 扫描均显式设置 `limit-severities-for-sarif: true`，使 SARIF 内容、退出码与既定严重级别保持一致；没有新增忽略规则、豁免或降低门禁级别。
@@ -442,7 +480,7 @@ W01 的仓库内实现、本地验收和 [PR #6](https://github.com/go-ree/ares/
 ### 2026-09-03：W01 实现收口
 
 - 分支：`codex/open-source-quality-gates`
-- 状态：仓库内实现已完成，[PR #6](https://github.com/go-ree/ares/pull/6) 已创建并等待自动化检查；三类仓库管理条件仍阻塞 W01。
+- 状态：仓库内实现已完成，[PR #6](https://github.com/go-ree/ares/pull/6) 后续已通过自动化检查并合并；三类仓库管理条件仍阻塞 W01。
 - 本轮范围：开源协作文件、自动化质量门禁、Go/前端依赖治理、Makefile 清理、依赖更新、SBOM 与镜像扫描。
 - 已完成：中文协作模板与治理规则、固定版本 Actions、Dependabot 六类生态、统一 Makefile 门禁及工具版本一致性检查、公开仓库 Go module path、Go/前端漏洞治理、三份 SBOM 和双镜像扫描。
 - 验收证据：`make frontend-install && make verify`、双镜像 `docker compose build --pull ares web` 均通过；隔离 Compose 实例的 MySQL、API、Web 三项健康检查通过，管理端和 Swagger 均返回 HTTP 200，验证后已连同临时数据卷停止；完整 npm audit 为 0；govulncheck 可达漏洞为 0；前端 lockfile SBOM 识别 88 个 npm 包；Trivy `v0.74.0` 基于 2026-09-03 数据库复扫两个镜像均为 0 个 HIGH/CRITICAL。
