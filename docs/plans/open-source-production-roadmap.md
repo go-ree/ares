@@ -1,7 +1,7 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W01 仓库实现已合并、管理项阻塞，W04 已提交 [PR #22](https://github.com/go-ree/ares/pull/22) 并进入待验收
+> - 当前状态：W01 仓库实现已合并、管理项阻塞，W04 的 GitHub 检查已通过，[PR #22](https://github.com/go-ree/ares/pull/22) 待维护者验收
 > - 基线版本：`main@e2cfd2a`，已合并 [PR #6：建立开源质量门禁与供应链基线](https://github.com/go-ree/ares/pull/6)
 > - 最后更新：2026-09-04
 
@@ -54,7 +54,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 
 - 当前登录身份来自浏览器本地数据，尚不能作为公开部署的身份与权限边界。
 - v2 任务日志尚未通过通用步骤能力读取，前端仍保留固定 CI/CD 的 Jenkins 日志兼容逻辑。
-- W04 已落地独立 migrator、运行时只读检查和显式 schema manifest，本地 MySQL 8.4 中断、并发、历史库与 Compose 验收矩阵已经通过，[PR #22](https://github.com/go-ree/ares/pull/22) 正在等待 GitHub 检查与维护者验收。
+- W04 已落地独立 migrator、运行时只读检查和显式 schema manifest，本地 MySQL 8.4 中断、并发、历史库与 Compose 验收矩阵及 GitHub 检查均已通过，[PR #22](https://github.com/go-ree/ares/pull/22) 正在等待维护者验收。
 - 发布接口尚无客户端幂等键和统一预检，重复请求可能创建不同任务。
 - Worker 只有步骤认领 CAS，没有完整 owner、lease、fencing 和多副本公平调度。
 - `attempt`、超时基础字段已经存在，但尚无完整重试、退避、取消与尝试历史。
@@ -427,7 +427,7 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 
 ## 8. 下一步
 
-[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。W04 的 schema 所有权、独立 migrator 与启动兼容性检查已由 [PR #22](https://github.com/go-ree/ares/pull/22) 提交评审，当前等待 GitHub 检查与维护者验收；合并后再按依赖顺序启动 W02，确保新增用户、会话和审计结构从第一天进入版本化 migration。
+[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。W04 的 schema 所有权、独立 migrator 与启动兼容性检查已由 [PR #22](https://github.com/go-ree/ares/pull/22) 提交评审，自动化检查已通过，当前等待维护者验收；合并后再按依赖顺序启动 W02，确保新增用户、会话和审计结构从第一天进入版本化 migration。
 
 ## 9. 进度记录
 
@@ -465,8 +465,8 @@ W02 与 W04 在 W01 完成后可以并行设计，但涉及同一数据库迁移
 - Compose 本地 E2E：最终冻结镜像在全新独立 volume 按依赖顺序启动，三个一次性任务均退出 `0`，MySQL、API、Web 健康；Demo 精确为 3 个应用、4 个环境、12 个 AppConfig，四个 epoch 均 clean。runtime 业务 DML 成功，DDL 与 ledger 写入被数据库拒绝，migrator 锁定且无会话；完整重放后 Demo 和 ledger checksum/dirty/起止时间不变。额外加入旧版宽权限 schema grantee 时，账号任务在首写前拒绝且 migrator/ledger 不变，DBA 删除旧授权后成功恢复。测试容器、网络与 volume 均已清理。
 - 备份恢复：epoch 4 dump 恢复后 W04 `migrate status` 与 `serve` 通过；W04 前 fixture dump roundtrip 通过，并已把它恢复到新库，用创建备份的精确 `main@e2cfd2a` 二进制实际启动，`/health/live`、`/health/ready`、夹具应用/环境读取及受控环境创建写入均成功，验证后数据与临时 worktree 已清理。
 - 本地质量门禁：工作流/actionlint、Go 格式与模块一致性、全量单测、vet、race、govulncheck（0 个可达漏洞）、Swagger 可重复生成、前端 lint/Prettier/type-check/生产构建、Compose 配置和差异检查均通过。仓库锁定的 npm 11.19.1 可访问普通 registry，但本机对官方 audit POST 端点两次分别在 30 秒和 120 秒超时，未将网络失败记为审计通过；由 PR 的 `前端质量检查` 在独立网络环境给出最终结果。
-- PR 首轮检查：`工作流语法检查` 的 actionlint/shellcheck 报告 MySQL 健康等待循环变量未使用（SC2034）；已将该变量改为匿名占位符并在本地重新执行工作流校验，修复后检查结果继续在 PR 中验证。
-- 待完成：等待 [PR #22](https://github.com/go-ree/ares/pull/22) 的 GitHub 全部检查与维护者验收；检查结果继续回填本文，不在 PR 合并前标记 `已完成`。
+- PR 自动化检查：首轮 `工作流语法检查` 的 actionlint/shellcheck 报告 MySQL 健康等待循环变量未使用（SC2034），修复提交 `3327c51` 将其改为匿名占位符。本地 `make workflow-check` 通过；修复后的 [质量门禁运行 #33853296319](https://github.com/go-ree/ares/actions/runs/33853296319) 七项作业全部成功，包括完整 npm 依赖审计与两项 MySQL 8.4 检查；[镜像与供应链运行 #33853296338](https://github.com/go-ree/ares/actions/runs/33853296338) 同样成功。
+- 待完成：等待 [PR #22](https://github.com/go-ree/ares/pull/22) 的维护者验收；不在 PR 合并前标记 `已完成`。
 
 ### 2026-09-03：W01 PR 首轮 CI 修复
 
