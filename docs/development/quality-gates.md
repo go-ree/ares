@@ -52,13 +52,14 @@ ARES_TEST_MYSQL_DSN='root:<密码>@tcp(127.0.0.1:3306)/mysql?parseTime=true' \
 
 该 DSN 必须是能够创建/删除隔离测试数据库和临时账号的 MySQL 8.4 管理连接，不得指向包含业务数据的实例。自动化矩阵会校验：
 
-- 空库只读 status、epoch 1 schema bootstrap、顺序迁移至 epoch 5、重复 up 与 schema bootstrap 中断续跑；
+- 空库只读 status、epoch 1 schema bootstrap、顺序迁移至 epoch 6、重复 up 与 schema bootstrap 中断续跑；
 - 固定 W04 前历史库和每个旧 ledger 连续前缀的精确契约，未知版本/断档/畸形 ledger、历史数据或任意 schema 漂移均在新 dirty 行前零写入拒绝；历史 NULL 批处理覆盖 `0`、负 INT 和最小 BIGINT 主键；
 - dirty 的显式恢复、目标对象定义和语句顺序边界、首次 `started_at` 保留、初始 `last_error=NULL` marker、checksum/兼容区间/未知 epoch fail-closed，以及失败后的真实 dirty 状态；
 - 全列定义、精确字符集/排序规则、CHECK、视图、主键/唯一索引及其他索引的类型/方向/可见性、出向及外部入向外键语义、活动环境代码，以及未删除 AppConfig 必须指向未删除环境目录项的数据不变量；活动环境代码末尾的 LF/CR/CRLF 必须被拒绝，同类历史任务值不得回填为目录；结构必须先于依赖它的数据查询被分类为 schema 漂移；
 - 两个独立 OS 进程和独立连接经同一 MySQL 实例执行时的 migrator 并发收敛、精确锁超时零写入、MySQL 版本拒绝、错误脱敏，以及运行时业务 DML 正常、DDL 与 ledger 写入均被 MySQL 拒绝；
 - 通过真实 `realMain` 入口验证 `status`、`up`、`serve`、用法错误和连接故障的退出码、stdout/stderr 与敏感值脱敏，而不只测试内部函数；
-- epoch 5 六张身份/审计表、Bootstrap singleton、发布任务与工作流版本稳定主体字段的精确 manifest、数据契约和 dirty 恢复边界；历史显示名不得被猜测成用户 ID。
+- epoch 5 六张身份/审计表、Bootstrap singleton、发布任务与工作流版本稳定主体字段的精确 manifest、数据契约和 dirty 恢复边界；历史显示名不得被猜测成用户 ID；
+- epoch 6 的 22 张受管表、任务 AppConfig 稳定引用、两张只增幂等回执表、连续 items 与 accepted/rejected 解析约束，以及三个 DDL 中间态的 dirty 恢复边界；历史任务不得被猜测回填 AppConfig 或回执。
 
 历史夹具来自 `main@e2cfd2a`，内容由 SHA-256 测试锁定；改变基线必须先做显式架构决策，不能直接覆盖夹具。每个 epoch 的 manifest/data-contract、bootstrap 和迁移实现都有独立 golden；共享引擎指纹额外覆盖 runner、ledger 收养、manifest 比较、迁移目录调度和 dirty 恢复路径，安全修复必须显式更新审计基线。MySQL 会对低权限账号隐藏部分 trigger/event/routine 和外部入向外键元数据，因此账号有效权限、特权对象及入向依赖缺失还必须执行管理员 E2E，不能以普通 manifest 查询替代。guarded 数据库身份还要在 `lower_case_table_names=1` 的 MySQL 8.4 实例上验证：DSN 大小写可由服务端归一化，但 migrator、管理员和清理连接的实际 `DATABASE()` 必须一致。配置单元测试同时固定严格 YAML 契约：未知顶层/嵌套字段、多文档均失败且不替换活动配置。
 
@@ -72,7 +73,9 @@ ARES_TEST_MYSQL_ROOT_PASSWORD='<root 密码>' \
 
 该检查验证未知旧 schema grantee 在任何写入前被拒绝、migrator 初始化及重跑后均锁定且无会话、长期密码无法登录、有效权限精确且无 `DROP`，以及开启 `general_log` 时密码语句仅留下 MySQL 重写的 `<secret>`、不出现明文或可逆十六进制中间值。它还会拒绝缺任一直接全局 `PROCESS`、`CREATE USER`、`SELECT`、`TRIGGER`、`EVENT`、`SHOW VIEW`、`CONNECTION_ADMIN`/`SUPER` 或带 partial Restrictions 的管理员身份。GitHub Actions 的 `MySQL 8.4 最小权限账号检查` 会在专用临时容器中自动运行同一入口。
 
-发起数据库相关 PR 前还应在一次性隔离 Compose 环境记录完整 E2E 证据：`auth-secrets` 与新 volume 的完整依赖链及重复启动、旧 volume 在旧授权未撤销时零写入拒绝及 DBA 撤权后的升级、当前 epoch 5 的 20 张受管表、3 个 Demo 应用/4 个环境/12 个 AppConfig、runtime 业务 DML 与 DDL/ledger 拒绝、六张身份/审计表的精确写权限、guarded migrator 成功/失败后均锁定且无会话，以及账号脚本对 mandatory roles、匿名/同名 Host、双密码、旧会话、出向 role/PROXY/DEFINER、管理员元数据权限/Restrictions、schema 可执行对象和外部入向外键的 fail-closed 行为。所有账号与迁移连接必须固定到同一 single-writer MySQL 8.4 实例；多写拓扑另需外部分布式互斥。备份恢复需证明当前 epoch 5 dump 可由 W02 `status`/`serve` 使用，并分别保留 epoch 4 历史兼容夹具和迁移前 dump 的精确旧二进制恢复证据。旧二进制启动恢复仍是发布前本地 E2E，不由当前 GitHub Actions 自动执行。
+发起数据库相关 PR 前还应在一次性隔离 Compose 环境记录完整 E2E 证据：`auth-secrets` 与新 volume 的完整依赖链及重复启动、旧 volume 在旧授权未撤销时零写入拒绝及 DBA 撤权后的升级、当前 epoch 6 的 22 张受管表、3 个 Demo 应用/4 个环境/12 个 AppConfig、runtime 对全部受管表的读取、只对其中 20 张表的精确 DML、`pipelines`/`pipelines_job_combination` 与 ledger 的写入拒绝、两张回执表只允许 `INSERT`、guarded migrator 成功/失败后均锁定且无会话，以及账号脚本对 mandatory roles、匿名/同名 Host、双密码、旧会话、出向 role/PROXY/DEFINER、管理员元数据权限/Restrictions、schema 可执行对象和外部入向外键的 fail-closed 行为。所有账号与迁移连接必须固定到同一 single-writer MySQL 8.4 实例；多写拓扑另需外部分布式互斥。备份恢复需证明当前 epoch 6 dump 可由支持 epoch 6 的当前二进制执行 `status`/`serve`，并分别保留 epoch 5、epoch 4 历史兼容夹具和每次迁移前 dump 的精确旧二进制恢复证据。旧二进制启动恢复仍是发布前本地 E2E，不由当前 GitHub Actions 自动执行。
+
+永久 receipt verifier 的容量门禁不能用空表或未经记录的本地耗时替代。首个生产版本、预计回执规模显著增长、MySQL 拓扑/规格/关键参数变化或 verifier 查询变化前，都应在隔离的 MySQL 8.4 环境用脱敏的生产规模快照重复执行候选二进制的完整 `migrate status` 路径，并分别记录冷/热缓存样本、`release_idempotency_records`/`release_idempotency_items` 行数与比例、预计增长、数据库 CPU/内存/I/O 与关键配置、二进制版本、`ARES_DB_SCHEMA_MIGRATION_TIMEOUT` 和耗时分布；不得在生产库上为取得基准制造额外压力。文档不预设未实测时延：以获批超时为预算，p95 达到 50% 时必须告警和提交容量处置计划，p95 达到 80% 或任一样本超时、取消、校验失败时阻止发布。生产受控检查的单次耗时达到 80% 或任何 `status`/`serve` 因 verifier 失败同样按严重告警处理；提高超时只能作为经记录的临时风险接受，不能替代查询/索引优化，也不能通过删除永久回执绕过门禁。
 
 W02 身份与授权边界至少需要以下自动化证据：
 
