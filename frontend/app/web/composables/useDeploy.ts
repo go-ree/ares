@@ -313,10 +313,6 @@ export function useDeploy() {
         operator: item.publisher,
         message: normalizeLegacyNullableText(item.message),
         taskId: item.task_id,
-        ciJobName: normalizeLegacyNullableText(item.ci_job_name),
-        cdJobName: normalizeLegacyNullableText(item.cd_job_name),
-        ciBuildId: item.ci_build_id || null,
-        cdBuildId: item.cd_build_id || null,
         products: normalizeLegacyNullableText(item.products),
       }));
     } catch (error) {

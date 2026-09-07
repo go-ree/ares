@@ -11,6 +11,7 @@
           <DeployingList
             ref="deployingListRef"
             :is-active="activeTab === 'tool'"
+            :can-view-details="canReadTaskDetails"
             @view-log="handleViewLog"
           />
         </el-tab-pane>
@@ -35,14 +36,17 @@ import DeployTool from './DeployTool.vue';
 import DeployingList from './DeployingList.vue';
 import LogQuery from './LogQuery.vue';
 import LogDetail from './LogDetail.vue';
-import type { DeployingService } from '@/types/deploy';
+import type { DeployingService, LogItem } from '@/types/deploy';
 import { useAuthStore } from '@/stores/auth';
 import { PERMISSIONS } from '@/types/auth';
 
 // 当前激活的标签页
 const authStore = useAuthStore();
 const canCreateRelease = computed(() => authStore.can(PERMISSIONS.RELEASES_CREATE));
-const canReadLogs = computed(() => authStore.can(PERMISSIONS.LOGS_READ));
+const canReadTaskDetails = computed(() => authStore.can(PERMISSIONS.TASKS_READ));
+const canReadLogs = computed(
+  () => canReadTaskDetails.value && authStore.can(PERMISSIONS.LOGS_READ)
+);
 const activeTab = ref('tool');
 
 // 日志详情相关
@@ -54,12 +58,14 @@ const deployingListRef = ref();
 
 // 查看日志（从发布中服务列表）
 const handleViewLog = (service: DeployingService) => {
+  if (!canReadTaskDetails.value) return;
   currentLogData.value = service;
   logDetailVisible.value = true;
 };
 
 // 查看日志详情（从日志查询列表）
-const handleViewLogDetail = (logItem: any) => {
+const handleViewLogDetail = (logItem: LogItem) => {
+  if (!canReadLogs.value) return;
   console.log('ServiceDeploy: 收到查看日志详情事件', logItem);
 
   // 将LogItem转换为DeployingService格式
@@ -74,10 +80,6 @@ const handleViewLogDetail = (logItem: any) => {
     operator: logItem.operator,
     message: logItem.message,
     taskId: logItem.task_id,
-    ciJobName: logItem.ci_job_name,
-    cdJobName: logItem.cd_job_name,
-    ciBuildId: logItem.ci_build_id,
-    cdBuildId: logItem.cd_build_id,
     products: logItem.products,
     auto_deploy: logItem.auto_deploy,
   };

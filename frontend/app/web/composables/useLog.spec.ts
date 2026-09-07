@@ -4,16 +4,26 @@ import MockAdapter from 'axios-mock-adapter';
 import {
   LOG_BUFFER_MAX_BYTES,
   LOG_BUFFER_MAX_LINES,
+  LOG_CACHE_MAX_BYTES,
   LOG_QUEUE_MAX_BYTES,
-  LOG_QUEUE_MAX_LINES,
   LOG_STREAM_MAX_AUTOMATIC_RECONNECTS,
   LOG_TRUNCATION_NOTICE,
+  boundLogText,
+  taskLogTargets,
   useLog,
+  type StepTaskLogTarget,
 } from './useLog';
+import type { TaskRecord, TaskStepRecord } from '@/models/deploy';
+import type { DeployingService } from '@/types/deploy';
 import { useAuthStore } from '@/stores/auth';
 import { PERMISSIONS } from '@/types/auth';
-import type { DeployingService } from '@/types/deploy';
+import type { ApiEnvelope, SessionSnapshot } from '@/types/auth';
 import api from '@/config/api';
+import type {
+  LogStreamFailure,
+  LogStreamTransport,
+  LogStreamTransportFactory,
+} from '@/services/log-stream';
 
 class FakeEventSource extends EventTarget {
   static readonly CONNECTING = 0;
@@ -24,7 +34,6 @@ class FakeEventSource extends EventTarget {
   readonly url: string;
   readonly withCredentials: boolean;
   readyState = FakeEventSource.CONNECTING;
-  transportErrorEvents = 0;
   onopen: ((event: Event) => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
@@ -35,20 +44,28 @@ class FakeEventSource extends EventTarget {
     this.withCredentials = init?.withCredentials === true;
     this.addEventListener('open', event => this.onopen?.(event));
     this.addEventListener('message', event => this.onmessage?.(event as MessageEvent));
-    this.addEventListener('error', event => {
-      this.transportErrorEvents += 1;
-      this.onerror?.(event);
-    });
+    this.addEventListener('error', event => this.onerror?.(event));
     FakeEventSource.instances.push(this);
   }
 
   close() {
     this.readyState = FakeEventSource.CLOSED;
   }
+
+  fail(failure: LogStreamFailure) {
+    const event = new Event('error') as Event & { failure: LogStreamFailure };
+    event.failure = failure;
+    this.dispatchEvent(event);
+  }
 }
 
-const row: DeployingService = {
-  id: 7,
+const fakeStepTransportFactory: LogStreamTransportFactory = url =>
+  new FakeEventSource(url, { withCredentials: true }) as LogStreamTransport;
+
+const useTestLog = () => useLog({ stepTransportFactory: fakeStepTransportFactory });
+
+const row = (taskId = 7): DeployingService => ({
+  id: taskId,
   serviceName: 'api',
   branch: 'main',
   environment: 'prod',
@@ -56,12 +73,104 @@ const row: DeployingService = {
   progress: 50,
   startTime: 'now',
   operator: 'server-user',
-  taskId: 7,
-  ciJobName: 'ci-api',
-  ciBuildId: 11,
-};
+  taskId,
+});
 
-describe('log SSE authentication', () => {
+const step = (stepKey: string, position: number, logs: boolean | undefined): TaskStepRecord => ({
+  step_record_id: position + 1,
+  task_id: 7,
+  workflow_version_id: 3,
+  step_key: stepKey,
+  name: `Step ${stepKey}`,
+  uses: logs ? 'jenkins.job@v1' : 'builtin.noop@v1',
+  position,
+  timeout_seconds: 60,
+  on_failure: 'stop',
+  status: 'running',
+  attempt: 1,
+  ...(logs === undefined ? {} : { capabilities: { logs, cancel: false } }),
+  created_at: '2026-09-07T00:00:00Z',
+  updated_at: '2026-09-07T00:00:00Z',
+});
+
+const task = (overrides: Partial<TaskRecord> = {}): TaskRecord => ({
+  task_id: 7,
+  app_name: 'api',
+  branch: 'main',
+  env: 'prod',
+  publisher: 'server-user',
+  status: 'running',
+  message: '',
+  auto_deploy: 0,
+  products: '',
+  engine_version: 2,
+  workflow_version_id: 3,
+  steps: [],
+  created_at: '2026-09-07T00:00:00Z',
+  updated_at: '2026-09-07T00:00:00Z',
+  deleted_at: null,
+  ...overrides,
+});
+
+const target = (stepKey = 'build', taskId = 7): StepTaskLogTarget => ({
+  kind: 'step',
+  taskId,
+  stepKey,
+  label: `Step ${stepKey}`,
+});
+
+const authenticatedSession = (): ApiEnvelope<SessionSnapshot> => ({
+  code: 1,
+  message: 'ok',
+  result: {
+    user: {
+      id: '1',
+      username: 'reader',
+      display_name: 'Reader',
+      auth_source: 'oidc',
+      roles: ['viewer'],
+      permissions: [PERMISSIONS.TASKS_READ, PERMISSIONS.LOGS_READ],
+    },
+    csrf_token: 'csrf',
+    expires_at: '2099-01-01T00:00:00Z',
+  },
+});
+
+describe('task log target contract', () => {
+  it('uses only ordered capabilities.logs steps for v2 and never falls back to legacy fields', () => {
+    const targets = taskLogTargets(
+      task({
+        steps: [step('deploy', 2, true), step('noop', 1, false), step('unknown', 0, undefined)],
+        ci_job_name: 'must-not-fallback',
+        ci_build_id: 42,
+      })
+    );
+
+    expect(targets).toEqual([{ kind: 'step', taskId: 7, stepKey: 'deploy', label: 'Step deploy' }]);
+  });
+
+  it('isolates v1 CI/CD compatibility without exposing Jenkins references in targets', () => {
+    const targets = taskLogTargets(
+      task({
+        engine_version: 1,
+        steps: [step('ignored', 0, true)],
+        ci_job_name: 'folder/build_api',
+        ci_build_id: 42,
+        cd_job_name: 'folder/deploy_api',
+        cd_build_id: 43,
+      })
+    );
+
+    expect(targets).toEqual([
+      { kind: 'legacy', taskId: 7, legacyType: 'ci', label: 'CI 日志' },
+      { kind: 'legacy', taskId: 7, legacyType: 'cd', label: 'CD 日志' },
+    ]);
+    expect(JSON.stringify(targets)).not.toContain('folder');
+    expect(JSON.stringify(targets)).not.toContain('buildId');
+  });
+});
+
+describe('generic task-step log SSE', () => {
   let mock: MockAdapter;
 
   beforeEach(() => {
@@ -72,14 +181,7 @@ describe('log SSE authentication', () => {
     const auth = useAuthStore();
     auth.$patch({
       status: 'authenticated',
-      user: {
-        id: '1',
-        username: 'reader',
-        display_name: 'Reader',
-        auth_source: 'oidc',
-        roles: ['viewer'],
-        permissions: [PERMISSIONS.LOGS_READ],
-      },
+      user: authenticatedSession().result.user,
       csrfToken: 'csrf',
       expiresAt: '2099-01-01T00:00:00Z',
     });
@@ -88,564 +190,433 @@ describe('log SSE authentication', () => {
   afterEach(() => {
     mock.restore();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
-  it('uses cookies and permanently stops reconnecting after auth-expired', async () => {
-    const auth = useAuthStore();
-    const logs = useLog();
-    logs.currentLog.value = row;
+  it('opens the canonical cookie-authenticated URL and preserves an opaque cursor across step switches', () => {
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
 
-    const pending = logs.fetchLogs(row);
-    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    logs.openLogTarget(target('folder.step'));
+    const first = FakeEventSource.instances[0];
+    expect(first.url).toBe('/api/v1/tasks/7/steps/folder.step/logs/stream');
+    expect(first.withCredentials).toBe(true);
+
+    first.dispatchEvent(
+      new MessageEvent('log', {
+        data: JSON.stringify({ content: 'first\n', cursor: 'next /+=雪', eof: false }),
+        lastEventId: 'next /+=雪',
+      })
+    );
+    logs.flushQueuedContent();
+    expect(logs.activeLog.value).toBe('first\n');
+
+    logs.openLogTarget(target('deploy'));
+    expect(first.readyState).toBe(FakeEventSource.CLOSED);
+    const second = FakeEventSource.instances[1];
+    expect(second.url).toBe('/api/v1/tasks/7/steps/deploy/logs/stream');
+
+    logs.openLogTarget(target('folder.step'));
+    expect(second.readyState).toBe(FakeEventSource.CLOSED);
+    const resumed = FakeEventSource.instances[2];
+    const resumedUrl = new URL(resumed.url, 'http://ares.test');
+    expect(resumedUrl.pathname).toBe('/api/v1/tasks/7/steps/folder.step/logs/stream');
+    expect(resumedUrl.searchParams.get('cursor')).toBe('next /+=雪');
+    expect(logs.activeLog.value).toBe('first\n');
+    logs.cleanupLogsAndConnections();
+  });
+
+  it('evicts least-recently-used step buffers under the aggregate cache limit', () => {
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    const targetCount = Math.floor(LOG_CACHE_MAX_BYTES / LOG_BUFFER_MAX_BYTES) + 1;
+    const payload = 'x'.repeat(LOG_BUFFER_MAX_BYTES);
+
+    for (let index = 0; index < targetCount; index += 1) {
+      const currentTarget = target(`step-${index}`);
+      logs.openLogTarget(currentTarget);
+      for (let part = 0; part < LOG_BUFFER_MAX_BYTES / LOG_QUEUE_MAX_BYTES; part += 1) {
+        logs.queueLogContent(currentTarget, payload.slice(0, LOG_QUEUE_MAX_BYTES));
+        logs.flushQueuedContent();
+      }
+    }
+
+    logs.openLogTarget(target('step-0'));
+    expect(logs.activeLog.value).toBe('');
+    expect(FakeEventSource.instances).toHaveLength(targetCount + 1);
+    logs.cleanupLogsAndConnections();
+  });
+
+  it('rejects a generic log frame whose SSE id and payload cursor do not match', () => {
+    vi.useFakeTimers();
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget(target());
     const source = FakeEventSource.instances[0];
-    expect(source.withCredentials).toBe(true);
 
-    source.dispatchEvent(new MessageEvent('auth-expired', { data: '{"reason":"expired"}' }));
-    await pending;
+    source.dispatchEvent(
+      new MessageEvent('log', {
+        data: JSON.stringify({ content: 'must-not-append', cursor: 'payload-cursor', eof: false }),
+        lastEventId: 'sse-cursor',
+      })
+    );
+
+    expect(source.readyState).toBe(FakeEventSource.CLOSED);
+    expect(logs.activeLog.value).toBe('');
+    expect(logs.activeLogError.value).toBe('日志数据格式异常');
+    logs.cleanupLogsAndConnections();
+  });
+
+  it('closes on dialog pause and resumes the retained buffer and cursor', () => {
+    vi.useFakeTimers();
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget(target());
+    const first = FakeEventSource.instances[0];
+    first.dispatchEvent(
+      new MessageEvent('log', {
+        data: JSON.stringify({ content: 'before-close', cursor: 'opaque:42', eof: false }),
+        lastEventId: 'opaque:42',
+      })
+    );
+
+    logs.handleLogDialogClose();
+    expect(first.readyState).toBe(FakeEventSource.CLOSED);
+    expect(logs.activeLog.value).toBe('before-close');
+    vi.advanceTimersByTime(120_000);
+    expect(FakeEventSource.instances).toHaveLength(1);
+
+    logs.handleLogDialogOpen();
+    expect(FakeEventSource.instances).toHaveLength(2);
+    const resumedUrl = new URL(FakeEventSource.instances[1].url, 'http://ares.test');
+    expect(resumedUrl.searchParams.get('cursor')).toBe('opaque:42');
+    expect(logs.activeLog.value).toBe('before-close');
+    logs.cleanupLogsAndConnections();
+  });
+
+  it('fully releases state on task switch and ignores late events from the old task', () => {
+    const logs = useTestLog();
+    logs.setCurrentLog(row(7));
+    logs.openLogTarget(target('build', 7));
+    const oldSource = FakeEventSource.instances[0];
+
+    logs.setCurrentLog(row(8));
+    expect(oldSource.readyState).toBe(FakeEventSource.CLOSED);
+    oldSource.dispatchEvent(
+      new MessageEvent('log', {
+        data: JSON.stringify({ content: 'late-secret', cursor: 'late', eof: false }),
+        lastEventId: 'late',
+      })
+    );
+    logs.openLogTarget(target('build', 8));
+
+    expect(logs.activeLog.value).toBe('');
+    expect(FakeEventSource.instances[1].url).toBe('/api/v1/tasks/8/steps/build/logs/stream');
+    logs.cleanupLogsAndConnections();
+  });
+
+  it('treats eof as terminal and never reopens the completed target', () => {
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget(target());
+    const source = FakeEventSource.instances[0];
+    source.dispatchEvent(
+      new MessageEvent('log', {
+        data: JSON.stringify({ content: 'done\n', cursor: 'final', eof: true }),
+        lastEventId: 'final',
+      })
+    );
+
+    expect(source.readyState).toBe(FakeEventSource.CLOSED);
+    expect(logs.activeLog.value).toBe('done\n');
+    logs.handleLogDialogClose();
+    logs.handleLogDialogOpen();
+    expect(FakeEventSource.instances).toHaveLength(1);
+    logs.cleanupLogsAndConnections();
+  });
+
+  it('closes on forbidden, refreshes permissions, and does not invalidate the identity', async () => {
+    const refreshed = authenticatedSession();
+    refreshed.result.user.permissions = [PERMISSIONS.TASKS_READ];
+    mock.onGet('/api/v1/auth/session').reply(200, refreshed);
+    const auth = useAuthStore();
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget(target());
+    const source = FakeEventSource.instances[0];
+
+    source.dispatchEvent(new MessageEvent('stream-error', { data: '{"code":"forbidden"}' }));
+    await vi.waitFor(() => expect(logs.canReadTaskLogs.value).toBe(false));
+
+    expect(source.readyState).toBe(FakeEventSource.CLOSED);
+    expect(logs.activeLogError.value).toBe('没有读取该步骤日志的权限');
+    expect(auth.status).toBe('authenticated');
+    expect(auth.isAuthenticated).toBe(true);
+    logs.retryActiveLogStream();
+    expect(FakeEventSource.instances).toHaveLength(1);
+    logs.cleanupLogsAndConnections();
+  });
+
+  it('invalidates the identity only after auth-expired', () => {
+    const auth = useAuthStore();
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget(target());
+    const source = FakeEventSource.instances[0];
+
+    source.dispatchEvent(
+      new MessageEvent('auth-expired', { data: '{"reason":"session_expired"}' })
+    );
 
     expect(source.readyState).toBe(FakeEventSource.CLOSED);
     expect(auth.status).toBe('anonymous');
-    await logs.retryFetchLogs();
-    logs.startConnectionCheck();
-    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(auth.isAuthenticated).toBe(false);
+    logs.cleanupLogsAndConnections();
   });
 
-  it('stops log delivery without logging out a user whose log permission is revoked', async () => {
+  it('stops delivery without logging out when task/log permission is revoked in the session', () => {
     const auth = useAuthStore();
-    const logs = useLog();
-    logs.currentLog.value = row;
-
-    const pending = logs.fetchLogs(row);
-    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget(target());
     const source = FakeEventSource.instances[0];
+
     auth.$patch({
       user: {
-        id: '1',
-        username: 'reader',
-        display_name: 'Reader',
-        auth_source: 'oidc',
-        roles: ['viewer'],
-        permissions: [],
+        ...authenticatedSession().result.user,
+        permissions: [PERMISSIONS.TASKS_READ],
       },
     });
-    await pending;
 
     expect(source.readyState).toBe(FakeEventSource.CLOSED);
     expect(auth.status).toBe('authenticated');
     expect(auth.isAuthenticated).toBe(true);
-    await logs.retryFetchLogs();
-    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(logs.canReadTaskLogs.value).toBe(false);
+    logs.cleanupLogsAndConnections();
   });
 
-  it('probes the session and stops after a transport error reveals a 401', async () => {
+  it.each([
+    [400, 'invalid_request', '日志请求参数无效'],
+    [404, 'task_or_step_not_found', '未找到任务或步骤'],
+    [409, 'log_source_mismatch', '日志来源与任务快照不匹配'],
+    [409, 'legacy_task', '旧版任务请使用兼容日志入口'],
+    [422, 'logs_unsupported', '该步骤不支持日志'],
+    [502, 'invalid_log_chunk', '日志服务返回了无效数据'],
+  ])('does not retry terminal pre-stream HTTP %i failures', async (status, code, message) => {
+    vi.useFakeTimers();
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget(target());
+
+    FakeEventSource.instances[0].fail({ kind: 'http', status, code });
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(FakeEventSource.instances[0].readyState).toBe(FakeEventSource.CLOSED);
+    expect(logs.activeLogError.value).toBe(message);
+    logs.cleanupLogsAndConnections();
+  });
+
+  it('invalidates the identity immediately on a pre-stream HTTP 401', () => {
+    const auth = useAuthStore();
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget(target());
+
+    FakeEventSource.instances[0].fail({ kind: 'http', status: 401, code: 'unauthenticated' });
+
+    expect(auth.status).toBe('anonymous');
+    expect(logs.activeLogError.value).toBe('登录状态已失效');
+    expect(FakeEventSource.instances[0].readyState).toBe(FakeEventSource.CLOSED);
+    logs.cleanupLogsAndConnections();
+  });
+
+  it('refreshes permissions without logging out on a pre-stream HTTP 403', async () => {
+    const refreshed = authenticatedSession();
+    refreshed.result.user.permissions = [PERMISSIONS.TASKS_READ];
+    mock.onGet('/api/v1/auth/session').reply(200, refreshed);
+    const auth = useAuthStore();
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget(target());
+
+    FakeEventSource.instances[0].fail({ kind: 'http', status: 403, code: 'forbidden' });
+    await vi.waitFor(() => expect(logs.canReadTaskLogs.value).toBe(false));
+
+    expect(auth.status).toBe('authenticated');
+    expect(auth.isAuthenticated).toBe(true);
+    expect(logs.activeLogError.value).toBe('没有读取该步骤日志的权限');
+    expect(FakeEventSource.instances).toHaveLength(1);
+    logs.cleanupLogsAndConnections();
+  });
+
+  it('retries logs_not_ready and upstream HTTP failures within the shared bounded budget', async () => {
+    vi.useFakeTimers();
+    mock.onGet('/api/v1/auth/session').reply(200, authenticatedSession());
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget(target());
+
+    FakeEventSource.instances[0].fail({
+      kind: 'http',
+      status: 409,
+      code: 'logs_not_ready',
+    });
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(FakeEventSource.instances).toHaveLength(2);
+
+    FakeEventSource.instances[1].fail({
+      kind: 'http',
+      status: 503,
+      code: 'executor_unavailable',
+    });
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(FakeEventSource.instances).toHaveLength(3);
+    logs.cleanupLogsAndConnections();
+  });
+
+  it('waits for Retry-After before reconnecting after HTTP 429', async () => {
+    vi.useFakeTimers();
+    mock.onGet('/api/v1/auth/session').reply(200, authenticatedSession());
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget(target());
+
+    FakeEventSource.instances[0].fail({
+      kind: 'http',
+      status: 429,
+      code: 'stream_capacity_exceeded',
+      retryAfterMs: 7000,
+    });
+    await vi.advanceTimersByTimeAsync(6999);
+    expect(FakeEventSource.instances).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    logs.cleanupLogsAndConnections();
+  });
+
+  it('probes the session after a typed fetch network failure and stops when it returns 401', async () => {
     mock.onGet('/api/v1/auth/session').reply(401);
     const auth = useAuthStore();
-    const logs = useLog();
-    logs.currentLog.value = row;
-
-    const pending = logs.fetchLogs(row);
-    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget(target());
     const source = FakeEventSource.instances[0];
-    source.dispatchEvent(new Event('error'));
-    expect(source.transportErrorEvents).toBe(1);
+
+    source.fail({ kind: 'network', code: 'network_error' });
     await vi.waitFor(() => expect(auth.status).toBe('anonymous'));
-    await pending;
 
     expect(source.readyState).toBe(FakeEventSource.CLOSED);
     expect(FakeEventSource.instances).toHaveLength(1);
+    logs.cleanupLogsAndConnections();
   });
 
-  it('dispatches a server stream-error without also probing the transport session path', async () => {
-    const logs = useLog();
-    logs.currentLog.value = row;
-
-    const pending = logs.fetchLogs(row);
-    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    const source = FakeEventSource.instances[0];
-    source.dispatchEvent(
-      new MessageEvent('stream-error', { data: '{"code":"404","message":"not found"}' })
-    );
-    await pending;
-
-    expect(source.readyState).toBe(FakeEventSource.CLOSED);
-    expect(source.transportErrorEvents).toBe(0);
-    expect(logs.ciLog.value).toContain('未找到日志信息');
-    expect(mock.history.get).toHaveLength(0);
-    expect(FakeEventSource.instances).toHaveLength(1);
-  });
-
-  it('maps the backend upstream_error code and retries only through the semantic path', async () => {
+  it('reconnects retryable semantic failures from the opaque cursor within one bounded budget', async () => {
     vi.useFakeTimers();
-    mock.onGet('/api/v1/auth/session').reply(200, {
-      code: 1,
-      message: 'ok',
-      result: {
-        user: {
-          id: '1',
-          username: 'reader',
-          display_name: 'Reader',
-          auth_source: 'oidc',
-          roles: ['viewer'],
-          permissions: [PERMISSIONS.LOGS_READ],
-        },
-        csrf_token: 'csrf',
-        expires_at: '2099-01-01T00:00:00Z',
-      },
-    });
-    const logs = useLog();
-    logs.currentLog.value = row;
+    mock.onGet('/api/v1/auth/session').reply(200, authenticatedSession());
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget(target());
 
-    try {
-      const pending = logs.fetchLogs(row);
-      expect(FakeEventSource.instances).toHaveLength(1);
-      const source = FakeEventSource.instances[0];
+    for (let attempt = 0; attempt < LOG_STREAM_MAX_AUTOMATIC_RECONNECTS; attempt += 1) {
+      const source = FakeEventSource.instances[attempt];
       source.dispatchEvent(
-        new MessageEvent('message', {
-          data: JSON.stringify({ code: 1, result: [] }),
-          lastEventId: '262144',
+        new MessageEvent('log', {
+          data: JSON.stringify({ content: '', cursor: `opaque/${attempt}`, eof: false }),
+          lastEventId: `opaque/${attempt}`,
         })
       );
       source.dispatchEvent(new MessageEvent('stream-error', { data: '{"code":"upstream_error"}' }));
-
-      expect(source.readyState).toBe(FakeEventSource.CLOSED);
-      expect(source.transportErrorEvents).toBe(0);
-      expect(logs.ciLog.value).toContain('上游日志服务暂时不可用');
-      expect(mock.history.get).toHaveLength(0);
-
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(mock.history.get).toHaveLength(1);
-      expect(FakeEventSource.instances).toHaveLength(2);
-      expect(FakeEventSource.instances[1].url).toContain('start=262144');
-      FakeEventSource.instances[1].dispatchEvent(
-        new MessageEvent('end', { data: '{"reason":"completed"}' })
-      );
-      await pending;
-    } finally {
-      vi.useRealTimers();
+      await vi.advanceTimersByTimeAsync(3000 * (attempt + 1));
+      expect(FakeEventSource.instances).toHaveLength(attempt + 2);
+      const resumedUrl = new URL(FakeEventSource.instances[attempt + 1].url, 'http://ares.test');
+      expect(resumedUrl.searchParams.get('cursor')).toBe(`opaque/${attempt}`);
     }
-  });
 
-  it('keeps a healthy CI stream alive when message and ping activity reset the silence timer', async () => {
-    vi.useFakeTimers();
-    const logs = useLog();
-    logs.currentLog.value = row;
-
-    try {
-      const pending = logs.fetchLogs(row);
-      expect(FakeEventSource.instances).toHaveLength(1);
-      const source = FakeEventSource.instances[0];
-      source.readyState = FakeEventSource.OPEN;
-      source.dispatchEvent(new Event('open'));
-
-      await vi.advanceTimersByTimeAsync(59_000);
-      source.dispatchEvent(new MessageEvent('ping', { data: '{}', lastEventId: '7' }));
-      await vi.advanceTimersByTimeAsync(59_000);
-      expect(FakeEventSource.instances).toHaveLength(1);
-
-      source.dispatchEvent(
-        new MessageEvent('message', {
-          data: JSON.stringify({ code: 1, result: ['healthy'] }),
-          lastEventId: '42',
-        })
-      );
-      await vi.advanceTimersByTimeAsync(59_000);
-      expect(FakeEventSource.instances).toHaveLength(1);
-
-      source.dispatchEvent(
-        new MessageEvent('end', {
-          data: '{"reason":"completed"}',
-          lastEventId: '42',
-        })
-      );
-      await pending;
-    } finally {
-      logs.cleanupLogsAndConnections();
-      vi.useRealTimers();
-    }
-  });
-
-  it('does not let the periodic connection check reopen a completed stream', async () => {
-    vi.useFakeTimers();
-    const logs = useLog();
-    logs.currentLog.value = row;
-    logs.logDialogVisible.value = true;
-
-    try {
-      const pending = logs.fetchLogs(row);
-      expect(FakeEventSource.instances).toHaveLength(1);
-      logs.startConnectionCheck();
-      FakeEventSource.instances[0].dispatchEvent(
-        new MessageEvent('end', { data: '{"reason":"completed"}', lastEventId: '42' })
-      );
-      await pending;
-
-      await vi.advanceTimersByTimeAsync(31_000);
-      expect(FakeEventSource.instances).toHaveLength(1);
-    } finally {
-      logs.cleanupLogsAndConnections();
-      logs.stopConnectionCheck();
-      vi.useRealTimers();
-    }
-  });
-
-  it('closes immediately and resumes from the retained buffer and cursor when reopened', async () => {
-    vi.useFakeTimers();
-    const logs = useLog();
-    logs.currentLog.value = row;
-    logs.logDialogVisible.value = true;
-
-    try {
-      const pending = logs.fetchLogs(row);
-      const first = FakeEventSource.instances[0];
-      first.dispatchEvent(
-        new MessageEvent('message', {
-          data: JSON.stringify({ code: 1, result: ['before-close'] }),
-          lastEventId: '42',
-        })
-      );
-      first.dispatchEvent(
-        new MessageEvent('end', { data: '{"reason":"max_duration"}', lastEventId: '42' })
-      );
-
-      logs.logDialogVisible.value = false;
-      logs.handleLogDialogClose();
-      await pending;
-      expect(first.readyState).toBe(FakeEventSource.CLOSED);
-      expect(logs.getActiveConnections()).toHaveLength(0);
-      expect(logs.ciLog.value).toContain('before-close');
-
-      await vi.advanceTimersByTimeAsync(120_000);
-      expect(FakeEventSource.instances).toHaveLength(1);
-
-      logs.logDialogVisible.value = true;
-      logs.activeLogTab.value = 'ci';
-      logs.handleLogDialogOpen();
-      await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
-      expect(FakeEventSource.instances[1].url).toContain('start=42');
-      expect(logs.ciLog.value).toContain('before-close');
-      FakeEventSource.instances[1].dispatchEvent(
-        new MessageEvent('end', { data: '{"reason":"completed"}', lastEventId: '42' })
-      );
-    } finally {
-      logs.cleanupLogsAndConnections();
-      logs.stopConnectionCheck();
-      vi.useRealTimers();
-    }
-  });
-
-  it('catches health-check stream failures and shares the bounded reconnect budget', async () => {
-    vi.useFakeTimers();
-    mock.onGet('/api/v1/auth/session').reply(200, {
-      code: 1,
-      message: 'ok',
-      result: {
-        user: {
-          id: '1',
-          username: 'reader',
-          display_name: 'Reader',
-          auth_source: 'oidc',
-          roles: ['viewer'],
-          permissions: [PERMISSIONS.LOGS_READ],
-        },
-        csrf_token: 'csrf',
-        expires_at: '2099-01-01T00:00:00Z',
-      },
-    });
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const logs = useLog();
-    logs.currentLog.value = row;
-    logs.logDialogVisible.value = true;
-    logs.activeLogTab.value = 'ci';
-
-    try {
-      logs.startConnectionCheck();
-      await vi.advanceTimersByTimeAsync(30_000);
-      expect(FakeEventSource.instances).toHaveLength(1);
-
-      for (let attempt = 2; attempt <= LOG_STREAM_MAX_AUTOMATIC_RECONNECTS; attempt += 1) {
-        FakeEventSource.instances[attempt - 2].dispatchEvent(
-          new MessageEvent('end', { data: '{"reason":"upstream_idle"}' })
-        );
-        await vi.advanceTimersByTimeAsync(3000 * attempt);
-        expect(FakeEventSource.instances).toHaveLength(attempt);
-      }
-
-      FakeEventSource.instances[LOG_STREAM_MAX_AUTOMATIC_RECONNECTS - 1].dispatchEvent(
-        new MessageEvent('end', { data: '{"reason":"upstream_idle"}' })
-      );
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(FakeEventSource.instances).toHaveLength(LOG_STREAM_MAX_AUTOMATIC_RECONNECTS);
-      expect(consoleError).toHaveBeenCalledWith('CI日志健康检查重连失败:', expect.any(Error));
-    } finally {
-      logs.cleanupLogsAndConnections();
-      logs.stopConnectionCheck();
-      consoleError.mockRestore();
-      vi.useRealTimers();
-    }
-  });
-
-  it.each(['max_duration', 'upstream_idle'])(
-    'reconnects a CI stream from its cursor after %s',
-    async reason => {
-      vi.useFakeTimers();
-      mock.onGet('/api/v1/auth/session').reply(200, {
-        code: 1,
-        message: 'ok',
-        result: {
-          user: {
-            id: '1',
-            username: 'reader',
-            display_name: 'Reader',
-            auth_source: 'oidc',
-            roles: ['viewer'],
-            permissions: [PERMISSIONS.LOGS_READ],
-          },
-          csrf_token: 'csrf',
-          expires_at: '2099-01-01T00:00:00Z',
-        },
-      });
-      const logs = useLog();
-      logs.currentLog.value = row;
-
-      try {
-        const pending = logs.fetchLogs(row);
-        expect(FakeEventSource.instances).toHaveLength(1);
-        const first = FakeEventSource.instances[0];
-        first.dispatchEvent(
-          new MessageEvent('message', {
-            data: JSON.stringify({ code: 1, result: [] }),
-            lastEventId: '262144',
-          })
-        );
-        first.dispatchEvent(
-          new MessageEvent('end', {
-            data: JSON.stringify({ reason }),
-            lastEventId: '262144',
-          })
-        );
-
-        expect(first.readyState).toBe(FakeEventSource.CLOSED);
-        await vi.advanceTimersByTimeAsync(3000);
-        expect(FakeEventSource.instances).toHaveLength(2);
-        expect(FakeEventSource.instances[1].url).toContain('start=262144');
-        FakeEventSource.instances[1].dispatchEvent(
-          new MessageEvent('end', { data: '{"reason":"completed"}' })
-        );
-        await pending;
-      } finally {
-        logs.cleanupLogsAndConnections();
-        vi.useRealTimers();
-      }
-    }
-  );
-
-  it('bounds planned max-duration rotations across the full open-dialog lifecycle', async () => {
-    vi.useFakeTimers();
-    mock.onGet('/api/v1/auth/session').reply(200, {
-      code: 1,
-      message: 'ok',
-      result: {
-        user: {
-          id: '1',
-          username: 'reader',
-          display_name: 'Reader',
-          auth_source: 'oidc',
-          roles: ['viewer'],
-          permissions: [PERMISSIONS.LOGS_READ],
-        },
-        csrf_token: 'csrf',
-        expires_at: '2099-01-01T00:00:00Z',
-      },
-    });
-    const logs = useLog();
-    logs.currentLog.value = row;
-
-    try {
-      const pending = logs.fetchLogs(row);
-      expect(FakeEventSource.instances).toHaveLength(1);
-      for (let rotation = 0; rotation < LOG_STREAM_MAX_AUTOMATIC_RECONNECTS; rotation += 1) {
-        const cursor = String(100 + rotation);
-        FakeEventSource.instances[rotation].dispatchEvent(
-          new MessageEvent('end', {
-            data: '{"reason":"max_duration"}',
-            lastEventId: cursor,
-          })
-        );
-        await vi.advanceTimersByTimeAsync(3000 * (rotation + 1));
-        expect(FakeEventSource.instances).toHaveLength(rotation + 2);
-        expect(FakeEventSource.instances[rotation + 1].url).toContain(`start=${cursor}`);
-      }
-
-      const finalSource = FakeEventSource.instances[LOG_STREAM_MAX_AUTOMATIC_RECONNECTS];
-      finalSource.dispatchEvent(
-        new MessageEvent('end', {
-          data: '{"reason":"max_duration"}',
-          lastEventId: '999',
-        })
-      );
-      await pending;
-      await vi.advanceTimersByTimeAsync(120_000);
-      expect(FakeEventSource.instances).toHaveLength(LOG_STREAM_MAX_AUTOMATIC_RECONNECTS + 1);
-    } finally {
-      logs.cleanupLogsAndConnections();
-      vi.useRealTimers();
-    }
-  });
-
-  it('does not reset the lifecycle budget for empty arrays or real log messages', async () => {
-    vi.useFakeTimers();
-    mock.onGet('/api/v1/auth/session').reply(200, {
-      code: 1,
-      message: 'ok',
-      result: {
-        user: {
-          id: '1',
-          username: 'reader',
-          display_name: 'Reader',
-          auth_source: 'oidc',
-          roles: ['viewer'],
-          permissions: [PERMISSIONS.LOGS_READ],
-        },
-        csrf_token: 'csrf',
-        expires_at: '2099-01-01T00:00:00Z',
-      },
-    });
-    const logs = useLog();
-    const cdRow = { ...row, cdJobName: 'cd-api', cdBuildId: 12 };
-    logs.currentLog.value = cdRow;
-    logs.activeLogTab.value = 'cd';
-
-    try {
-      const pending = logs.fetchLogs(cdRow);
-      for (let failure = 0; failure < LOG_STREAM_MAX_AUTOMATIC_RECONNECTS; failure += 1) {
-        FakeEventSource.instances[failure].dispatchEvent(
-          new MessageEvent('message', {
-            data: JSON.stringify({
-              code: 1,
-              result: failure % 2 === 0 ? [] : [`recovered-${failure}`],
-            }),
-            lastEventId: String(88 + failure),
-          })
-        );
-        FakeEventSource.instances[failure].dispatchEvent(
-          new MessageEvent('end', {
-            data: '{"reason":"upstream_idle"}',
-            lastEventId: String(88 + failure),
-          })
-        );
-        await vi.advanceTimersByTimeAsync(3000 * (failure + 1));
-        expect(FakeEventSource.instances).toHaveLength(failure + 2);
-      }
-
-      const finalSource = FakeEventSource.instances[LOG_STREAM_MAX_AUTOMATIC_RECONNECTS];
-      expect(finalSource.url).toContain(`start=${87 + LOG_STREAM_MAX_AUTOMATIC_RECONNECTS}`);
-      finalSource.dispatchEvent(
-        new MessageEvent('message', {
-          data: JSON.stringify({ code: 1, result: [] }),
-          lastEventId: '999',
-        })
-      );
-      finalSource.dispatchEvent(
-        new MessageEvent('end', { data: '{"reason":"upstream_idle"}', lastEventId: '999' })
-      );
-      await pending;
-      await vi.advanceTimersByTimeAsync(120_000);
-      expect(FakeEventSource.instances).toHaveLength(LOG_STREAM_MAX_AUTOMATIC_RECONNECTS + 1);
-    } finally {
-      logs.cleanupLogsAndConnections();
-      vi.useRealTimers();
-    }
-  });
-
-  it('applies sliding activity and cursor-resuming rotation to CD streams', async () => {
-    vi.useFakeTimers();
-    mock.onGet('/api/v1/auth/session').reply(200, {
-      code: 1,
-      message: 'ok',
-      result: {
-        user: {
-          id: '1',
-          username: 'reader',
-          display_name: 'Reader',
-          auth_source: 'oidc',
-          roles: ['viewer'],
-          permissions: [PERMISSIONS.LOGS_READ],
-        },
-        csrf_token: 'csrf',
-        expires_at: '2099-01-01T00:00:00Z',
-      },
-    });
-    const logs = useLog();
-    const cdRow = { ...row, cdJobName: 'cd-api', cdBuildId: 12 };
-    logs.currentLog.value = cdRow;
-    logs.activeLogTab.value = 'cd';
-
-    try {
-      const pending = logs.fetchLogs(cdRow);
-      expect(FakeEventSource.instances).toHaveLength(1);
-      const first = FakeEventSource.instances[0];
-      first.readyState = FakeEventSource.OPEN;
-      first.dispatchEvent(new Event('open'));
-
-      await vi.advanceTimersByTimeAsync(119_000);
-      first.dispatchEvent(new MessageEvent('ping', { data: '{}', lastEventId: '17' }));
-      await vi.advanceTimersByTimeAsync(119_000);
-      expect(FakeEventSource.instances).toHaveLength(1);
-
-      first.dispatchEvent(
-        new MessageEvent('end', {
-          data: '{"reason":"upstream_idle"}',
-          lastEventId: '17',
-        })
-      );
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(FakeEventSource.instances).toHaveLength(2);
-      expect(FakeEventSource.instances[1].url).toContain('log_type=cd');
-      expect(FakeEventSource.instances[1].url).toContain('start=17');
-      FakeEventSource.instances[1].dispatchEvent(
-        new MessageEvent('end', { data: '{"reason":"completed"}' })
-      );
-      await pending;
-    } finally {
-      logs.cleanupLogsAndConnections();
-      vi.useRealTimers();
-    }
-  });
-
-  it('bounds queued and retained logs while keeping the newest output', () => {
-    const logs = useLog();
-    const largeBatch = Array.from(
-      { length: 5000 },
-      (_, index) => `line-${index}-${'界'.repeat(180)}`
+    FakeEventSource.instances[LOG_STREAM_MAX_AUTOMATIC_RECONNECTS].dispatchEvent(
+      new MessageEvent('stream-error', { data: '{"code":"upstream_error"}' })
     );
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(FakeEventSource.instances).toHaveLength(LOG_STREAM_MAX_AUTOMATIC_RECONNECTS + 1);
+    logs.cleanupLogsAndConnections();
+  });
 
-    try {
-      logs.addToUpdateQueue('ci', largeBatch);
-      const queued = logs.updateQueue.value.find(update => update.type === 'ci')?.data ?? [];
-      expect(queued.length).toBeLessThanOrEqual(LOG_QUEUE_MAX_LINES);
-      expect(queued[0]).toBe(LOG_TRUNCATION_NOTICE);
-      expect(new TextEncoder().encode(queued.join('\n') + '\n').byteLength).toBeLessThanOrEqual(
-        LOG_QUEUE_MAX_BYTES
-      );
+  it('clears a retryable stream error after the reconnected source opens', async () => {
+    vi.useFakeTimers();
+    mock.onGet('/api/v1/auth/session').reply(200, authenticatedSession());
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget(target());
 
-      for (let batch = 0; batch < 8; batch += 1) {
-        logs.batchUpdateLogs();
-        logs.addToUpdateQueue(
-          'ci',
-          largeBatch.map(line => `${batch}-${line}`)
-        );
-      }
-      logs.batchUpdateLogs();
+    FakeEventSource.instances[0].dispatchEvent(
+      new MessageEvent('stream-error', { data: '{"code":"upstream_error"}' })
+    );
+    expect(logs.activeLogError.value).toBe('上游日志服务暂时不可用');
 
-      const retained = logs.ciLog.value;
-      expect(retained.startsWith(LOG_TRUNCATION_NOTICE)).toBe(true);
-      expect(retained).toContain('7-line-4999');
-      expect(retained.split('\n').filter(Boolean).length).toBeLessThanOrEqual(LOG_BUFFER_MAX_LINES);
-      expect(new TextEncoder().encode(retained).byteLength).toBeLessThanOrEqual(
-        LOG_BUFFER_MAX_BYTES
-      );
-    } finally {
-      logs.cleanupLogsAndConnections();
-    }
+    await vi.advanceTimersByTimeAsync(3000);
+    const reconnected = FakeEventSource.instances[1];
+    reconnected.dispatchEvent(new Event('open'));
+
+    expect(logs.activeLogError.value).toBe('');
+    expect(logs.isStreaming.value).toBe(true);
+    logs.cleanupLogsAndConnections();
+  });
+
+  it('keeps only bounded UTF-8 output and the newest lines', () => {
+    const largeLog = Array.from(
+      { length: 12_000 },
+      (_, index) => `line-${index}-${'界'.repeat(180)}\n`
+    ).join('');
+    const bounded = boundLogText(largeLog);
+
+    expect(bounded.startsWith(LOG_TRUNCATION_NOTICE)).toBe(true);
+    expect(bounded).toContain('line-11999');
+    expect(new TextEncoder().encode(bounded).byteLength).toBeLessThanOrEqual(LOG_BUFFER_MAX_BYTES);
+    expect(bounded.split('\n').filter(Boolean).length).toBeLessThanOrEqual(LOG_BUFFER_MAX_LINES);
+  });
+
+  it('keeps the legacy adapter task-scoped and resumes only a numeric legacy cursor', () => {
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget({ kind: 'legacy', taskId: 7, legacyType: 'ci', label: 'CI 日志' });
+    const source = FakeEventSource.instances[0];
+    const url = new URL(source.url, 'http://ares.test');
+
+    expect(url.pathname).toBe('/api/v1/job/stream/log');
+    expect(Object.fromEntries(url.searchParams)).toEqual({ task_id: '7', log_type: 'ci' });
+    expect(source.url).not.toContain('jobName');
+    expect(source.url).not.toContain('buildId');
+    source.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ code: 1, result: ['legacy'] }),
+        lastEventId: '42',
+      })
+    );
+    logs.handleLogDialogClose();
+    logs.handleLogDialogOpen();
+    const resumed = new URL(FakeEventSource.instances[1].url, 'http://ares.test');
+    expect(Object.fromEntries(resumed.searchParams)).toEqual({
+      task_id: '7',
+      log_type: 'ci',
+      start: '42',
+    });
+    logs.cleanupLogsAndConnections();
+  });
+
+  it('does not advance a legacy cursor when the frame payload is malformed', async () => {
+    vi.useFakeTimers();
+    mock.onGet('/api/v1/auth/session').reply(200, authenticatedSession());
+    const logs = useTestLog();
+    logs.setCurrentLog(row());
+    logs.openLogTarget({ kind: 'legacy', taskId: 7, legacyType: 'ci', label: 'CI 日志' });
+
+    FakeEventSource.instances[0].dispatchEvent(
+      new MessageEvent('message', { data: '{malformed', lastEventId: '42' })
+    );
+    await vi.advanceTimersByTimeAsync(3000);
+
+    const resumed = new URL(FakeEventSource.instances[1].url, 'http://ares.test');
+    expect(resumed.searchParams.has('start')).toBe(false);
+    logs.cleanupLogsAndConnections();
   });
 });

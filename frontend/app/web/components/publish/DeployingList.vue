@@ -50,7 +50,9 @@
         <el-table-column prop="operator" label="操作人" width="100" />
         <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="handleViewLog(row)"> 查询详情 </el-button>
+            <el-button v-if="canViewDetails" type="primary" link @click="handleViewLog(row)">
+              查询详情
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -66,10 +68,12 @@ import { useDeploy } from '@/composables/useDeploy';
 // 定义props
 interface Props {
   isActive?: boolean;
+  canViewDetails?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   isActive: false,
+  canViewDetails: false,
 });
 
 const {

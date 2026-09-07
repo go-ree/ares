@@ -136,6 +136,7 @@ import { useLog } from '@/composables/useLog';
 import { useDeploy } from '@/composables/useDeploy';
 import { ElMessage } from 'element-plus';
 import { useEnvironments } from '@/composables/useEnvironments';
+import type { LogItem } from '@/types/deploy';
 
 // 定义props
 interface Props {
@@ -167,7 +168,6 @@ const {
   // 事件处理函数
   handleSearch,
   handleResetLogFilter,
-  viewLogDetail,
   handleSizeChange,
   handleCurrentChange,
 } = useLog();
@@ -182,11 +182,11 @@ const {
 
 // 定义事件
 const emit = defineEmits<{
-  viewLogDetail: [logItem: any];
+  viewLogDetail: [logItem: LogItem];
 }>();
 
 // 重写viewLogDetail方法，触发事件
-const handleViewLogDetail = (row: any) => {
+const handleViewLogDetail = (row: LogItem) => {
   console.log('LogQuery: 点击查看日志按钮', row);
   // 只触发事件，让父组件处理对话框显示
   emit('viewLogDetail', row);
