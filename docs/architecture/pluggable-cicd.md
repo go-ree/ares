@@ -154,6 +154,13 @@ type LogReader interface { ReadLogs(context.Context, LogRequest) (LogChunk, erro
 type Canceller interface { Cancel(context.Context, CancelRequest) error }
 ```
 
+日志能力的完整协议由
+[ADR-0003：执行器通用步骤日志与游标续传](decisions/0003-generic-step-logs.md) 固定。通用层只用
+`task_id + step_key` 读取步骤快照并按其中的 `uses` 分派；执行器独占 opaque external reference
+和 cursor 的解释权。descriptor 声明 `capabilities.logs=true` 时必须实现 `LogReader`，否则注册
+失败。日志流的认证、会话复验和 HTTP 期限沿用
+[ADR-0002](decisions/0002-authentication-rbac-audit.md)。
+
 注册表在进程启动时按 `uses` 注册执行器，重复注册失败。保存流程时校验结构、步骤类型和步骤配置；发起发布时再校验执行器运行可用性：
 
 - 步骤类型存在；
@@ -195,15 +202,16 @@ Jenkins Adapter 将其作为构建参数传递。取得 Queue ID 后立即持久
 
 ## 8. API 边界
 
-首版新增：
+当前稳定接口包括：
 
-- `GET /api/v1/environments`：公开读取完整环境目录（包含停用项，供历史记录显示）。
-- `POST /api/v1/system/environments`：创建环境。
-- `PATCH /api/v1/system/environments/:code`：修改名称、启停和排序。
-- `GET /api/v1/pipeline-step-types`：读取可用步骤描述符。
-- `GET /api/v1/app-configs/:config_id/workflow`：使用系统管理员令牌读取当前流程。
-- `PUT /api/v1/app-configs/:config_id/workflow`：使用系统管理员令牌校验规范、创建不可变版本并切换绑定。
-- `GET /api/v1/deploy/publish/query/:task_id/steps`：读取通用步骤运行记录。
+- `GET /api/v1/environments`：已认证用户读取完整环境目录（包含停用项，供历史记录显示）。
+- `POST /api/v1/system/environments`：拥有环境写权限的管理员创建环境。
+- `PATCH /api/v1/system/environments/:code`：拥有环境写权限的管理员修改名称、启停和排序。
+- `GET /api/v1/pipeline-step-types`：拥有工作流读权限的用户读取步骤描述符。
+- `GET /api/v1/app-configs/:config_id/workflow`：拥有工作流读权限的用户读取当前流程；没有写权限时执行器私有配置被脱敏。
+- `PUT /api/v1/app-configs/:config_id/workflow`：拥有工作流写权限的管理员校验规范、创建不可变版本并切换绑定；Cookie 写请求同时校验 CSRF。
+- `GET /api/v1/deploy/publish/query/:task_id/steps`：拥有任务读权限的用户读取通用步骤运行记录及服务端派生的 capabilities。
+- `GET /api/v1/tasks/:task_id/steps/:step_key/logs/stream`：拥有日志读权限的用户按任务步骤读取通用 SSE 日志；唯一 query 字段是可选 cursor。
 
 现有发布接口保留，内部切换到通用 Release/Workflow 服务。后续新增以 `config_id` 和 `Idempotency-Key` 为主的新发布 API，旧 `app_name + env` DTO 作为兼容适配层。
 
@@ -214,9 +222,9 @@ Jenkins Adapter 将其作为构建参数传递。取得 Queue ID 后立即持久
 1. 扩展 `env_configs` 和工作流/步骤表，不删除旧列。
 2. 从 `env_configs`、`app_configs`、`task_record` 的环境并集补齐目录；新环境默认禁用，管理员确认后启用。
 3. 将旧 `pipelines_job_combination` 导入为两个 `jenkins.job@v1` 步骤的流程，并按包类型为 AppConfig 建绑定。
-4. 新任务写通用步骤记录；恰好匹配旧 CI/CD 的 Jenkins 流程可投影旧字段供旧前端读取。
+4. 新任务写通用步骤记录；恰好匹配旧 CI/CD 的 Jenkins 流程仍可投影旧字段供历史查询兼容，但 W03 起的 Web 日志入口不再读取这些字段。
 5. 升级时不迁移、不重触发在途旧任务，新任务进入新引擎。旧 schema 未保存 Jenkins 地址，无法证明实例归属的 v1 在途任务必须在网络调用前 fail-closed；只有显式绑定且与当前运行时一致的任务才允许旧引擎收尾。
-6. 观察至少一个大版本后，才评估移除旧表、旧字段和旧日志接口。
+6. W03 将旧 Jenkins 日志接口收紧为只读 v1 历史任务并标记 deprecated；v2 任务只使用通用步骤日志。观察至少一个大版本后，才评估移除旧表、旧字段和 v1 日志接口。
 
 结构迁移采用前向兼容策略，但升级后的数据库不能由旧版 Xorm 进程继续写入。旧同步逻辑会删除它不认识的新索引，却保留迁移版本标记；因此回退必须使用 schema/Worker 兼容镜像，或恢复升级前数据库备份，不能只替换为旧二进制。
 
@@ -226,9 +234,10 @@ Jenkins Adapter 将其作为构建参数传递。取得 Queue ID 后立即持久
 
 - 执行器配置严格校验，未知字段按步骤规范处理。
 - 不提供任意 Shell 步骤。
-- 完整通用日志接口上线时必须通过 `task_id + step_key` 定位并纳入鉴权，客户端不能任意指定 Jenkins Job；本阶段只提供脱敏的通用步骤详情，旧 Jenkins 日志接口仍属于待迁移兼容面。
+- 通用日志只通过 `task_id + step_key` 定位并纳入 `logs.read` 鉴权；客户端不能指定执行器、external reference、Jenkins Job、Build ID 或地址。服务端先验证步骤归属、能力和实例绑定，再允许执行器外连。
+- SSE 只暴露有界日志文本和 opaque cursor；cursor、日志正文、external reference 与上游错误不进入审计。会话撤销后流关闭，页面关闭或切换任务/步骤必须取消上游 context。
 - Secret 只保留引用，数据库快照、日志、错误消息和接口响应不得回传明文。
-- 管理环境和流程沿用系统管理鉴权；发布权限后续纳入细粒度 RBAC。
+- 环境、流程、发布、任务和日志均使用 ADR-0002 的服务端细粒度 RBAC；前端按钮和 capabilities 只用于体验，不是授权边界。
 - 批量发布采用有界并发，不创建无上限 goroutine。
 - Jenkins 步骤的外部引用绑定实例地址；已绑定的在途 v1/v2 任务存在时禁止换址，运行时切换与步骤 Start/Reconcile 通过读写门闩串行化。历史未绑定 v1 任务不猜测归属、不访问 Jenkins，并进入明确失败终态。
 

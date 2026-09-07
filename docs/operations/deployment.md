@@ -25,7 +25,9 @@ ares / ares serve（运行时账号） ◄── web / Nginx ◄── 浏览器
     └─────────► Kubernetes（可选外部集成）
 ```
 
-只有 Web 端口对外开放。后端调试端口默认只绑定 `127.0.0.1:8081`，MySQL 不暴露宿主端口。Nginx 为 Vue Router 提供 SPA fallback，并针对 Jenkins SSE 日志关闭代理缓冲、保留 `Last-Event-ID` 和长连接。
+只有 Web 端口对外开放。后端调试端口默认只绑定 `127.0.0.1:8081`，MySQL 不暴露宿主端口。
+Nginx 为 Vue Router 提供 SPA fallback，并针对 canonical 通用步骤日志和 v1 Jenkins 兼容日志关闭
+代理缓冲与 gzip、透传 `Last-Event-ID` 并保留有界长连接。
 
 ## 快速启动
 
@@ -149,6 +151,41 @@ Cookie 的 `Secure` 属性由 `ARES_WEB_PUBLIC_URL` 的 scheme 决定：生产�
 
 运行时账号对 `audit_events` 只有 `SELECT, INSERT`，保留策略不能通过给应用增加 `DELETE` 实现。生产应监控事件行数、表/索引字节和日增长率；达到约定保留期后，由独立 DBA 身份先导出并校验归档，再在维护窗口按递增主键小批量删除。任一归档校验或删除批次异常时应停止，不执行无界整表删除。
 
+### 通用步骤日志与代理边界
+
+W03 的 canonical 日志入口是：
+
+```text
+GET /api/v1/tasks/:task_id/steps/:step_key/logs/stream?cursor=:cursor
+```
+
+它是已认证的敏感读取，需要 `logs.read`。服务端只接受任务、步骤和可选 cursor，从数据库步骤快照
+读取执行器与 opaque external reference；客户端不能指定 Jenkins Job、Build ID 或地址。日志读取不
+写数据库，不改变任务状态，也不参与 readiness。
+
+内置 Nginx 对 canonical 动态路径及两个 v1 兼容路径使用 SSE 专用配置：HTTP/1.1、关闭请求/响应
+缓冲、缓存和 gzip，清除 `Connection`，透传 Cookie 与 `Last-Event-ID`，设置
+`X-Accel-Buffering: no`，并让代理读写时限覆盖单条 SSE 的最大生命周期。生产 Ingress、CDN 或
+WAF 必须提供等价配置；不能使用会聚合响应的默认代理策略。访问日志继续只记录不含 query 的
+`$uri`，不得记录 cursor、Cookie、Referer 或完整 request target。
+
+query 只允许一个 `cursor`；浏览器原生 `Last-Event-ID` 也可续传，两者同时存在时必须一致。cursor
+最多 256 bytes，是有效 UTF-8 且不含 CR/LF/NUL。SSE 事件只包括 `log`、`ping`、`end`、
+`stream-error` 和 `auth-expired`；具体 payload 见[通用任务步骤日志 API](../development/task-step-logs-api.md)。
+
+generic 与 legacy 流共用进程内连接 admission，并按用户限制并发。配额必须在任何首次
+LogReader/上游请求前取得；容量满返回 429、`Retry-After` 和 `stream_capacity_exceeded`。这仍是
+单实例资源边界，多副本生产入口必须另设全局/按客户端连接上限，不能靠扩副本绕过保护。
+
+日志流定期复验会话和最终权限。真实会话失效时发送 `auth-expired/session_expired` 并关闭；会话
+仍有效但 `logs.read` 被撤销时发送 `stream-error/forbidden`，只停止日志读取，不强制用户退出其他
+页面。每次连接只写一组脱敏审计结果，不记录日志正文、cursor、external reference 或上游错误。
+
+`/api/v1/job/stream/log` 与 `/api/v1/deploy/log/stream` 已 deprecated，只读取
+`engine_version=1` 的历史任务。其所有响应均带 `Deprecation: true` 和固定 `Warning: 299`；v2
+任务必须使用 canonical 步骤接口。当前不设置虚构的 Sunset 日期。旧接口仍从存储的 v1 CI/CD
+字段定位日志，并维持 Jenkins 实例地址匹配，不能用来查询任意 Job/Build。
+
 ## 数据库与 Demo 初始化
 
 Ares migrator 是专用 schema owner，当前仅支持 MySQL 8.4.x。空库由显式 bootstrap 创建 epoch 1 的固定 10 表基线，再按 epoch 顺序扩展到当前 epoch 5 的 20 张受管表；bootstrap 中断只在已有对象是无业务数据、完整定义匹配且按固定顺序形成连续前缀时恢复。已有表只由 migration 修改。`ares serve` 仅做只读兼容性检查，不执行 Xorm 结构同步或其他 DDL。epoch 2 起的数据契约还要求每条未删除 AppConfig 的环境都对应未删除的 `env_configs` 目录项；缺失或软删除引用会 fail-closed，不会自动猜测。当前受管表包括：
@@ -204,7 +241,7 @@ Demo 任务不会使用运行中状态，因此在 Jenkins 关闭时不会触发
 
 Jenkins 地址与 kubeconfig server 不得包含 URL 用户名密码、query 或 fragment；远端端点必须使用 HTTPS，只有 loopback 开发端点允许 HTTP。Kubernetes 还拒绝跳过 TLS 校验、代理 URL、命令型认证和文件型凭据。OIDC、Jenkins 与 Kubernetes HTTP 客户端均不跟随重定向，避免 Authorization Code、Client Secret、API Token 或集群凭据被转发到另一地址。探测和通用 JSON 响应有 1 MiB 硬上限，Kubernetes 运行时响应上限为 16 MiB，Jenkins progressive log 按 256 KiB 游标分段；超限只返回脱敏错误。超大集群列表应使用更窄的查询范围，不应通过调高进程内存绕过限制。
 
-保存启用状态前，Ares 会先验证外部服务连接；失败时返回错误并保留原有可用配置。容器重启时若外部服务暂时不可达，Ares 仍会继续启动，错误会显示在系统配置页。未启用 Jenkins 时，仅 Jenkins 节点/日志接口和包含 `jenkins.job@v1` 的流程不可运行，Noop 或其他不依赖 Jenkins 的流程仍可发布；未启用 Kubernetes 时，集群查询接口返回 HTTP 503，其他功能正常可用。
+保存启用状态前，Ares 会先验证外部服务连接；失败时返回错误并保留原有可用配置。容器重启时若外部服务暂时不可达，Ares 仍会继续启动，错误会显示在系统配置页。未启用 Jenkins 时，Jenkins 节点、Jenkins 步骤日志和包含 `jenkins.job@v1` 的新流程运行不可用；Noop 等无日志步骤会明确声明 `capabilities.logs=false`，其他不依赖 Jenkins 的流程仍可发布。未启用 Kubernetes 时，集群查询接口返回 HTTP 503，其他功能正常可用。
 
 ## 健康检查与日志
 
@@ -254,6 +291,10 @@ docker compose exec -T mysql \
 
 恢复前请先在独立环境验证备份。逻辑备份不能直接覆盖导入已经迁移的新 schema；需要回退时应恢复到新的空数据库，并同时使用与备份 epoch 兼容的应用版本。
 
+W03 通用步骤日志没有 schema 或持久化数据变化。滚动发布时先部署支持 canonical 接口的后端，再
+部署停止使用旧 Jenkins 路由的前端；回退时先回退前端，再回退后端。该功能回退不需要恢复数据库，
+但后端和前端混合版本期间只有 v1 历史任务能使用旧日志路由，因此仍应按上述顺序操作。
+
 停止服务但保留数据：
 
 ```bash
@@ -289,6 +330,8 @@ Jenkins 外部引用绑定到接收任务时的服务地址。仍有已绑定的
 - 使用本地管理员演练密码修改，确认修改前全部浏览器会话和旧密码均立即失效，新密码可以重新登录。
 - 限制 `ARES_API_PORT` 的本机绑定；生产流量只通过实施 TLS 和请求大小/超时限制的入口进入。
 - 确认 OIDC/Jenkins/Kubernetes 只使用受信 HTTPS 精确端点，不依赖重定向、代理 URL 或跳过 TLS 校验；旧版系统凭据已重新录入。
+- 验证通用步骤日志代理不缓冲、不 gzip，透传 `Last-Event-ID`；关闭/切换页面后连接数回落，撤销 `logs.read` 只终止日志而不登出有效会话。
+- 确认旧日志路由只服务 v1 历史任务并返回弃用 Header；v2 页面只按步骤 capabilities 使用 canonical 日志入口。
 - 使用外部托管 MySQL 时建立备份、恢复演练和监控。
 - 为 `audit_events` 设置行数/字节/增长率告警和经校验的 DBA 归档、分批保留流程。
 - 使用真实 Jenkins Job、镜像仓库和 kubeconfig 完成二级联调。

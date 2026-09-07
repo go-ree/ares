@@ -67,7 +67,7 @@
 
 ### 阶段 E：可靠性与扩展生态
 
-- [ ] 移除运行时 Xorm 结构同步，空库 bootstrap 与存量结构变化统一使用版本化迁移（W04 实现已落地，guarded migrator、旧 volume 升级和最终门禁仍在验收，继续保持未勾选）。
+- [x] 移除运行时 Xorm 结构同步，空库 bootstrap 与存量结构变化统一使用版本化迁移（W04 已由 PR #22 合并完成）。
 - [ ] 增加 attempt、有限重试、退避、超时和取消。
 - [ ] 为多副本 Worker 增加 `next_poll_at`、owner/lease 和公平到期扫描。
 - [ ] 发布 API 支持 `Idempotency-Key`。
@@ -78,7 +78,7 @@
 
 ## 3. PR #4 已交付范围
 
-2026-09-04 进度同步：W04 已把 epoch 1～4 拆为独立完整 schema/data 契约，运行时只读检查不再执行结构 DDL；未删除 AppConfig 必须对应未删除环境目录项。Compose 使用特权账号门禁、默认锁定的 migrator、管理员守护的唯一迁移会话和无 DDL runtime 账号；发现旧版/未知 schema grantee 时会在任何写入前拒绝，必须由 DBA 先撤权再升级。独立进程并发、真实 CLI 和账号日志/权限自动化已经补入，guarded Compose 全链路、最终门禁、中文 PR 与 GitHub CI 仍在进行，完成前本项保持未勾选。详细证据以[开源化与生产能力开发计划](open-source-production-roadmap.md) W04 记录为准。
+2026-09-07 进度同步：W04 已由 [PR #22](https://github.com/go-ree/ares/pull/22) 合并完成。epoch 1～4 使用独立完整 schema/data 契约，运行时只读检查不再执行结构 DDL；Compose 使用特权账号门禁、默认锁定的 migrator、管理员守护的唯一迁移会话和无 DDL runtime 账号。完整实现与验收证据以[开源化与生产能力开发计划](open-source-production-roadmap.md) W04 记录为准。
 
 PR #4 以形成可运行的第一条纵向闭环为目标，已经交付：
 
