@@ -14,7 +14,8 @@ GET /api/v1/tasks/:task_id/steps/:step_key/logs/stream?cursor=:cursor
 - 必须使用已认证的同源 Cookie 会话，并拥有 `logs.read`。
 - `task_id` 是正整数；`step_key` 使用工作流的稳定 key，格式为
   `^[a-z][a-z0-9._-]{0,62}$`。
-- query 只允许一个可选 `cursor`。未知字段或重复 cursor 返回 400；空 cursor 表示从头读取。
+- query 只允许一个可选 `cursor`。省略 cursor 表示从头读取；未知字段、重复 cursor 或显式空值
+  返回 400。
 - 客户端不得提交 `uses`、配置、external reference、Jenkins Job、Build ID 或服务地址。
 
 步骤列表 `GET /api/v1/deploy/publish/query/:task_id/steps` 及 v2 任务详情会返回每个步骤由服务端
@@ -31,9 +32,9 @@ cursor 是执行器拥有的 opaque UTF-8 字符串，表示下一段尚未确�
 - 两者同时存在时必须字节级一致，否则返回 `400 cursor_conflict`；
 - Jenkins cursor 进一步限定为无符号十进制 int64；调用方不要对其他执行器的 cursor 做数值运算。
 
-前端收到并处理一个 `log` 事件后保存该事件的 cursor。手工重建 EventSource 时把最新值放入
-`?cursor=`；浏览器原生自动重连可以携带相同的 `Last-Event-ID`。不要提前保存尚未渲染的 cursor，
-也不要在错误后回退到空 cursor，否则可能重放大量日志。
+前端收到并处理一个 `log` 事件后保存该事件的 cursor。Ares Web 手工重建 fetch SSE transport 时
+把最新值放入 `?cursor=`；其他合规 SSE 客户端也可以携带相同的 `Last-Event-ID`。不要提前保存
+尚未处理的 cursor，也不要在错误后省略已有 cursor，否则可能重放大量日志。
 
 ## SSE 事件
 
@@ -91,9 +92,10 @@ data: {"code":"upstream_unavailable"}
 - `executor_unavailable`：执行器或集成当前不可用；
 - `log_source_mismatch`：历史引用与当前受信实例不匹配；
 - `forbidden`：会话仍有效，但定期复验发现 `logs.read` 已被撤销。
+- `session_revalidation_failed`：会话复验服务暂时不可用。
 
 事件不会携带底层 message。前端只显示本地维护的稳定文案，并按错误类别决定是否提供手工重试，
-不得显示 EventSource、Axios 或上游原始错误。`forbidden` 只关闭日志流并刷新服务端最终权限，
+不得显示 fetch、Axios 或上游原始错误。`forbidden` 只关闭日志流并刷新服务端最终权限，
 不能清除仍有效的全局会话。
 
 ### `auth-expired`
@@ -104,9 +106,9 @@ data: {"reason":"session_expired"}
 
 ```
 
-收到后立即关闭 EventSource，取消所有重试和 timer，并让统一身份 store 收敛为匿名状态。网络
-错误后的会话探测若返回 401，也执行相同逻辑；若会话仍有效但日志请求/复验返回 403，只刷新权限并
-停止日志流，不触发全局登出。
+收到后立即关闭 transport，取消所有重试和 timer，并让统一身份 store 收敛为匿名状态。建流 HTTP
+401 直接执行相同逻辑；若日志请求/复验返回 403，只刷新权限并停止日志流，不触发全局登出。没有
+HTTP 响应的网络错误会在重连前探测会话。
 
 ## 建流前错误
 
@@ -115,16 +117,18 @@ data: {"reason":"session_expired"}
 | 400 | `invalid_request` / `invalid_cursor` / `cursor_conflict` | 停止自动重试并报告请求状态无效 |
 | 401 | `unauthenticated` | 清理身份并进入登录流程 |
 | 403 | `forbidden` | 关闭日志 UI，不把它当作全局登出 |
-| 404 | `task_or_step_not_found` | 刷新任务详情；不区分任务或步骤哪一个不存在 |
+| 404 | `task_or_step_not_found` | 停止自动重试并提示刷新任务详情；不区分任务或步骤哪一个不存在 |
 | 409 | `logs_not_ready` | 步骤尚未得到日志引用，可以稍后有界重试 |
 | 409 | `log_source_mismatch` / `legacy_task` | 停止自动重试并显示稳定说明 |
 | 422 | `logs_unsupported` | 隐藏入口；这不是“空日志” |
 | 429 | `stream_capacity_exceeded` | 尊重 `Retry-After`，不立即重连 |
 | 502 | `upstream_unavailable` | 有界退避或提供手工重试 |
+| 502 | `invalid_log_chunk` | 停止自动重试，避免错误 cursor 造成重放或丢失 |
 | 503 | `executor_unavailable` | 保留页面其他能力，稍后重试日志 |
 | 500 | `internal_error` | 显示通用内部错误，不展示响应细节 |
 
-SSE 建立后 HTTP 状态不能再改变，只按上一节的事件分类处理。
+Ares Web 使用 fetch 建立并解析有界 SSE，因此能够在流提交前读取上述 HTTP 状态与稳定错误码，
+并在 429 时读取 `Retry-After`。SSE 建立后 HTTP 状态不能再改变，只按上一节的事件分类处理。
 
 ## 前端生命周期
 
@@ -132,11 +136,12 @@ SSE 建立后 HTTP 状态不能再改变，只按上一节的事件分类处理�
 
 1. 打开详情后按服务端步骤顺序展示任意数量的步骤；
 2. 选择步骤时关闭上一条流，再为新步骤建立连接；
-3. 切换任务、关闭详情、路由卸载或权限失效时立即关闭 EventSource；
+3. 切换任务、关闭详情、路由卸载或权限失效时立即中止当前 transport 与 fetch；
 4. 每个 `task_id + step_key` 独立保存 buffer、cursor、完成状态和共享的有限重连预算；
 5. `completed` 在当前详情生命周期内不可被健康检查或 timer 重新打开；
 6. 手工重试保留已确认内容和 cursor，不从头清空后静默重放；
-7. 日志缓冲必须有内存上限，追加使用纯文本并分批渲染。
+7. 单步骤日志缓冲和当前详情内的全部步骤缓存都必须有内存上限；超出总量时按 LRU 淘汰旧步骤缓存，
+   追加使用纯文本并分批渲染。
 
 ## 执行器要求
 
@@ -165,8 +170,8 @@ Descriptor 的 `capabilities.logs` 必须与是否实现 `LogReader` 一致，�
 `engine_version=1` 的历史任务，并继续限制为存储的 CI/CD 引用。它们的全部响应都包含
 `Deprecation: true` 和
 `Warning: 299 - "Legacy Jenkins log endpoint is deprecated; use task step logs"`；当前没有虚构
-Sunset 日期或对 v1 不可用的 successor Link。v2 任务使用旧入口会被拒绝；新 Web 客户端不得调用
-旧入口或依赖 `ci_job_name`、`cd_job_name`、`ci_build_id`、`cd_build_id`。
+Sunset 日期或对 v1 不可用的 successor Link。v2 任务使用旧入口会被拒绝且绝不回退到兼容字段；
+当前 Web 只为 v1 历史任务保留隔离的 task-scoped adapter，并且不会把 Job/Build 作为请求参数。
 
 ## 测试检查表
 

@@ -31,9 +31,10 @@ Ares 的 v2 发布任务已经把每个步骤的 `step_key`、`uses`、配置快
 6. `cursor` 是执行器拥有、服务端透传的续传位置。通用边界要求它不超过 256 bytes、是有效
    UTF-8，且不包含 CR、LF 或 NUL；执行器可以继续收紧格式。`jenkins.job@v1` 只接受无符号
    十进制 int64 offset。
-7. 浏览器可以使用 `cursor` query 手工重建 EventSource，也可以使用原生自动重连发送的
-   `Last-Event-ID`。Header 必须是单值并满足同一 cursor 校验；query 与 Header 同时存在时必须
-   字节级一致，否则返回 400。空 cursor 表示从执行器定义的起点读取。
+7. 首次读取通过省略 `cursor` 表示从执行器定义的起点开始；显式空 query 或 Header 无效。Ares
+   Web 使用可观察建流 HTTP 状态的同源 fetch SSE transport，并在手工重连时把最后确认值放入
+   `cursor` query；其他合规客户端也可以发送 `Last-Event-ID`。Header 必须是单值并满足同一
+   cursor 校验；query 与 Header 同时存在时必须字节级一致，否则返回 400。
 8. cursor 表示“下一段尚未确认内容的位置”。每个 `log` 事件的 `id` 和 payload cursor 都是该段
    内容之后的续传位置；客户端只有在处理该事件后才能保存 cursor。以该值重连不得重复或跳过
    已确认内容。
@@ -45,8 +46,9 @@ Ares 的 v2 发布任务已经把每个步骤的 `step_key`、`uses`、配置快
 11. 通用流处理器统一负责连接准入、总时长、上游空闲时间、心跳、滚动写 deadline、会话复验、
     backpressure 和 context 取消。执行器只按 cursor 有界读取日志，不创建脱离请求生命周期的
     后台流。
-12. 日志读取是敏感读取：需要 `logs.read`，每条连接只记录一次脱敏审计事件。审计资源由服务端
-    形成 `task_id/step_key`，不记录 cursor、external reference、上游 URL、日志正文或凭据。
+12. 日志读取是敏感读取：需要 `logs.read`。每次鉴权通过的连接请求写入有界的 `authorized` 与
+    最终 `succeeded/failed` 审计事件，不按 chunk 写审计。路由层形成 `task_id/step_key` 资源，
+    不记录 cursor、external reference、上游 URL、日志正文或凭据。
 13. 旧 `/api/v1/job/stream/log` 与 `/api/v1/deploy/log/stream` 标记 deprecated，只服务
     `engine_version=1` 的历史任务。v2 任务必须使用 canonical 步骤入口；旧入口仍只能根据存储的
     v1 任务字段解析 CI/CD 引用，不能恢复任意 Job/Build 查询。
@@ -67,13 +69,17 @@ Cookie: ares_session=...
 
 1. 认证当前会话并检查 `logs.read`；
 2. 校验正整数 `task_id`、工作流 step key 格式、query 和 cursor；
-3. 同时确认任务存在、是 v2 任务，且该 `step_key` 确实属于这个任务；
-4. 从步骤快照取得 `uses` 与 opaque `external_ref`；
-5. 查询 Registry，核对 descriptor 日志能力和 `LogReader` 实现；
-6. 确认外部引用已经足以定位日志；
-7. 获取 generic/legacy 共用的连接配额；
+3. 获取 generic/legacy 共用的连接配额；
+4. 同时确认任务存在、是 v2 任务，且该 `step_key` 确实属于这个任务；
+5. 从步骤快照取得 `uses` 与 opaque `external_ref`；
+6. 查询 Registry，核对 descriptor 日志能力和 `LogReader` 实现；
+7. 确认外部引用已经足以定位日志；
 8. 由执行器严格验证私有引用和当前集成实例，且在验证通过前不发送外部请求；
 9. 完成第一次有界读取或返回稳定前置错误，再开始 SSE。
+
+取得连接配额后、第一次执行器读取前必须先清除普通 HTTP `WriteTimeout`；否则合法的集成读取
+超时可能长于普通接口写期限，使尚未提交的 502 等稳定错误也无法写回。整个预读和后续流仍受
+SSE `max_duration` context 约束，正式写入每个响应头或事件时再使用滚动 write deadline。
 
 步骤列表和任务详情中的 `capabilities` 是服务端根据当前已注册的步骤执行器派生的响应字段，
 不是任务可写输入或数据库状态。执行器临时不可用不改变其静态日志能力；用户仍可以看到日志入口，
@@ -128,7 +134,7 @@ data: {"code":"upstream_unavailable"}
 ```
 
 允许的 `code` 只有 `upstream_unavailable`、`invalid_log_chunk`、`executor_unavailable`、
-`log_source_mismatch` 和 `forbidden`。定期复验发现会话仍有效但 `logs.read` 已被撤销时发送
+`log_source_mismatch`、`forbidden` 和 `session_revalidation_failed`。定期复验发现会话仍有效但 `logs.read` 已被撤销时发送
 `stream-error/forbidden` 并关闭当前日志流；前端只收起日志能力，不能把它当作全局登出。事件不
 携带内部 message、上游正文或 URL。只有会话到期、用户禁用或会话撤销时才尽力发送：
 
@@ -138,8 +144,11 @@ data: {"reason":"session_expired"}
 
 ```
 
-随后立即关闭。前端收到 `auth-expired`，或连接失败后会话探测确认 401，必须终止该日志生命周期
-的全部连接、timer 和重连并收敛全局身份；会话探测得到 403 时只停止日志流并刷新最终权限。
+随后立即关闭。前端收到 `auth-expired` 或建流 HTTP 401，必须终止该日志生命周期的全部连接、
+timer 和重连并收敛全局身份；建流 HTTP 403 时只停止日志流并刷新最终权限。真正没有收到 HTTP
+响应的网络失败会在重连前探测会话，防止失效身份进入无界重试。
+canonical fetch 不发送页面 Referer；错误正文最多读取 16 KiB，超限或取消失败都不能覆盖已经取得的
+HTTP 状态与稳定错误分类。
 
 ## HTTP 失败契约
 
@@ -158,7 +167,7 @@ SSE 响应头发送前使用以下稳定分类：
 | 409 | `legacy_task` | v1 任务误用 canonical v2 步骤入口 |
 | 422 | `logs_unsupported` | 该步骤类型没有日志能力 |
 | 429 | `stream_capacity_exceeded` | 当前主体或进程的日志连接容量已满；响应携带 `Retry-After` |
-| 502 | `upstream_unavailable` | 第一次读取时上游不可用 |
+| 502 | `upstream_unavailable` / `invalid_log_chunk` | 第一次读取时上游不可用，或执行器返回无效 chunk |
 | 503 | `executor_unavailable` | 执行器未注册或集成未启用 |
 | 500 | `internal_error` | 无法安全读取内部任务/步骤状态 |
 
@@ -173,7 +182,8 @@ Build ID。引用必须是严格的单一 JSON 对象，未知字段、缺失 Bu
 `logs_not_ready`。
 
 Jenkins progressiveText 的 byte offset 映射为十进制 cursor。Adapter 保留 256 KiB 上游读取
-硬上限，通用 SSE 层再把内容拆为有界事件。上游 offset 回退、缺失或超出 int64 均属于
+硬上限；达到上限时只在安全的 UTF-8 rune 边界切分并按实际返回字节推进 offset。每个有界 chunk
+由通用层编码为一个有界 SSE 事件。上游 offset 回退、缺失或超出 int64 均属于
 `invalid_log_chunk`，不能通过把 cursor 重置为 0 静默重放整份日志。
 
 ## 兼容、发布与回退
@@ -184,9 +194,10 @@ canonical API 是只读增量能力，不修改任务、步骤或外部构建。
 
 旧日志路由继续保护 v1 历史任务，但所有响应（包括 4xx/5xx）都发送 `Deprecation: true` 和
 `Warning: 299 - "Legacy Jenkins log endpoint is deprecated; use task step logs"`，并拒绝 v2
-任务。当前不虚构 Sunset 日期，也不发送无法供 v1 任务直接使用的 successor Link。新前端不再从
-`ci_job_name`、`cd_job_name`、`ci_build_id` 或 `cd_build_id` 推导日志入口。移除旧路由仍需单独
-评审；W03 只收紧其用途，不删除 v1 历史读取能力。
+任务。当前不虚构 Sunset 日期，也不发送无法供 v1 任务直接使用的 successor Link。v2 前端只按
+步骤 `capabilities.logs` 使用 canonical 入口，绝不回退到兼容字段；v1 历史任务仍由隔离的
+task-scoped adapter 判断 CI/CD 历史引用是否存在，向旧路由只提交 task ID、日志类别和 cursor，
+不会提交 Job/Build。移除旧路由仍需单独评审；W03 只收紧其用途，不删除 v1 历史读取能力。
 
 ## 验收
 

@@ -115,11 +115,16 @@ W03 通用步骤日志至少需要以下自动化证据：
   被撤销时发送 `stream-error/forbidden` 并只关闭日志流，不把用户全局登出；
 - Jenkins folder Job、空增量、多 chunk、EOF、offset 回退、响应超限、context 取消和写入阻塞都有
   测试；从最后确认 cursor 重连不重复、不丢失内容；
-- 关闭详情、切换任务/步骤、路由卸载、最长时长、上游空闲和权限失效后无残留 EventSource、timer、
-  goroutine 或上游请求，并纳入相关 Go 包 Race Detector 与前端 Vitest；
+- 第一次执行器读取超过普通 HTTP `WriteTimeout` 时仍能返回完整 SSE，慢速首次失败仍保留稳定的
+  建流前 HTTP 状态与错误码；
+- canonical fetch SSE parser 对拆分 UTF-8、CR/LF/CRLF、多行 data、非法编码、异常 EOF、错误正文和
+  最坏 JSON 转义后的最大合法 frame 保持有界；建流 4xx/5xx 按稳定 code 分类，429 尊重
+  `Retry-After`；
+- 关闭详情、切换任务/步骤、路由卸载、最长时长、上游空闲和权限失效后无残留 transport、fetch、
+  EventSource、timer、goroutine 或上游请求，并纳入相关 Go 包 Race Detector 与前端 Vitest；
 - 旧 `/api/v1/job/stream/log` 和 `/api/v1/deploy/log/stream` 的所有响应都有固定
   `Deprecation`/`Warning`，仅 v1 历史任务可读；v2 任务必须使用 canonical 接口；
-- 日志内容按纯文本、有界 buffer、批量渲染，响应、审计、后端日志和前端 console 均扫描不到
+- 日志内容按纯文本、单步骤与全详情双重有界 buffer、LRU 淘汰和批量渲染，响应、审计、后端日志和前端 console 均扫描不到
   测试 Secret、external reference、上游 URL 或原始错误。
 
 另外要在隔离 Compose 环境手工验证：匿名访问 Swagger 与业务 API 返回 `401`，读取随机 Bootstrap Token 后可创建首位管理员，第二次 Bootstrap 被拒绝，四角色关键操作符合矩阵，Demo 数据在登录后可见，12 个 AppConfig 的当前工作流均能读取，Jenkins/Kubernetes 关闭时核心功能仍可用；精确重启 API 与 Web 后，会话、Bootstrap 状态、Demo 计数以及 12 份工作流的规范化响应摘要必须保持一致。再修改本地管理员密码，确认旧密码和修改前 Cookie 均失效、新密码登录成功且审计事件存在；注入测试用 `v1` 系统凭据时，应确认界面要求重新录入、启用失败关闭但仍可先禁用/删除。向 OIDC callback 发送仅供测试的标记 `code`/`state` 后，还要确认 Nginx 与后端日志均未出现 query、标记值或 Referer，并验证响应包含 `Cache-Control: no-store` 和 `Referrer-Policy: no-referrer`。只有实际执行并保存命令输出、HTTP 状态和必要的脱敏日志后，才能在 PR 中声称这组 E2E 已通过。

@@ -91,9 +91,11 @@ reference。服务端确认步骤归属后，从任务快照读取 `uses/externa
 `LogReader`。只有步骤响应的 `capabilities.logs=true` 时才展示入口；无日志能力返回明确的
 `logs_unsupported`，不能把 200 空文本解释为不支持。
 
-query 只允许一个 `cursor`。浏览器原生 `Last-Event-ID` 也可用于续传；两者同时存在时必须一致。
+query 只允许一个非空 `cursor`；省略表示首次读取。Ares Web 通过 query 手工续传，其他合规客户端
+也可使用单值 `Last-Event-ID`；两者同时存在时必须一致。
 SSE 使用 `log`、`ping`、`end`、`stream-error`、`auth-expired` 事件。完整 payload、错误分类、
 cursor 边界及前端生命周期见[通用任务步骤日志 API](task-step-logs-api.md)。
 
 旧 `/api/v1/job/stream/log` 与 `/api/v1/deploy/log/stream` 已 deprecated，只为
-`engine_version=1` 的历史任务保留。v2 任务和当前 Web 均不得使用固定 `ci/cd` 日志路由。
+`engine_version=1` 的历史任务保留。v2 任务不得使用固定 `ci/cd` 日志路由；当前 Web 只通过隔离的
+task-scoped adapter 为 v1 历史任务调用该兼容入口。

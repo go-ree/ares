@@ -56,16 +56,20 @@ SSE、Nginx 或重启持久性的交互仍需在隔离 Compose 环境补充端�
 
 ## 6. 通用步骤日志
 
-W03 日志只调用
+W03 的 v2 日志只调用
 `GET /api/v1/tasks/:task_id/steps/:step_key/logs/stream?cursor=:cursor`。入口是否显示完全取决于当前
-步骤的 `capabilities.logs`；Web 不再读取 Jenkins Job/Build 兼容字段，也不调用旧日志路由。
+步骤的 `capabilities.logs`，不得回退到 Jenkins Job/Build 兼容字段。`engine_version=1` 的历史任务
+仍由隔离的 task-scoped adapter 调用 deprecated 路由；浏览器只提交 task ID、CI/CD 类别与 cursor，
+不提交 Job、Build ID 或 Jenkins 地址。
 
 每个 `task_id + step_key` 独立维护文本 buffer、最后确认 cursor、完成标记和有限自动重连预算。
-切换步骤前先关闭旧 EventSource；切换任务、关闭详情、路由卸载或失去日志权限时关闭所有连接并
-取消 timer。`end/completed` 是当前详情生命周期内的终态，健康检查不能再次打开；
+canonical 流使用同源 fetch SSE transport，以便读取建流前 HTTP 状态和 `Retry-After`；旧 v1
+adapter 仍使用 EventSource。切换步骤前先中止旧 transport；切换任务、关闭详情、路由卸载或失去
+日志权限时关闭所有连接并取消 timer。`end/completed` 是当前详情生命周期内的终态，健康检查不能再次打开；
 `end/max_duration` 和 `end/upstream_idle` 才允许从最新 cursor 有界重建。
 
 `auth-expired` 或会话探测 401 终止全部日志连接并收敛全局身份。`stream-error/forbidden` 或会话
 仍有效时的 403 只终止日志能力、刷新权限，不登出用户。日志以纯文本分批追加并设置内存上限，
-禁止通过 `v-html` 等方式解释上游内容。事件和错误处理的完整契约见
+其中每个步骤最多保留 2 MiB、当前详情全部步骤合计最多保留 8 MiB，超限按 LRU 淘汰旧缓存；禁止通过
+`v-html` 等方式解释上游内容。canonical fetch 使用 `no-referrer`，事件和错误处理的完整契约见
 [通用任务步骤日志 API](task-step-logs-api.md)。

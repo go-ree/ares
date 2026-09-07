@@ -13,7 +13,7 @@ Ares 当前把浏览器 `localStorage` 中任意填写的姓名当作登录身�
 网络中的原型，不能作为公开部署的身份或权限边界。
 
 同时，现有 Web 客户端分散创建多个 Axios 实例，无法统一处理 Cookie、CSRF、401/403；
-日志 EventSource 在身份失效后仍可能周期性重连。HTTP Server 也没有 Header、Read、Idle
+日志 SSE 客户端在身份失效后仍可能周期性重连。HTTP Server 也没有 Header、Read、Idle
 或普通响应写入期限。W02 必须把这些入口一次性收敛到同一服务端安全边界。
 
 ## 决策摘要
@@ -256,8 +256,9 @@ SSE 在进入流处理前通过 `http.ResponseController` 清除普通全局写�
 SSE 在鉴权和资源授权完成后才发送 200 响应，使用同源 HttpOnly Cookie。连接定期写入心跳、
 每次写入设置有限 deadline，并受总空闲期限约束；事件 ID/cursor 用于重连续传。会话复验间隔
 最多 60 秒且不能长于会话 idle timeout。会话到期或撤销时发送 `auth-expired`（若响应仍可写）
-并关闭。前端收到该事件，或 EventSource 出错后探测到 session 401/403，必须停止所有定时器和
-重连；普通网络故障才允许有界退避。
+并关闭。前端收到该事件，或建流 HTTP/网络错误后确认 session 401/403，必须停止所有定时器和
+重连；普通网络故障才允许有界退避。W03 的 canonical 客户端使用 fetch SSE transport 直接读取
+建流前 HTTP 状态；v1 历史兼容流仍使用 EventSource。
 
 W02 先把现有旧 Jenkins 日志流纳入该边界；W03 再将其替换为 `task_id + step_key + cursor`
 的执行器通用日志能力。

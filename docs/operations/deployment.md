@@ -27,7 +27,8 @@ ares / ares serve（运行时账号） ◄── web / Nginx ◄── 浏览器
 
 只有 Web 端口对外开放。后端调试端口默认只绑定 `127.0.0.1:8081`，MySQL 不暴露宿主端口。
 Nginx 为 Vue Router 提供 SPA fallback，并针对 canonical 通用步骤日志和 v1 Jenkins 兼容日志关闭
-代理缓冲与 gzip、透传 `Last-Event-ID` 并保留有界长连接。
+代理缓冲与 gzip、默认透传 `Last-Event-ID` 并保留有界长连接。配置不能用
+`$http_last_event_id` 显式重写该 Header，否则 Nginx 会合并重复值并绕过后端单值校验。
 
 ## 快速启动
 
@@ -164,12 +165,14 @@ GET /api/v1/tasks/:task_id/steps/:step_key/logs/stream?cursor=:cursor
 写数据库，不改变任务状态，也不参与 readiness。
 
 内置 Nginx 对 canonical 动态路径及两个 v1 兼容路径使用 SSE 专用配置：HTTP/1.1、关闭请求/响应
-缓冲、缓存和 gzip，清除 `Connection`，透传 Cookie 与 `Last-Event-ID`，设置
+缓冲、缓存和 gzip，清除 `Connection`，透传 Cookie，并让 Nginx 默认保留 `Last-Event-ID` 的
+单值或重复 Header 形状；不要通过 `$http_last_event_id` 重写。配置同时设置
 `X-Accel-Buffering: no`，并让代理读写时限覆盖单条 SSE 的最大生命周期。生产 Ingress、CDN 或
 WAF 必须提供等价配置；不能使用会聚合响应的默认代理策略。访问日志继续只记录不含 query 的
 `$uri`，不得记录 cursor、Cookie、Referer 或完整 request target。
 
-query 只允许一个 `cursor`；浏览器原生 `Last-Event-ID` 也可续传，两者同时存在时必须一致。cursor
+query 只允许一个非空 `cursor`，省略表示首次读取；其他 SSE 客户端也可用单值
+`Last-Event-ID` 续传，两者同时存在时必须一致。cursor
 最多 256 bytes，是有效 UTF-8 且不含 CR/LF/NUL。SSE 事件只包括 `log`、`ping`、`end`、
 `stream-error` 和 `auth-expired`；具体 payload 见[通用任务步骤日志 API](../development/task-step-logs-api.md)。
 
@@ -292,8 +295,9 @@ docker compose exec -T mysql \
 恢复前请先在独立环境验证备份。逻辑备份不能直接覆盖导入已经迁移的新 schema；需要回退时应恢复到新的空数据库，并同时使用与备份 epoch 兼容的应用版本。
 
 W03 通用步骤日志没有 schema 或持久化数据变化。滚动发布时先部署支持 canonical 接口的后端，再
-部署停止使用旧 Jenkins 路由的前端；回退时先回退前端，再回退后端。该功能回退不需要恢复数据库，
-但后端和前端混合版本期间只有 v1 历史任务能使用旧日志路由，因此仍应按上述顺序操作。
+部署让 v2 任务停止使用旧 Jenkins 路由的前端；v1 历史任务仍使用 deprecated adapter。回退时先
+回退前端，再回退后端。该功能回退不需要恢复数据库，但后端和前端混合版本期间只有 v1 历史任务能
+使用旧日志路由，因此仍应按上述顺序操作。
 
 停止服务但保留数据：
 
