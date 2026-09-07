@@ -1,8 +1,8 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W01 仓库实现已合并、管理项阻塞；W02、W04 已合并，W03 通用步骤日志进入 PR 验收
-> - 基线版本：`main@2349e4a`，已合并 [PR #23：建立服务端认证、RBAC 与审计边界](https://github.com/go-ree/ares/pull/23)
+> - 当前状态：W01 仓库实现已合并、管理项阻塞；W02～W04 已合并，W05 AppConfig 核心的幂等发布进入设计
+> - 基线版本：`main@aa37282`，已合并 [PR #34：实现执行器通用步骤日志](https://github.com/go-ree/ares/pull/34)
 > - 最后更新：2026-09-07
 
 本文承接 [可插拔 CI/CD 实施路线](pluggable-cicd-roadmap.md)。上一阶段已经完成动态环境、版本化工作流、通用串行编排和 Jenkins Adapter 的主链路；本计划负责把 Ares 从“可运行的开源 CI/CD 基础”推进到“可安全公开部署、可持续扩展、可进行生产化验证”的状态。
@@ -53,7 +53,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 ### 2.2 当前主要缺口
 
 - W02 已用服务端会话、RBAC 与审计替换浏览器伪身份；本地全量门禁、真实部署验收、PR 自动化和主线合并均已完成。
-- v2 任务日志尚未通过通用步骤能力读取，前端仍保留固定 CI/CD 的 Jenkins 日志兼容逻辑。
+- W03 已完成执行器通用步骤日志、前端任意步骤展示和受限的 v1 只读兼容，[PR #34](https://github.com/go-ree/ares/pull/34) 已合并。
 - W04 已落地独立 migrator、运行时只读检查和显式 schema manifest，本地 MySQL 8.4 中断、并发、历史库与 Compose 验收矩阵及 GitHub 检查均已通过，[PR #22](https://github.com/go-ree/ares/pull/22) 已合并。
 - 发布接口尚无客户端幂等键和统一预检，重复请求可能创建不同任务。
 - Worker 只有步骤认领 CAS，没有完整 owner、lease、fencing 和多副本公平调度。
@@ -77,9 +77,9 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 | W00    | 后续路线与进度机制           | PR #4              | `已完成` | [PR #5](https://github.com/go-ree/ares/pull/5)   | 建立本计划、状态口径和验收规则                  |
 | W01    | 开源工程与质量门禁           | W00                | `阻塞`   | [PR #6](https://github.com/go-ree/ares/pull/6)   | 开源治理文件、Required Checks、依赖与供应链基线 |
 | W02    | 认证、RBAC 与审计            | W01                | `已完成` | [PR #23](https://github.com/go-ree/ares/pull/23) | 可信身份、服务端授权、真实发布人和审计记录      |
-| W03    | 通用步骤日志                 | W02                | `待验收` | [PR #34](https://github.com/go-ree/ares/pull/34) | 通过 `task_id + step_key` 读取任意执行器日志    |
+| W03    | 通用步骤日志                 | W02                | `已完成` | [PR #34](https://github.com/go-ree/ares/pull/34) | 通过 `task_id + step_key` 读取任意执行器日志    |
 | W04    | 数据库迁移机制收敛           | W01                | `已完成` | [PR #22](https://github.com/go-ree/ares/pull/22) | 存量结构只由版本化 migration 改变               |
-| W05    | AppConfig 核心的幂等发布     | W02、W04           | `未开始` | 待创建                                           | 预检、`config_id` 发布、`Idempotency-Key`       |
+| W05    | AppConfig 核心的幂等发布     | W02、W04           | `设计中` | 待创建                                           | 预检、`config_id` 发布、`Idempotency-Key`       |
 | W06    | 多副本 Worker 与租约         | W04、W05           | `未开始` | 待创建                                           | 公平领取、lease、fencing、故障接管              |
 | W07    | 重试、取消、超时与尝试历史   | W03、W06           | `未开始` | 待创建                                           | 可控的失败恢复和执行器取消能力                  |
 | W08    | Secret Resolver 与密钥轮换   | W02、W04           | `未开始` | 待创建                                           | 工作流只保存 Secret 引用，运行时按版本解析      |
@@ -433,7 +433,7 @@ W02 与 W04 依赖 W01 已交付的仓库内质量基线，可以并行设计；
 | R-001 | 浏览器身份可伪造，公开部署后缺少权限边界 | 高       | W02 已建立真实认证、RBAC 与审计                                | 已关闭     |
 | R-002 | Xorm 可能隐式修改存量表结构              | 高       | W04 已收敛为版本化迁移；升级前备份并禁止旧镜像写升级库         | 已关闭     |
 | R-003 | 多副本会重复 Reconcile running 步骤      | 高       | W06 引入 lease 和 fencing；完成前整个 Ares Worker 保持单副本   | 开放       |
-| R-004 | v2 日志仍依赖 Jenkins 兼容字段           | 中       | [PR #34](https://github.com/go-ree/ares/pull/34) 已实现通用日志；待合并后关闭 | 开放       |
+| R-004 | v2 日志仍依赖 Jenkins 兼容字段           | 中       | [PR #34](https://github.com/go-ree/ares/pull/34) 已实现并合并通用日志能力 | 已关闭     |
 | R-005 | 重试请求可能重复创建发布任务             | 中       | W05 引入 `Idempotency-Key` 和请求摘要                          | 开放       |
 | R-006 | 工作流不能安全消费 Secret                | 中       | W08 上线前继续拒绝敏感字段，不允许保存明文凭据                 | 开放       |
 | R-007 | 开发/构建依赖存在已知漏洞或版本漂移      | 中       | W01 固定工具链、升级依赖并建立自动扫描                         | 开放       |
@@ -445,9 +445,18 @@ W02 与 W04 依赖 W01 已交付的仓库内质量基线，可以并行设计；
 
 ## 8. 下一步
 
-[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。[PR #22](https://github.com/go-ree/ares/pull/22) 已合并，W04 的 schema 所有权、独立 migrator 与启动兼容性检查成为主线基线。[PR #23](https://github.com/go-ree/ares/pull/23) 已合并，W02 的身份、会话、RBAC、可信操作主体、审计、前端权限界面和 Compose 初始化成为主线能力。W03 的实现、本地门禁与隔离 Compose 验收已经完成，[PR #34](https://github.com/go-ree/ares/pull/34) 正在等待维护者验收；合并后再进入 W05 的 AppConfig 核心幂等发布。
+[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。[PR #22](https://github.com/go-ree/ares/pull/22)、[PR #23](https://github.com/go-ree/ares/pull/23) 与 [PR #34](https://github.com/go-ree/ares/pull/34) 已分别把迁移、身份权限和通用步骤日志纳入主线。当前进入 W05：先固定 AppConfig 核心发布、预检、幂等键、请求摘要、并发事务、兼容适配和批量逐项结果契约，再根据文档实施代码与迁移。
 
 ## 9. 进度记录
+
+### 2026-09-07：W03 合并校准与 W05 设计启动
+
+- 基线校准：[PR #34](https://github.com/go-ree/ares/pull/34) 已合并为 `main@aa37282`；W03 更新为 `已完成`，R-004 随通用步骤日志进入主线关闭。
+- 开发分支：`codex/w05-idempotent-publish`，从最新主线创建，不直接修改 `main`；W05 从 `未开始` 进入 `设计中`，关联 PR 待创建。
+- 当前审计：并行梳理单个/批量发布入口、AppConfig 与任务快照、数据库事务和 migration、前端重复界面、权限审计及幂等重放威胁；尚未修改生产代码。
+- 设计顺序：先固化 `config_id + ref + inputs`、预检、`Idempotency-Key` 作用域与规范化请求摘要，再确定并发唯一约束、旧 `app_name + env` 适配、批量逐项语义、前端交互、升级与回退边界。
+- 数据库影响：预计需要新增只增不删的 epoch 6 持久化幂等记录；表结构、保留期和兼容区间待 ADR 与现有 schema 审计完成后确认，不提前修改已发布的 epoch 1～5。
+- 关联 PR：待创建；本记录只表示进入设计，不把 W05 范围标记为完成。
 
 ### 2026-09-07：W03 实现完成并通过本地验收
 
