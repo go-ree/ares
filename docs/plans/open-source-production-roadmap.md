@@ -457,6 +457,7 @@ W02 与 W04 依赖 W01 已交付的仓库内质量基线，可以并行设计；
 - 前端：按服务端返回的任意步骤与 `capabilities.logs` 展示入口，使用同源 Fetch SSE 读取非 2xx 状态并续传；覆盖严格 UTF-8/SSE 解析、登录失效复验、5 次重连上限、浏览器静默期限、单步骤 2 MiB/10000 行及当前详情 8 MiB LRU 总缓存上限，关闭、切换、卸载或权限撤销都会释放连接与定时器。
 - 数据库影响：无。不新增 migration，不修改 epoch 1～5、schema manifest 或 checksum；继续复用现有任务步骤快照。
 - 自动化门禁：`git diff --check`、gofmt、`go mod verify`、`go mod tidy -diff`、全量 Go test/vet、完整 `make race`、govulncheck、actionlint、Compose 配置和 Swagger 连续重生成均通过；govulncheck 为 0 个可达漏洞。前端 ESLint、Prettier、Type Check、生产构建和 126 项 Vitest 全部通过。
+- PR 自动化：[质量门禁运行 #34083038143](https://github.com/go-ree/ares/actions/runs/34083038143) 的工作流语法、后端、MySQL 8.4 迁移与恢复、MySQL 8.4 最小权限账号、关键包 race、Go 漏洞和前端七项作业全部通过；[镜像与供应链运行 #34083038126](https://github.com/go-ree/ares/actions/runs/34083038126) 同样通过。
 - Compose E2E：隔离项目从全新 volume 构建并健康启动，生成 3 个应用、4 个环境、12 个 AppConfig/工作流及 8 个初始步骤；一次性 Bootstrap、登录/登出、真实 v2 Noop 发布、canonical 错误矩阵、v1 弃用兼容、Nginx SSE 禁缓冲/禁 gzip、恶意参数脱敏和 MySQL/API/Web 重启持久化共 63 项断言通过。测试结束后容器、网络、卷和临时凭据目录残留均为 0。
 - 独立复核：后端、前端、安全、部署与提交卫生分别进行只读审查；已确认的日志标识泄露、空块游标/空闲计时、非规范 task ID、首次慢读 deadline、网络重连会话复验、错误体取消和多步骤缓存总量问题均已修复并加入回归测试。
 - 兼容与回退：canonical API 为增量能力；旧路由保留一版 v1 只读兼容但拒绝 v2。前后端需协调发布；回退时先回退前端再回退后端，无需恢复数据库。
