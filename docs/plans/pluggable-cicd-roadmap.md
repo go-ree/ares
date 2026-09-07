@@ -1,6 +1,6 @@
 # 可插拔 CI/CD 实施路线
 
-> 状态：PR #4 已交付阶段 A～C 与阶段 D 主链路；W03 [PR #34](https://github.com/go-ree/ares/pull/34) 已把通用步骤日志合并到主线，阶段 D 全部完成。W05 已完成阶段 E 的发布幂等实现与本地验收，准备创建 PR；其余阶段 E 工作统一在 [开源化与生产能力开发计划](open-source-production-roadmap.md) 中跟踪。
+> 状态：PR #4 已交付阶段 A～C 与阶段 D 主链路；W03 [PR #34](https://github.com/go-ree/ares/pull/34) 已把通用步骤日志合并到主线，阶段 D 全部完成。W05 已完成阶段 E 的发布幂等实现与本地验收，等待 [PR #35](https://github.com/go-ree/ares/pull/35) 评审；其余阶段 E 工作统一在 [开源化与生产能力开发计划](open-source-production-roadmap.md) 中跟踪。
 
 本文是 [可插拔 CI/CD 与动态环境架构](../architecture/pluggable-cicd.md) 的实施计划。每一阶段都要求可独立验证、可升级并支持前向修复；数据库迁移后的旧镜像降级不等于安全回退，旧数据删除不属于当前阶段。
 
@@ -70,7 +70,7 @@
 - [x] 移除运行时 Xorm 结构同步，空库 bootstrap 与存量结构变化统一使用版本化迁移（W04 已由 PR #22 合并完成）。
 - [ ] 增加 attempt、有限重试、退避、超时和取消。
 - [ ] 为多副本 Worker 增加 `next_poll_at`、owner/lease 和公平到期扫描。
-- [x] 发布 API 支持 `Idempotency-Key`（W05 已完成本地实现与验收，关联 PR 待创建）。
+- [x] 发布 API 支持 `Idempotency-Key`（W05 已完成本地实现与验收，见 [PR #35](https://github.com/go-ree/ares/pull/35)）。
 - [ ] 增加 Secret Resolver，流程仅保存 Secret 引用。
 - [ ] 提供执行器契约测试套件和开发模板。
 - [ ] 评估 GitHub Actions、Webhook、Kubernetes 原生发布等执行器。
