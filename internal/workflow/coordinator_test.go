@@ -289,6 +289,25 @@ func TestCoordinatorDoesNotPersistRawExecutorErrors(t *testing.T) {
 		t.Fatalf("result=%#v message=%q", result, store.steps[0].Message)
 	}
 }
+
+func TestCoordinatorDoesNotReturnOrLogRawReconcileErrors(t *testing.T) {
+	registry := NewRegistry()
+	if err := registry.Register(rawErrorExecutor{}); err != nil {
+		t.Fatal(err)
+	}
+	store := &memoryExecutionStore{steps: []entity.TaskStepRecord{{
+		StepRecordID: 1, StepKey: "network", Name: "network", Uses: "test.raw-error@v1",
+		Config: json.RawMessage(`{}`), ExternalRef: json.RawMessage(`{"run_id":"42"}`),
+		TimeoutSeconds: 60, OnFailure: FailureStop, Status: StepRunning, Attempt: 1,
+	}}}
+	result, err := NewCoordinator(store, registry).RunUntilBlocked(context.Background(), 18, 10)
+	if err != nil {
+		t.Fatalf("raw reconcile error escaped coordinator: %v", err)
+	}
+	if result.TaskStatus != TaskFailed || store.steps[0].Message != "执行器调用失败，请检查服务端运行状态" {
+		t.Fatalf("result=%#v message=%q", result, store.steps[0].Message)
+	}
+}
 func (sensitiveOutputExecutor) Validate(json.RawMessage) error { return nil }
 func (sensitiveOutputExecutor) Start(context.Context, StartRequest) (Result, error) {
 	return Result{State: ResultSucceeded, Output: json.RawMessage(`{"clientSecret":"must-not-persist"}`)}, nil

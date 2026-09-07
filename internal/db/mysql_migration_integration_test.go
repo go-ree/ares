@@ -6,8 +6,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +19,8 @@ import (
 	"time"
 	"unicode"
 
+	authdomain "github.com/go-ree/ares/internal/auth"
+	workflowdomain "github.com/go-ree/ares/internal/workflow"
 	"github.com/go-sql-driver/mysql"
 	"xorm.io/xorm"
 )
@@ -109,11 +113,21 @@ func TestMySQL84Migrations(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertCompatibleStatus(t, status)
-		if got := harness.tableCount(t, databaseName); got != len(epoch4SemanticSchemaManifest.tables)+1 {
-			t.Fatalf("table count after migrate up = %d, want %d", got, len(epoch4SemanticSchemaManifest.tables)+1)
+		if got := harness.tableCount(t, databaseName); got != len(epoch5SemanticSchemaManifest.tables)+1 {
+			t.Fatalf("table count after migrate up = %d, want %d", got, len(epoch5SemanticSchemaManifest.tables)+1)
 		}
 
 		database := openIntegrationDatabase(t, dsn)
+		var bootstrapRows, incompleteRows int
+		if err := database.QueryRow(`SELECT COUNT(*),
+			COALESCE(SUM(id = 1 AND completed_at IS NULL AND completed_by IS NULL), 0)
+			FROM auth_bootstrap_state`).Scan(&bootstrapRows, &incompleteRows); err != nil {
+			t.Fatal(err)
+		}
+		if bootstrapRows != 1 || incompleteRows != 1 {
+			t.Fatalf("fresh bootstrap state = rows:%d incomplete_singletons:%d, want 1/1",
+				bootstrapRows, incompleteRows)
+		}
 		before := readLedgerStamps(t, database)
 		if len(before) != len(schemaMigrations) {
 			t.Fatalf("ledger rows = %d, want %d", len(before), len(schemaMigrations))
@@ -127,6 +141,706 @@ func TestMySQL84Migrations(t *testing.T) {
 		if !reflect.DeepEqual(after, before) {
 			t.Fatalf("idempotent migrate up changed the ledger\nbefore=%+v\nafter=%+v", before, after)
 		}
+	})
+
+	t.Run("auth store preserves bootstrap and bounded identity lifecycle", func(t *testing.T) {
+		dsn, _ := harness.newDatabase(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		if _, err := MigrateUp(ctx, dsn, "", 45*time.Second, 10*time.Second); err != nil {
+			t.Fatal(err)
+		}
+		database := openIntegrationDatabase(t, dsn)
+		store, err := authdomain.NewSQLStore(database)
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+		oidcUser, err := store.UpsertOIDCUser(ctx, authdomain.OIDCUser{
+			Issuer: "https://issuer.example.invalid", Subject: "first-viewer",
+			IdentityHash: bytes.Repeat([]byte{0x41}, 32), DisplayName: "First Viewer",
+		}, now, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if oidcUser.Role != authdomain.RoleViewer {
+			t.Fatalf("first OIDC role = %q, want viewer", oidcUser.Role)
+		}
+
+		// An OIDC viewer arriving first must not consume or deny the separate,
+		// token-protected administrator bootstrap transition.
+		if _, err := store.CreateBootstrapAdmin(ctx, authdomain.BootstrapUser{
+			Username: "rolled-back-admin", DisplayName: "Rolled Back", PasswordHash: "test-password-hash",
+		}, authdomain.AuditEvent{
+			Action: strings.Repeat("x", 101), ResourceType: "authentication", Result: "succeeded",
+			HTTPStatus: http.StatusOK, RequestID: "rollback-test",
+		}, now); err == nil {
+			t.Fatal("bootstrap unexpectedly committed when its audit event was rejected")
+		}
+		if available, err := store.BootstrapAvailable(ctx); err != nil || !available {
+			t.Fatalf("failed bootstrap audit consumed initialization state: available=%v error=%v", available, err)
+		}
+		var rolledBackUsers int
+		if err := database.QueryRow("SELECT COUNT(*) FROM auth_users WHERE username = 'rolled-back-admin'").Scan(&rolledBackUsers); err != nil {
+			t.Fatal(err)
+		}
+		if rolledBackUsers != 0 {
+			t.Fatalf("failed bootstrap audit retained %d administrator rows", rolledBackUsers)
+		}
+		administrator, err := store.CreateBootstrapAdmin(ctx, authdomain.BootstrapUser{
+			Username: "bootstrap-admin", DisplayName: "Bootstrap Admin", PasswordHash: "test-password-hash",
+		}, authdomain.AuditEvent{
+			Action: "auth.bootstrap", ResourceType: "authentication", Result: "succeeded",
+			HTTPStatus: http.StatusOK, RequestID: "bootstrap-test",
+		}, now.Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if administrator.Role != authdomain.RoleAdmin {
+			t.Fatalf("bootstrap role = %q, want admin", administrator.Role)
+		}
+		if available, err := store.BootstrapAvailable(ctx); err != nil || available {
+			t.Fatalf("bootstrap available after completion = %v, error = %v", available, err)
+		}
+		if hasAdmin, err := store.HasEnabledAdmin(ctx, true, ""); err != nil || !hasAdmin {
+			t.Fatalf("enabled local admin = %v, error = %v", hasAdmin, err)
+		}
+		for _, malformed := range []struct {
+			name       string
+			role       string
+			authSource string
+		}{
+			{name: "role case", role: "Admin", authSource: "bootstrap"},
+			{name: "role trailing space", role: "admin ", authSource: "bootstrap"},
+			{name: "auth source case", role: "admin", authSource: "Bootstrap"},
+			{name: "auth source trailing space", role: "admin", authSource: "bootstrap "},
+		} {
+			if _, err := database.Exec(`UPDATE auth_users SET role = ?, auth_source = ? WHERE user_id = ?`,
+				malformed.role, malformed.authSource, administrator.ID); err != nil {
+				t.Fatal(err)
+			}
+			if hasAdmin, err := store.HasEnabledAdmin(ctx, true, ""); err != nil || hasAdmin {
+				t.Fatalf("%s administrator = %v, error = %v; want unavailable", malformed.name, hasAdmin, err)
+			}
+		}
+		if _, err := database.Exec(`UPDATE auth_users SET role = ?, auth_source = 'bootstrap' WHERE user_id = ?`,
+			authdomain.RoleAdmin, administrator.ID); err != nil {
+			t.Fatal(err)
+		}
+		if hasAdmin, err := store.HasEnabledAdmin(ctx, false, "https://issuer.example.invalid"); err != nil || hasAdmin {
+			t.Fatalf("enabled OIDC admin before promotion = %v, error = %v", hasAdmin, err)
+		}
+		if _, err := database.Exec(`UPDATE auth_users SET role = ? WHERE user_id = ?`,
+			authdomain.RoleAdmin, oidcUser.ID); err != nil {
+			t.Fatal(err)
+		}
+		if hasAdmin, err := store.HasEnabledAdmin(ctx, false, "https://issuer.example.invalid"); err != nil || !hasAdmin {
+			t.Fatalf("enabled OIDC admin = %v, error = %v", hasAdmin, err)
+		}
+		for _, malformedIssuer := range []string{
+			"HTTPS://ISSUER.EXAMPLE.INVALID",
+			"https://issuer.example.invalid ",
+		} {
+			if _, err := database.Exec(`UPDATE auth_identities SET issuer = ? WHERE user_id = ?`,
+				malformedIssuer, oidcUser.ID); err != nil {
+				t.Fatal(err)
+			}
+			if hasAdmin, err := store.HasEnabledAdmin(ctx, false, "https://issuer.example.invalid"); err != nil || hasAdmin {
+				t.Fatalf("non-exact OIDC issuer %q administrator = %v, error = %v; want unavailable",
+					malformedIssuer, hasAdmin, err)
+			}
+			disableLastLocal := false
+			if _, err := store.UpdateUser(ctx, administrator.ID,
+				authdomain.UserPatch{Enabled: &disableLastLocal}, now.Add(time.Minute),
+				true, "https://issuer.example.invalid"); !errors.Is(err, authdomain.ErrLastAdmin) {
+				t.Fatalf("last local admin removal with non-exact OIDC issuer %q fallback error = %v, want ErrLastAdmin",
+					malformedIssuer, err)
+			}
+		}
+		if _, err := database.Exec(`UPDATE auth_identities SET issuer = ? WHERE user_id = ?`,
+			"https://issuer.example.invalid", oidcUser.ID); err != nil {
+			t.Fatal(err)
+		}
+		if hasAdmin, err := store.HasEnabledAdmin(ctx, false, "https://other-issuer.example.invalid"); err != nil || hasAdmin {
+			t.Fatalf("OIDC administrator from another issuer = %v, error = %v", hasAdmin, err)
+		}
+		if hasAdmin, err := store.HasEnabledAdmin(ctx, false, ""); err != nil || hasAdmin {
+			t.Fatalf("admin with all login methods disabled = %v, error = %v", hasAdmin, err)
+		}
+		disabledValue := false
+		for _, malformed := range []struct {
+			name       string
+			role       string
+			authSource string
+		}{
+			{name: "role case", role: "Admin", authSource: "bootstrap"},
+			{name: "role trailing space", role: "admin ", authSource: "bootstrap"},
+			{name: "auth source case", role: "admin", authSource: "Bootstrap"},
+			{name: "auth source trailing space", role: "admin", authSource: "bootstrap "},
+		} {
+			if _, err := database.Exec(`UPDATE auth_users SET role = ?, auth_source = ? WHERE user_id = ?`,
+				malformed.role, malformed.authSource, administrator.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.UpdateUser(ctx, oidcUser.ID,
+				authdomain.UserPatch{Enabled: &disabledValue}, now.Add(time.Minute),
+				true, "https://issuer.example.invalid"); !errors.Is(err, authdomain.ErrLastAdmin) {
+				t.Fatalf("OIDC last-admin removal with %s local fallback error = %v, want ErrLastAdmin",
+					malformed.name, err)
+			}
+		}
+		if _, err := database.Exec(`UPDATE auth_users SET role = ?, auth_source = 'bootstrap' WHERE user_id = ?`,
+			authdomain.RoleAdmin, administrator.ID); err != nil {
+			t.Fatal(err)
+		}
+		oidcUserB, err := store.UpsertOIDCUser(ctx, authdomain.OIDCUser{
+			Issuer: "https://issuer-b.example.invalid", Subject: "second-admin",
+			IdentityHash: bytes.Repeat([]byte{0x51}, 32), DisplayName: "Second OIDC Administrator",
+		}, now, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`UPDATE auth_users SET role = ? WHERE user_id = ?`,
+			authdomain.RoleAdmin, oidcUserB.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.UpdateUser(ctx, oidcUserB.ID,
+			authdomain.UserPatch{Enabled: &disabledValue}, now.Add(time.Minute),
+			false, "https://issuer-b.example.invalid"); !errors.Is(err, authdomain.ErrLastAdmin) {
+			t.Fatalf("issuer B admin removal with only issuer A fallback error = %v, want ErrLastAdmin", err)
+		}
+		if _, err := store.UpdateUser(ctx, oidcUserB.ID,
+			authdomain.UserPatch{Enabled: &disabledValue}, now.Add(time.Minute),
+			true, "https://issuer-b.example.invalid"); err != nil {
+			t.Fatalf("issuer B admin removal with local fallback: %v", err)
+		}
+		if _, err := store.CreateBootstrapAdmin(ctx, authdomain.BootstrapUser{
+			Username: "second-admin", DisplayName: "Second", PasswordHash: "test-password-hash",
+		}, authdomain.AuditEvent{
+			Action: "auth.bootstrap", ResourceType: "authentication", Result: "succeeded",
+			HTTPStatus: http.StatusOK, RequestID: "second-bootstrap-test",
+		}, now.Add(2*time.Minute)); !errors.Is(err, authdomain.ErrBootstrapUnavailable) {
+			t.Fatalf("second bootstrap error = %v", err)
+		}
+
+		for index := 0; index < 20; index++ {
+			digest := sha256.Sum256([]byte(fmt.Sprintf("active-session-%d", index)))
+			createdAt := now.Add(-time.Duration(20-index) * time.Minute)
+			if _, err := database.Exec(`INSERT INTO auth_sessions
+				(session_hash, user_id, expires_at, revoked_at, last_seen_at, created_at)
+				VALUES (?, ?, ?, NULL, ?, ?)`, digest[:], administrator.ID,
+				now.Add(time.Hour), createdAt, createdAt); err != nil {
+				t.Fatal(err)
+			}
+		}
+		staleExpired := sha256.Sum256([]byte("stale-expired-session"))
+		staleRevoked := sha256.Sum256([]byte("stale-revoked-session"))
+		if _, err := database.Exec(`INSERT INTO auth_sessions
+			(session_hash, user_id, expires_at, revoked_at, last_seen_at, created_at)
+			VALUES (?, ?, ?, NULL, ?, ?), (?, ?, ?, ?, ?, ?)`,
+			staleExpired[:], administrator.ID, now.Add(-8*24*time.Hour), now.Add(-9*24*time.Hour), now.Add(-9*24*time.Hour),
+			staleRevoked[:], administrator.ID, now.Add(-8*24*time.Hour), now.Add(-8*24*time.Hour),
+			now.Add(-9*24*time.Hour), now.Add(-9*24*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		var sessionCleanupPlan string
+		if err := database.QueryRow(`EXPLAIN FORMAT=JSON DELETE FROM auth_sessions
+			WHERE expires_at <= ? ORDER BY expires_at ASC LIMIT ?`,
+			now.Add(-24*time.Hour), 1000).Scan(&sessionCleanupPlan); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(sessionCleanupPlan, "idx_auth_sessions_expires") {
+			t.Fatalf("session cleanup does not use expiration index: %s", sessionCleanupPlan)
+		}
+		newSession := sha256.Sum256([]byte("newest-active-session"))
+		if err := store.CreateSession(ctx, newSession[:], administrator.ID, now.Add(time.Hour), now); err != nil {
+			t.Fatal(err)
+		}
+		var activeSessions, retainedRevoked, staleSessions int
+		if err := database.QueryRow(`SELECT
+			SUM(revoked_at IS NULL AND expires_at > ?),
+			SUM(revoked_at IS NOT NULL AND created_at >= ?),
+			SUM((revoked_at IS NOT NULL OR expires_at <= ?) AND created_at < ?)
+			FROM auth_sessions WHERE user_id = ?`, now, now.Add(-7*24*time.Hour),
+			now, now.Add(-7*24*time.Hour), administrator.ID).
+			Scan(&activeSessions, &retainedRevoked, &staleSessions); err != nil {
+			t.Fatal(err)
+		}
+		if activeSessions != 20 || retainedRevoked != 1 || staleSessions != 0 {
+			t.Fatalf("session retention = active:%d recent-revoked:%d stale:%d, want 20/1/0",
+				activeSessions, retainedRevoked, staleSessions)
+		}
+
+		fixedLogin := now.Add(-time.Hour)
+		if _, err := database.Exec(`UPDATE auth_users SET
+			display_name = 'Disabled Original', last_login_at = ? WHERE user_id = ?`, fixedLogin, oidcUser.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.UpdateUser(ctx, oidcUser.ID,
+			authdomain.UserPatch{Enabled: &disabledValue}, now.Add(2*time.Minute),
+			false, "https://issuer.example.invalid"); !errors.Is(err, authdomain.ErrLastAdmin) {
+			t.Fatalf("last issuer A admin removal without local fallback error = %v, want ErrLastAdmin", err)
+		}
+		if _, err := store.UpdateUser(ctx, oidcUser.ID,
+			authdomain.UserPatch{Enabled: &disabledValue}, now.Add(2*time.Minute),
+			true, "https://issuer.example.invalid"); err != nil {
+			t.Fatalf("issuer A admin removal with local fallback: %v", err)
+		}
+		if hasAdmin, err := store.HasEnabledAdmin(ctx, false, "https://issuer.example.invalid"); err != nil || hasAdmin {
+			t.Fatalf("disabled OIDC administrator = %v, error = %v", hasAdmin, err)
+		}
+		disabledSession := sha256.Sum256([]byte("disabled-user-session"))
+		if err := store.CreateSession(ctx, disabledSession[:], oidcUser.ID, now.Add(time.Hour), now); !errors.Is(err, authdomain.ErrUnauthenticated) {
+			t.Fatalf("disabled user session error = %v, want ErrUnauthenticated", err)
+		}
+		var lastLoginBefore string
+		if err := database.QueryRow(`SELECT DATE_FORMAT(last_login_at, '%Y-%m-%d %H:%i:%s.%f')
+			FROM auth_users WHERE user_id = ?`, oidcUser.ID).Scan(&lastLoginBefore); err != nil {
+			t.Fatal(err)
+		}
+		disabled, err := store.UpsertOIDCUser(ctx, authdomain.OIDCUser{
+			Issuer: "https://issuer.example.invalid", Subject: "first-viewer",
+			IdentityHash: bytes.Repeat([]byte{0x41}, 32), DisplayName: "Must Not Update",
+		}, now.Add(time.Hour), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if disabled.Enabled || disabled.DisplayName != "Disabled Original" || disabled.LastLoginAt == nil {
+			t.Fatalf("disabled OIDC identity was mutated during login: %+v", disabled)
+		}
+		var lastLoginAfter string
+		if err := database.QueryRow(`SELECT DATE_FORMAT(last_login_at, '%Y-%m-%d %H:%i:%s.%f')
+			FROM auth_users WHERE user_id = ?`, oidcUser.ID).Scan(&lastLoginAfter); err != nil {
+			t.Fatal(err)
+		}
+		if lastLoginAfter != lastLoginBefore {
+			t.Fatalf("disabled OIDC last_login_at changed from %s to %s", lastLoginBefore, lastLoginAfter)
+		}
+
+		if _, err := database.Exec(`INSERT INTO auth_oidc_flows
+			(state_hash, nonce_hash, binding_hash, verifier_ciphertext, expires_at, consumed_at, created_at)
+			VALUES (UNHEX(REPEAT('10', 32)), UNHEX(REPEAT('11', 32)), UNHEX(REPEAT('12', 32)),
+			'old', ?, NULL, ?),
+			(UNHEX(REPEAT('20', 32)), UNHEX(REPEAT('21', 32)), UNHEX(REPEAT('22', 32)),
+			'consumed', ?, ?, ?)`, now.Add(-time.Minute), now.Add(-time.Hour),
+			now.Add(time.Hour), now, now.Add(-time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.CreateOIDCFlow(ctx, authdomain.OIDCFlow{
+			StateHash: bytes.Repeat([]byte{0x30}, 32), NonceHash: bytes.Repeat([]byte{0x31}, 32),
+			BindingHash: bytes.Repeat([]byte{0x32}, 32), VerifierCiphertext: "new",
+			ReturnPath: "/", ExpiresAt: now.Add(10 * time.Minute), CreatedAt: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		var flowCount int
+		if err := database.QueryRow("SELECT COUNT(*) FROM auth_oidc_flows").Scan(&flowCount); err != nil {
+			t.Fatal(err)
+		}
+		if flowCount != 1 {
+			t.Fatalf("OIDC flow cleanup left %d rows, want 1 active row", flowCount)
+		}
+
+		if _, err := database.Exec("DELETE FROM auth_oidc_flows"); err != nil {
+			t.Fatal(err)
+		}
+		digits := "(SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 " +
+			"UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 " +
+			"UNION ALL SELECT 8 UNION ALL SELECT 9)"
+		insertActive := `INSERT INTO auth_oidc_flows
+			(state_hash, nonce_hash, binding_hash, verifier_ciphertext, return_path, expires_at, consumed_at, created_at)
+			SELECT UNHEX(SHA2(CONCAT('state-', generated_numbers.n), 256)),
+				UNHEX(SHA2(CONCAT('nonce-', generated_numbers.n), 256)),
+				UNHEX(SHA2(CONCAT('binding-', generated_numbers.n), 256)),
+				CONCAT('ciphertext-', generated_numbers.n), '/', ?, NULL, ?
+			FROM (SELECT ones.n + tens.n * 10 + hundreds.n * 100 + thousands.n * 1000 AS n
+				FROM ` + digits + ` AS ones
+				CROSS JOIN ` + digits + ` AS tens
+				CROSS JOIN ` + digits + ` AS hundreds
+				CROSS JOIN ` + digits + ` AS thousands) AS generated_numbers
+			WHERE generated_numbers.n < 4095`
+		if _, err := database.Exec(insertActive, now.Add(time.Hour), now); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`INSERT INTO auth_oidc_flows
+			(state_hash, nonce_hash, binding_hash, verifier_ciphertext, expires_at, consumed_at, created_at)
+			VALUES (UNHEX(REPEAT('80', 32)), UNHEX(REPEAT('81', 32)), UNHEX(REPEAT('82', 32)),
+			'expired-at-capacity', ?, NULL, ?),
+			(UNHEX(REPEAT('90', 32)), UNHEX(REPEAT('91', 32)), UNHEX(REPEAT('92', 32)),
+			'consumed-at-capacity', ?, ?, ?)`, now, now.Add(-time.Hour),
+			now.Add(time.Hour), now, now.Add(-time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.CreateOIDCFlow(ctx, authdomain.OIDCFlow{
+			StateHash: bytes.Repeat([]byte{0xa0}, 32), NonceHash: bytes.Repeat([]byte{0xa1}, 32),
+			BindingHash: bytes.Repeat([]byte{0xa2}, 32), VerifierCiphertext: "fills-capacity",
+			ReturnPath: "/", ExpiresAt: now.Add(time.Hour), CreatedAt: now,
+		}); err != nil {
+			t.Fatalf("expired and consumed flows occupied capacity: %v", err)
+		}
+		var activeFlows, staleFlows int
+		if err := database.QueryRow(`SELECT
+			SUM(consumed_at IS NULL AND expires_at > ?),
+			SUM(consumed_at IS NOT NULL OR expires_at <= ?)
+			FROM auth_oidc_flows`, now, now).Scan(&activeFlows, &staleFlows); err != nil {
+			t.Fatal(err)
+		}
+		if activeFlows != 4096 || staleFlows != 0 {
+			t.Fatalf("OIDC flow capacity state = active:%d stale:%d, want 4096/0", activeFlows, staleFlows)
+		}
+		if err := store.CreateOIDCFlow(ctx, authdomain.OIDCFlow{
+			StateHash: bytes.Repeat([]byte{0xb0}, 32), NonceHash: bytes.Repeat([]byte{0xb1}, 32),
+			BindingHash: bytes.Repeat([]byte{0xb2}, 32), VerifierCiphertext: "over-capacity",
+			ReturnPath: "/", ExpiresAt: now.Add(time.Hour), CreatedAt: now,
+		}); !errors.Is(err, authdomain.ErrOIDCFlowCapacity) {
+			t.Fatalf("OIDC flow at capacity error = %v, want ErrOIDCFlowCapacity", err)
+		}
+	})
+
+	t.Run("local password rotation is atomic and fails closed", func(t *testing.T) {
+		dsn, _ := harness.newDatabase(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		if _, err := MigrateUp(ctx, dsn, "", 45*time.Second, 10*time.Second); err != nil {
+			t.Fatal(err)
+		}
+
+		database := openIntegrationDatabase(t, dsn)
+		store, err := authdomain.NewSQLStore(database)
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+		const oldPasswordHash = "test-old-password-hash"
+		const newPasswordHash = "test-new-password-hash"
+		administrator, err := store.CreateBootstrapAdmin(ctx, authdomain.BootstrapUser{
+			Username: "password-admin", DisplayName: "Password Administrator", PasswordHash: oldPasswordHash,
+		}, authdomain.AuditEvent{
+			Action: "auth.bootstrap", ResourceType: "authentication", Result: "succeeded",
+			HTTPStatus: http.StatusOK, RequestID: "password-bootstrap-test",
+		}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		firstSessionHash := sha256.Sum256([]byte("password-first-active-session"))
+		secondSessionHash := sha256.Sum256([]byte("password-second-active-session"))
+		firstExpiresAt := now.Add(2 * time.Hour)
+		secondExpiresAt := now.Add(3 * time.Hour)
+		if err := store.CreateSession(ctx, firstSessionHash[:], administrator.ID, firstExpiresAt, now); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.CreateSession(ctx, secondSessionHash[:], administrator.ID, secondExpiresAt, now.Add(time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+
+		failedAt := now.Add(10 * time.Minute)
+		if err := store.ChangeLocalPassword(ctx, administrator.ID,
+			"incorrect-old-password-hash", "must-not-be-stored", failedAt); !errors.Is(err, authdomain.ErrInvalidCredentials) {
+			t.Fatalf("incorrect expected password hash error = %v, want ErrInvalidCredentials", err)
+		}
+		var storedPasswordHash string
+		if err := database.QueryRow("SELECT password_hash FROM auth_users WHERE user_id = ?", administrator.ID).
+			Scan(&storedPasswordHash); err != nil {
+			t.Fatal(err)
+		}
+		if storedPasswordHash != oldPasswordHash {
+			t.Fatalf("failed password change stored hash = %q, want unchanged old hash", storedPasswordHash)
+		}
+		for _, sessionTest := range []struct {
+			name      string
+			hash      []byte
+			expiresAt time.Time
+		}{
+			{name: "first", hash: firstSessionHash[:], expiresAt: firstExpiresAt},
+			{name: "second", hash: secondSessionHash[:], expiresAt: secondExpiresAt},
+		} {
+			session, err := store.FindSession(ctx, sessionTest.hash)
+			if err != nil {
+				t.Fatalf("find %s session after rejected password change: %v", sessionTest.name, err)
+			}
+			if session.RevokedAt != nil || !session.ExpiresAt.Equal(sessionTest.expiresAt) {
+				t.Fatalf("%s session changed after rejected password change: revoked_at=%v expires_at=%s, want active through %s",
+					sessionTest.name, session.RevokedAt, session.ExpiresAt, sessionTest.expiresAt)
+			}
+		}
+
+		oidcUser, err := store.UpsertOIDCUser(ctx, authdomain.OIDCUser{
+			Issuer: "https://password-issuer.example.invalid", Subject: "password-subject",
+			IdentityHash: bytes.Repeat([]byte{0x71}, 32), DisplayName: "OIDC Password User",
+		}, now, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		oidcSessionHash := sha256.Sum256([]byte("password-oidc-session"))
+		oidcExpiresAt := now.Add(4 * time.Hour)
+		if err := store.CreateSession(ctx, oidcSessionHash[:], oidcUser.ID, oidcExpiresAt, now); err != nil {
+			t.Fatal(err)
+		}
+
+		changedAt := now.Add(20 * time.Minute)
+		if err := store.ChangeLocalPassword(ctx, administrator.ID,
+			oldPasswordHash, newPasswordHash, changedAt); err != nil {
+			t.Fatalf("change local password: %v", err)
+		}
+		if err := database.QueryRow("SELECT password_hash FROM auth_users WHERE user_id = ?", administrator.ID).
+			Scan(&storedPasswordHash); err != nil {
+			t.Fatal(err)
+		}
+		if storedPasswordHash != newPasswordHash {
+			t.Fatalf("successful password change stored hash = %q, want %q", storedPasswordHash, newPasswordHash)
+		}
+		for _, sessionTest := range []struct {
+			name string
+			hash []byte
+		}{
+			{name: "first", hash: firstSessionHash[:]},
+			{name: "second", hash: secondSessionHash[:]},
+		} {
+			session, err := store.FindSession(ctx, sessionTest.hash)
+			if err != nil {
+				t.Fatalf("find %s session after password change: %v", sessionTest.name, err)
+			}
+			if session.RevokedAt == nil || !session.RevokedAt.Equal(changedAt) || !session.ExpiresAt.Equal(changedAt) {
+				t.Fatalf("%s session after password change: revoked_at=%v expires_at=%s, want both %s",
+					sessionTest.name, session.RevokedAt, session.ExpiresAt, changedAt)
+			}
+		}
+		oidcSession, err := store.FindSession(ctx, oidcSessionHash[:])
+		if err != nil {
+			t.Fatalf("find unrelated OIDC session after local password change: %v", err)
+		}
+		if oidcSession.RevokedAt != nil || !oidcSession.ExpiresAt.Equal(oidcExpiresAt) {
+			t.Fatalf("unrelated OIDC session changed with local password: revoked_at=%v expires_at=%s, want active through %s",
+				oidcSession.RevokedAt, oidcSession.ExpiresAt, oidcExpiresAt)
+		}
+
+		// A login that already verified the old hash before the rotation must
+		// fail its transactional hash recheck and cannot recreate a session.
+		staleLoginHash := sha256.Sum256([]byte("password-stale-local-login"))
+		if _, err := store.CreateLocalSession(ctx, administrator.ID, oldPasswordHash,
+			staleLoginHash[:], nil, now.Add(6*time.Hour), now.Add(15*time.Minute)); !errors.Is(err, authdomain.ErrInvalidCredentials) {
+			t.Fatalf("stale local login error = %v, want ErrInvalidCredentials", err)
+		}
+		if _, err := store.FindSession(ctx, staleLoginHash[:]); !errors.Is(err, authdomain.ErrSessionNotFound) {
+			t.Fatalf("stale local login session error = %v, want ErrSessionNotFound", err)
+		}
+		var updatedAt time.Time
+		if err := database.QueryRow("SELECT updated_at FROM auth_users WHERE user_id = ?", administrator.ID).
+			Scan(&updatedAt); err != nil {
+			t.Fatal(err)
+		}
+		if !updatedAt.Equal(changedAt) {
+			t.Fatalf("stale local login changed updated_at to %s, want %s", updatedAt, changedAt)
+		}
+
+		freshLoginHash := sha256.Sum256([]byte("password-fresh-local-login"))
+		freshLoginAt := now.Add(25 * time.Minute)
+		freshUser, err := store.CreateLocalSession(ctx, administrator.ID, newPasswordHash,
+			freshLoginHash[:], nil, now.Add(6*time.Hour), freshLoginAt)
+		if err != nil {
+			t.Fatalf("fresh local login after password rotation: %v", err)
+		}
+		if freshUser.LastLoginAt == nil || !freshUser.LastLoginAt.Equal(freshLoginAt) {
+			t.Fatalf("fresh local login timestamp = %v, want %s", freshUser.LastLoginAt, freshLoginAt)
+		}
+		if session, err := store.FindSession(ctx, freshLoginHash[:]); err != nil || session.RevokedAt != nil {
+			t.Fatalf("fresh local login session = %+v, error=%v", session, err)
+		}
+
+		if err := store.ChangeLocalPassword(ctx, oidcUser.ID, "", "must-not-be-stored", changedAt); !errors.Is(err, authdomain.ErrPasswordChangeUnsupported) {
+			t.Fatalf("OIDC password change error = %v, want ErrPasswordChangeUnsupported", err)
+		}
+		var oidcPasswordHash sql.NullString
+		if err := database.QueryRow("SELECT password_hash FROM auth_users WHERE user_id = ?", oidcUser.ID).
+			Scan(&oidcPasswordHash); err != nil {
+			t.Fatal(err)
+		}
+		if oidcPasswordHash.Valid {
+			t.Fatalf("rejected OIDC password change stored hash %q", oidcPasswordHash.String)
+		}
+		oidcSession, err = store.FindSession(ctx, oidcSessionHash[:])
+		if err != nil {
+			t.Fatalf("find OIDC session after rejected password change: %v", err)
+		}
+		if oidcSession.RevokedAt != nil || !oidcSession.ExpiresAt.Equal(oidcExpiresAt) {
+			t.Fatalf("OIDC session changed after rejected password change: revoked_at=%v expires_at=%s, want active through %s",
+				oidcSession.RevokedAt, oidcSession.ExpiresAt, oidcExpiresAt)
+		}
+
+		disabledSessionHash := sha256.Sum256([]byte("password-disabled-local-session"))
+		disabledExpiresAt := now.Add(5 * time.Hour)
+		if err := store.CreateSession(ctx, disabledSessionHash[:], administrator.ID, disabledExpiresAt, now); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec("UPDATE auth_users SET enabled = 0 WHERE user_id = ?", administrator.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.ChangeLocalPassword(ctx, administrator.ID,
+			newPasswordHash, "disabled-user-new-hash", freshLoginAt.Add(time.Minute)); !errors.Is(err, authdomain.ErrPasswordChangeUnsupported) {
+			t.Fatalf("disabled local password change error = %v, want ErrPasswordChangeUnsupported", err)
+		}
+		if err := database.QueryRow("SELECT password_hash FROM auth_users WHERE user_id = ?", administrator.ID).
+			Scan(&storedPasswordHash); err != nil {
+			t.Fatal(err)
+		}
+		if storedPasswordHash != newPasswordHash {
+			t.Fatalf("rejected disabled-user password change stored hash = %q, want %q", storedPasswordHash, newPasswordHash)
+		}
+		disabledSession, err := store.FindSession(ctx, disabledSessionHash[:])
+		if err != nil {
+			t.Fatalf("find disabled local session after rejected password change: %v", err)
+		}
+		if disabledSession.RevokedAt != nil || !disabledSession.ExpiresAt.Equal(disabledExpiresAt) {
+			t.Fatalf("disabled local session changed after rejected password change: revoked_at=%v expires_at=%s, want active through %s",
+				disabledSession.RevokedAt, disabledSession.ExpiresAt, disabledExpiresAt)
+		}
+	})
+
+	t.Run("workflow checksum survives MySQL JSON normalization", func(t *testing.T) {
+		dsn, _ := harness.newDatabase(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		if _, err := MigrateUp(ctx, dsn, "", 45*time.Second, 10*time.Second); err != nil {
+			t.Fatal(err)
+		}
+
+		database := openIntegrationDatabase(t, dsn)
+		if _, err := database.Exec(`INSERT INTO env_configs (env, description_cn)
+			VALUES ('dev', 'Workflow checksum test')`); err != nil {
+			t.Fatal(err)
+		}
+		appResult, err := database.Exec(`INSERT INTO apps
+			(app_name, app_name_cn, owner, owner_cn, dev_language, git_url)
+			VALUES ('workflow-checksum-test', 'Workflow checksum test', 'integration-test',
+				'Integration Test', 'golang', 'https://example.invalid/workflow-checksum-test')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		appID, err := appResult.LastInsertId()
+		if err != nil {
+			t.Fatal(err)
+		}
+		configResult, err := database.Exec(`INSERT INTO app_configs (app_id, env, code_package_type)
+			VALUES (?, 'dev', 'golang')`, appID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		configID64, err := configResult.LastInsertId()
+		if err != nil {
+			t.Fatal(err)
+		}
+		configID := int(configID64)
+		engine, err := xorm.NewEngine("mysql", dsn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer engine.Close()
+		service := workflowdomain.NewService(workflowdomain.NewXORMStore(engine), workflowdomain.DefaultRegistry())
+
+		firstSpec := workflowdomain.WorkflowSpec{
+			SchemaVersion: workflowdomain.SchemaVersionV1,
+			Name:          "MySQL canonical checksum",
+			Steps: []workflowdomain.StepSpec{{
+				Key: "verify", Name: "Verify", Uses: workflowdomain.NoopUses,
+				With: json.RawMessage(` {"output":{"z":100,"a":{"second":1.2300,"first":9007199254740993}},"message":"canonical"} `),
+			}},
+		}
+		first, err := service.Save(ctx, configID, 0, "migration-test", 0, firstSpec)
+		if err != nil {
+			t.Fatalf("save workflow after migration: %v", err)
+		}
+		readBack, err := service.GetCurrent(ctx, configID)
+		if err != nil {
+			t.Fatalf("read workflow after MySQL JSON rewrite: %v", err)
+		}
+		if readBack.WorkflowVersionID != first.WorkflowVersionID || readBack.Revision != first.Revision {
+			t.Fatalf("read workflow = %#v, saved = %#v", readBack, first)
+		}
+
+		secondSpec := firstSpec
+		secondSpec.Name = "MySQL canonical checksum v2"
+		second, err := service.Save(ctx, configID, readBack.Revision, "migration-test", 0, secondSpec)
+		if err != nil {
+			t.Fatalf("append workflow version after MySQL JSON rewrite: %v", err)
+		}
+		if second.Version != first.Version+1 || second.Revision != first.Revision+1 {
+			t.Fatalf("second workflow version = %#v, first = %#v", second, first)
+		}
+
+		if _, err := database.Exec(`UPDATE release_workflow_versions
+			SET spec = JSON_SET(spec, '$.name', 'tampered') WHERE version_id = ?`, second.WorkflowVersionID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.GetCurrent(ctx, configID); err == nil || !strings.Contains(err.Error(), "完整性校验失败") {
+			t.Fatalf("tampered MySQL workflow error = %v", err)
+		}
+	})
+
+	t.Run("demo seed workflows survive MySQL JSON normalization", func(t *testing.T) {
+		dsn, _ := harness.newDatabase(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		if _, err := MigrateUp(ctx, dsn, "", 45*time.Second, 10*time.Second); err != nil {
+			t.Fatal(err)
+		}
+
+		engine, err := xorm.NewEngine("mysql", dsn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		previousEngine := Engine
+		Engine = engine
+		defer func() {
+			Engine = previousEngine
+			_ = engine.Close()
+		}()
+		if err := InitializeDemoData(); err != nil {
+			t.Fatalf("initialize demo data: %v", err)
+		}
+
+		database := openIntegrationDatabase(t, dsn)
+		rows, err := database.Query(`SELECT config_id FROM app_configs
+			WHERE deleted_at IS NULL ORDER BY config_id`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		configIDs := make([]int, 0, 12)
+		for rows.Next() {
+			var configID int
+			if err := rows.Scan(&configID); err != nil {
+				_ = rows.Close()
+				t.Fatal(err)
+			}
+			configIDs = append(configIDs, configID)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			t.Fatal(err)
+		}
+		if err := rows.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if len(configIDs) != 12 {
+			t.Fatalf("demo config count = %d, want 12", len(configIDs))
+		}
+
+		service := workflowdomain.NewService(workflowdomain.NewXORMStore(engine), workflowdomain.DefaultRegistry())
+		for _, configID := range configIDs {
+			view, err := service.GetCurrent(ctx, configID)
+			if err != nil {
+				t.Fatalf("read demo workflow for config %d after MySQL JSON rewrite: %v", configID, err)
+			}
+			if len(view.Spec.Steps) != 2 {
+				t.Fatalf("demo workflow for config %d has %d steps, want 2", configID, len(view.Spec.Steps))
+			}
+		}
+
+		status, err := InspectSchema(ctx, dsn, 45*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertCompatibleStatus(t, status)
 	})
 
 	t.Run("structural drift needed by data contracts remains a schema-state result", func(t *testing.T) {
@@ -1004,8 +1718,8 @@ func TestMySQL84Migrations(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !before.Initialized || !before.NeedsAdoption || len(before.Applied) != 3 || len(before.Pending) != 1 {
-			t.Fatalf("legacy status = %+v, want three adopted candidates and one pending migration", before)
+		if !before.Initialized || !before.NeedsAdoption || len(before.Applied) != 3 || len(before.Pending) != 2 {
+			t.Fatalf("legacy status = %+v, want three adopted candidates and two pending migrations", before)
 		}
 
 		status, err := MigrateUp(ctx, dsn, "", 45*time.Second, 10*time.Second)
@@ -1018,12 +1732,12 @@ func TestMySQL84Migrations(t *testing.T) {
 		var adopted, native int
 		if err := database.QueryRow(`SELECT
 			SUM(epoch <= 3 AND legacy_adopted = 1),
-			SUM(epoch = 4 AND legacy_adopted = 0)
+			SUM(epoch IN (4, 5) AND legacy_adopted = 0)
 			FROM schema_migrations`).Scan(&adopted, &native); err != nil {
 			t.Fatal(err)
 		}
-		if adopted != 3 || native != 1 {
-			t.Fatalf("ledger adoption counts = adopted:%d native:%d, want 3 and 1", adopted, native)
+		if adopted != 3 || native != 2 {
+			t.Fatalf("ledger adoption counts = adopted:%d native:%d, want 3 and 2", adopted, native)
 		}
 		var appName, environment, packagePath string
 		if err := database.QueryRow(`SELECT a.app_name, c.env, c.code_package_path
@@ -1033,6 +1747,17 @@ func TestMySQL84Migrations(t *testing.T) {
 		}
 		if appName != "fixture-api" || environment != "staging" || packagePath != "/immutable/fixture" {
 			t.Fatalf("fixture sentinel changed during adoption: %q %q %q", appName, environment, packagePath)
+		}
+		var attributedTasks, attributedWorkflowVersions int
+		if err := database.QueryRow(`SELECT
+			(SELECT COUNT(*) FROM task_record WHERE publisher_user_id IS NOT NULL),
+			(SELECT COUNT(*) FROM release_workflow_versions WHERE created_by_user_id IS NOT NULL)`).Scan(
+			&attributedTasks, &attributedWorkflowVersions); err != nil {
+			t.Fatal(err)
+		}
+		if attributedTasks != 0 || attributedWorkflowVersions != 0 {
+			t.Fatalf("epoch 5 migration guessed legacy actors: tasks=%d workflow_versions=%d",
+				attributedTasks, attributedWorkflowVersions)
 		}
 	})
 
@@ -1413,12 +2138,8 @@ func TestMySQL84Migrations(t *testing.T) {
 		dsn, _ := harness.newDatabase(t)
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
-		if _, err := MigrateUp(ctx, dsn, "", 45*time.Second, 10*time.Second); err != nil {
-			t.Fatal(err)
-		}
-		database := openIntegrationDatabase(t, dsn)
+		database := migrateDatabaseToEpoch(t, dsn, 3)
 		for _, statement := range []string{
-			"DELETE FROM schema_migrations WHERE version = '" + versionedSchemaMigrationVersion + "'",
 			"UPDATE schema_migrations SET dirty = 1, finished_at = NULL, last_error = 'simulated interruption' WHERE version = '" + cicdRuntimeHardeningMigrationVersion + "'",
 			"ALTER TABLE app_configs RENAME INDEX uk_app_active_env TO operator_app_active_env",
 			"ALTER TABLE task_record RENAME INDEX idx_task_workflow_poll TO operator_task_workflow_poll",
@@ -1537,6 +2258,80 @@ func TestMySQL84Migrations(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertCompatibleStatus(t, status)
+	})
+
+	t.Run("epoch five dirty resume accepts empty bootstrap DDL boundary", func(t *testing.T) {
+		dsn, _ := harness.newDatabase(t)
+		database := migrateDatabaseToEpoch(t, dsn, 4)
+		migration := schemaMigrations[4]
+		insertDirtyMigrationRow(t, database, migration)
+		for _, statement := range authRBACTables()[:5] {
+			if _, err := database.Exec(statement); err != nil {
+				t.Fatal(err)
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		status, err := MigrateUp(ctx, dsn, migration.version, 45*time.Second, 10*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertCompatibleStatus(t, status)
+		var rows int
+		if err := database.QueryRow("SELECT COUNT(*) FROM auth_bootstrap_state WHERE id = 1").Scan(&rows); err != nil {
+			t.Fatal(err)
+		}
+		if rows != 1 {
+			t.Fatalf("resumed migration created %d bootstrap singleton rows, want 1", rows)
+		}
+	})
+
+	t.Run("epoch five dirty resume rejects a skipped bootstrap singleton", func(t *testing.T) {
+		dsn, _ := harness.newDatabase(t)
+		database := migrateDatabaseToEpoch(t, dsn, 4)
+		migration := schemaMigrations[4]
+		insertDirtyMigrationRow(t, database, migration)
+		for _, statement := range authRBACTables() {
+			if _, err := database.Exec(statement); err != nil {
+				t.Fatal(err)
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		status, err := MigrateUp(ctx, dsn, migration.version, 45*time.Second, 10*time.Second)
+		assertSchemaStateError(t, err)
+		if !containsProblem(status.ManifestDiffs, "singleton id=1") {
+			t.Fatalf("skipped bootstrap singleton problems = %v", status.ManifestDiffs)
+		}
+		var rows int
+		if err := database.QueryRow("SELECT COUNT(*) FROM auth_bootstrap_state").Scan(&rows); err != nil {
+			t.Fatal(err)
+		}
+		if rows != 0 {
+			t.Fatalf("refused resume mutated empty bootstrap state: rows=%d", rows)
+		}
+	})
+
+	t.Run("epoch five dirty resume rejects malformed bootstrap state", func(t *testing.T) {
+		dsn, _ := harness.newDatabase(t)
+		database := migrateDatabaseToEpoch(t, dsn, 4)
+		migration := schemaMigrations[4]
+		insertDirtyMigrationRow(t, database, migration)
+		for _, statement := range authRBACTables()[:5] {
+			if _, err := database.Exec(statement); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := database.Exec("INSERT INTO auth_bootstrap_state (id) VALUES (2)"); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		status, err := MigrateUp(ctx, dsn, migration.version, 45*time.Second, 10*time.Second)
+		assertSchemaStateError(t, err)
+		if !containsProblem(status.ManifestDiffs, "singleton id=1") {
+			t.Fatalf("malformed bootstrap singleton problems = %v", status.ManifestDiffs)
+		}
 	})
 
 	t.Run("dirty resume rejects malformed target object before ledger write", func(t *testing.T) {
@@ -1995,23 +2790,24 @@ func TestMySQL84Migrations(t *testing.T) {
 			t.Fatal(err)
 		}
 		database := openIntegrationDatabase(t, dsn)
+		migration := schemaMigrations[len(schemaMigrations)-1]
 		if _, err := database.Exec(`UPDATE schema_migrations
 			SET dirty = 1, finished_at = NULL, last_error = 'simulated interruption'
-			WHERE version = ?`, versionedSchemaMigrationVersion); err != nil {
+			WHERE version = ?`, migration.version); err != nil {
 			t.Fatal(err)
 		}
 		var startedAt time.Time
-		if err := database.QueryRow("SELECT started_at FROM schema_migrations WHERE version = ?", versionedSchemaMigrationVersion).Scan(&startedAt); err != nil {
+		if err := database.QueryRow("SELECT started_at FROM schema_migrations WHERE version = ?", migration.version).Scan(&startedAt); err != nil {
 			t.Fatal(err)
 		}
 
 		status, err := MigrateUp(ctx, dsn, "", 45*time.Second, 10*time.Second)
 		assertSchemaStateError(t, err)
-		if status.Dirty == nil || status.Dirty.Version != versionedSchemaMigrationVersion {
-			t.Fatalf("dirty status = %+v, want %s", status.Dirty, versionedSchemaMigrationVersion)
+		if status.Dirty == nil || status.Dirty.Version != migration.version {
+			t.Fatalf("dirty status = %+v, want %s", status.Dirty, migration.version)
 		}
 		var unchangedStartedAt time.Time
-		if err := database.QueryRow("SELECT started_at FROM schema_migrations WHERE version = ?", versionedSchemaMigrationVersion).Scan(&unchangedStartedAt); err != nil {
+		if err := database.QueryRow("SELECT started_at FROM schema_migrations WHERE version = ?", migration.version).Scan(&unchangedStartedAt); err != nil {
 			t.Fatal(err)
 		}
 		if !unchangedStartedAt.Equal(startedAt) {
@@ -2020,7 +2816,7 @@ func TestMySQL84Migrations(t *testing.T) {
 
 		_, err = MigrateUp(ctx, dsn, schemaMigrations[2].version, 45*time.Second, 10*time.Second)
 		assertSchemaStateError(t, err)
-		status, err = MigrateUp(ctx, dsn, versionedSchemaMigrationVersion, 45*time.Second, 10*time.Second)
+		status, err = MigrateUp(ctx, dsn, migration.version, 45*time.Second, 10*time.Second)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -2030,7 +2826,7 @@ func TestMySQL84Migrations(t *testing.T) {
 		var finishedAt sql.NullTime
 		var lastError sql.NullString
 		if err := database.QueryRow(`SELECT dirty, started_at, finished_at, last_error
-			FROM schema_migrations WHERE version = ?`, versionedSchemaMigrationVersion).
+			FROM schema_migrations WHERE version = ?`, migration.version).
 			Scan(&dirty, &resumedStartedAt, &finishedAt, &lastError); err != nil {
 			t.Fatal(err)
 		}
@@ -2050,13 +2846,14 @@ func TestMySQL84Migrations(t *testing.T) {
 			t.Fatal(err)
 		}
 		database := openIntegrationDatabase(t, dsn)
+		migration := schemaMigrations[len(schemaMigrations)-1]
 		if _, err := database.Exec(`UPDATE schema_migrations
 			SET dirty = 1, finished_at = NULL, last_error = NULL
-			WHERE version = ?`, versionedSchemaMigrationVersion); err != nil {
+			WHERE version = ?`, migration.version); err != nil {
 			t.Fatal(err)
 		}
 
-		status, err := MigrateUp(ctx, dsn, versionedSchemaMigrationVersion, 45*time.Second, 10*time.Second)
+		status, err := MigrateUp(ctx, dsn, migration.version, 45*time.Second, 10*time.Second)
 		if err != nil {
 			t.Fatalf("resume initial dirty marker: %v", err)
 		}
@@ -2065,7 +2862,7 @@ func TestMySQL84Migrations(t *testing.T) {
 		var finishedAt sql.NullTime
 		var lastError sql.NullString
 		if err := database.QueryRow(`SELECT dirty, finished_at, last_error
-			FROM schema_migrations WHERE version = ?`, versionedSchemaMigrationVersion).
+			FROM schema_migrations WHERE version = ?`, migration.version).
 			Scan(&dirty, &finishedAt, &lastError); err != nil {
 			t.Fatal(err)
 		}
@@ -2227,9 +3024,10 @@ func TestMySQL84Migrations(t *testing.T) {
 		if _, err := database.Exec(`INSERT INTO schema_migrations
 			(version, epoch, description, checksum, dirty, started_at, finished_at,
 			 compatible_min, compatible_max, last_error, legacy_adopted)
-			VALUES ('20990101_001_unknown', 5, 'unknown future migration',
+			VALUES ('20990101_001_unknown', ?, 'unknown future migration',
 			'1111111111111111111111111111111111111111111111111111111111111111',
-			0, NOW(6), NOW(6), 5, 5, NULL, 0)`); err != nil {
+			0, NOW(6), NOW(6), ?, ?, NULL, 0)`,
+			ApplicationSchemaEpoch+1, ApplicationSchemaEpoch+1, ApplicationSchemaEpoch+1); err != nil {
 			t.Fatal(err)
 		}
 		status, err := MigrateUp(ctx, dsn, "", 45*time.Second, 10*time.Second)
@@ -2400,9 +3198,92 @@ func TestMySQL84Migrations(t *testing.T) {
 		if err := CheckRuntimeCompatibility(ctx, database); err != nil {
 			t.Fatalf("runtime compatibility check needs only read privileges: %v", err)
 		}
+		runtimeConfig, err := mysql.ParseDSN(runtimeDSN)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var legacyPipelineGrantRows int
+		if err := harness.admin.QueryRowContext(ctx, `SELECT COUNT(*) FROM mysql.tables_priv
+			WHERE BINARY User = BINARY ? AND Host = '%' AND BINARY Db = BINARY ?
+				AND Table_name IN ('pipelines', 'pipelines_job_combination')`,
+			runtimeConfig.User, databaseName).Scan(&legacyPipelineGrantRows); err != nil {
+			t.Fatal(err)
+		}
+		if legacyPipelineGrantRows != 0 {
+			t.Fatalf("runtime account has %d unexpected table-level grants on read-only legacy pipeline tables",
+				legacyPipelineGrantRows)
+		}
 		if _, err := database.Exec(`INSERT INTO integration_settings (provider, config_data)
 			VALUES ('integration-test', '{"enabled":true}')`); err != nil {
 			t.Fatalf("runtime account cannot perform normal business DML: %v", err)
+		}
+		userResult, err := database.Exec(`INSERT INTO auth_users
+			(username, display_name, auth_source)
+			VALUES ('runtime-auth-test', 'Runtime Auth Test', 'bootstrap')`)
+		if err != nil {
+			t.Fatalf("runtime account cannot insert auth user: %v", err)
+		}
+		userID, err := userResult.LastInsertId()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`UPDATE auth_users SET last_login_at = NOW(6) WHERE user_id = ?`, userID); err != nil {
+			t.Fatalf("runtime account cannot update auth user: %v", err)
+		}
+		if _, err := database.Exec(`INSERT INTO auth_identities
+			(user_id, issuer, subject, identity_hash)
+			VALUES (?, 'https://issuer.example.invalid', 'subject', UNHEX(REPEAT('01', 32)))`, userID); err != nil {
+			t.Fatalf("runtime account cannot insert OIDC identity: %v", err)
+		}
+		if _, err := database.Exec(`INSERT INTO auth_sessions
+			(session_hash, user_id, expires_at, last_seen_at)
+			VALUES (UNHEX(REPEAT('02', 32)), ?, NOW(6) + INTERVAL 1 HOUR, NOW(6))`, userID); err != nil {
+			t.Fatalf("runtime account cannot insert session: %v", err)
+		}
+		if _, err := database.Exec(`DELETE FROM auth_sessions
+			WHERE session_hash = UNHEX(REPEAT('02', 32))`); err != nil {
+			t.Fatalf("runtime account cannot delete expired session: %v", err)
+		}
+		if _, err := database.Exec(`INSERT INTO auth_oidc_flows
+			(state_hash, nonce_hash, binding_hash, verifier_ciphertext, expires_at)
+			VALUES (UNHEX(REPEAT('03', 32)), UNHEX(REPEAT('04', 32)),
+				UNHEX(REPEAT('05', 32)), 'encrypted-verifier', NOW(6) + INTERVAL 5 MINUTE)`); err != nil {
+			t.Fatalf("runtime account cannot insert OIDC flow: %v", err)
+		}
+		if _, err := database.Exec(`DELETE FROM auth_oidc_flows
+			WHERE state_hash = UNHEX(REPEAT('03', 32))`); err != nil {
+			t.Fatalf("runtime account cannot delete consumed OIDC flow: %v", err)
+		}
+		if _, err := database.Exec(`UPDATE auth_bootstrap_state SET completed_at = completed_at WHERE id = 1`); err != nil {
+			t.Fatalf("runtime account cannot atomically update bootstrap singleton: %v", err)
+		}
+		if _, err := database.Exec(`INSERT INTO audit_events
+			(actor_user_id, actor_username, actor_display_name, auth_source, action,
+			 resource_type, resource_id, result, http_status, request_id)
+			VALUES (?, 'runtime-auth-test', 'Runtime Auth Test', 'bootstrap',
+				'integration.test', 'database', 'runtime', 'succeeded', 200, 'integration-request')`, userID); err != nil {
+			t.Fatalf("runtime account cannot append audit event: %v", err)
+		}
+		for _, forbidden := range []string{
+			`INSERT INTO pipelines (job_name, description_cn, url)
+				VALUES ('runtime-must-not-write', 'forbidden', 'https://example.invalid/forbidden')`,
+			"UPDATE pipelines_job_combination SET description_cn = description_cn WHERE id = 0",
+			"DELETE FROM auth_users WHERE user_id = 0",
+			"UPDATE auth_identities SET subject = subject WHERE identity_id = 0",
+			"DELETE FROM auth_identities WHERE identity_id = 0",
+			"INSERT INTO auth_bootstrap_state (id) VALUES (2)",
+			"DELETE FROM auth_bootstrap_state WHERE id = 0",
+			"UPDATE audit_events SET result = result WHERE audit_id = 0",
+			"DELETE FROM audit_events WHERE audit_id = 0",
+		} {
+			_, err := database.Exec(forbidden)
+			if err == nil {
+				t.Fatalf("runtime account unexpectedly executed forbidden statement %q", forbidden)
+			}
+			var denied *mysql.MySQLError
+			if !errors.As(err, &denied) || denied.Number != 1142 {
+				t.Fatalf("forbidden statement %q error = %v, want MySQL command-denied 1142", forbidden, err)
+			}
 		}
 		_, err = database.Exec("CREATE TABLE runtime_must_not_create_tables (id INT PRIMARY KEY)")
 		if err == nil {
@@ -2522,9 +3403,13 @@ func (h *mysqlIntegrationHarness) newRuntimeUser(t *testing.T, targetDSN, databa
 		"GRANT SELECT ON `%s`.* TO %s", grantPattern, account)); err != nil {
 		t.Fatal(err)
 	}
-	for _, tableName := range sortedStringKeys(epoch4SemanticSchemaManifest.tables) {
+	for _, tableName := range sortedStringKeys(epoch5SemanticSchemaManifest.tables) {
+		privileges := expectedRuntimeDMLPrivileges(tableName)
+		if privileges == "" {
+			continue
+		}
 		if _, err := h.admin.ExecContext(ctx, fmt.Sprintf(
-			"GRANT INSERT, UPDATE, DELETE ON `%s`.`%s` TO %s", databaseName, tableName, account)); err != nil {
+			"GRANT %s ON `%s`.`%s` TO %s", privileges, databaseName, tableName, account)); err != nil {
 			t.Fatalf("grant runtime DML on %s: %v", tableName, err)
 		}
 	}

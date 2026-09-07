@@ -27,7 +27,7 @@ func TestVersionedSchemaMigrationChecksumIsStable(t *testing.T) {
 	}
 }
 
-func TestCurrentSemanticSchemaManifestOwnsFourteenTables(t *testing.T) {
+func TestEpoch4SemanticSchemaManifestRemainsImmutable(t *testing.T) {
 	if got := len(epoch4SemanticSchemaManifest.tables); got != 14 {
 		t.Fatalf("managed table count = %d, want 14", got)
 	}
@@ -55,6 +55,31 @@ func TestCurrentSemanticSchemaManifestOwnsFourteenTables(t *testing.T) {
 		if len(manifest.critical) != len(manifest.columns) {
 			t.Errorf("%s has %d column definitions for %d managed columns",
 				table, len(manifest.critical), len(manifest.columns))
+		}
+	}
+}
+
+func TestEpoch5SemanticSchemaManifestOwnsAuthBoundary(t *testing.T) {
+	if got := len(epoch5SemanticSchemaManifest.tables); got != 20 {
+		t.Fatalf("managed table count = %d, want 20", got)
+	}
+	for _, table := range []string{
+		"auth_users", "auth_identities", "auth_sessions", "auth_oidc_flows",
+		"auth_bootstrap_state", "audit_events",
+	} {
+		if _, exists := epoch5SemanticSchemaManifest.tables[table]; !exists {
+			t.Errorf("epoch 5 manifest does not own %s", table)
+		}
+	}
+	for table, column := range map[string]string{
+		"task_record":               "publisher_user_id",
+		"release_workflow_versions": "created_by_user_id",
+	} {
+		if _, exists := epoch5SemanticSchemaManifest.tables[table].critical[column]; !exists {
+			t.Errorf("epoch 5 manifest does not own %s.%s", table, column)
+		}
+		if _, leaked := epoch4SemanticSchemaManifest.tables[table].critical[column]; leaked {
+			t.Errorf("epoch 5 column %s.%s mutated immutable epoch 4", table, column)
 		}
 	}
 }
@@ -107,6 +132,7 @@ func TestEpochSchemaManifestsAreCompleteAndIndependent(t *testing.T) {
 		{"epoch2", epoch2SemanticSchemaManifest, 14},
 		{"epoch3", epoch3SemanticSchemaManifest, 14},
 		{"epoch4", epoch4SemanticSchemaManifest, 14},
+		{"epoch5", epoch5SemanticSchemaManifest, 20},
 	}
 	for _, want := range wants {
 		t.Run(want.name, func(t *testing.T) {
@@ -157,6 +183,7 @@ func TestPublishedEpochManifestDigestsAreStable(t *testing.T) {
 		2: "8f57e0ea189e5c8a4bb5517a7749fce594cd1d7f6a406215d255dbb18ec0f98a",
 		3: "f237bba7a8d41b55f67d5fd1b3eac459247ba20bc5322555ee6e537c18100aa9",
 		4: "3777439f7d9f0dfe812f586e63dc4a1812713ba91bb8e4e548995db7e778c4fc",
+		5: "210c78958db0ae7b68d6b9d2a8ff5cb535cf0b9b9992396c69c80b2e631a5f9e",
 	}
 	for epoch, manifest := range publishedEpochSchemaManifests() {
 		if got := semanticSchemaManifestDigest(manifest); got != wants[epoch] {
@@ -175,6 +202,7 @@ func TestPublishedEpochDataContractDigestsAreStable(t *testing.T) {
 		2: "47cc55f7586403f63044f83c88094bef79cb430ace9c4b42f4c033642ca6468a",
 		3: "47cc55f7586403f63044f83c88094bef79cb430ace9c4b42f4c033642ca6468a",
 		4: "47cc55f7586403f63044f83c88094bef79cb430ace9c4b42f4c033642ca6468a",
+		5: "15ad4d8623a474fbe0e025d06990443e0e79e862159186ec136ec2ff94b1fd58",
 	}
 	for epoch := uint64(1); epoch <= ApplicationSchemaEpoch; epoch++ {
 		got := stringListDigest(epochDataContractIDs(epoch))
@@ -196,6 +224,7 @@ func publishedEpochSchemaManifests() map[uint64]semanticSchemaManifest {
 		2: epoch2SemanticSchemaManifest,
 		3: epoch3SemanticSchemaManifest,
 		4: epoch4SemanticSchemaManifest,
+		5: epoch5SemanticSchemaManifest,
 	}
 }
 
@@ -548,11 +577,11 @@ func TestCurrentSchemaManifestAgainstMySQL84(t *testing.T) {
 		t.Fatal(err)
 	}
 	session := &migrationSession{executor: database, operationTimeout: 30 * time.Second}
-	diffs, err := session.epoch4SchemaDiffs(ctx)
+	diffs, err := session.epoch5SchemaDiffs(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(diffs) != 0 {
-		t.Fatalf("MySQL schema differs from the epoch 4 semantic manifest:\n%s", strings.Join(diffs, "\n"))
+		t.Fatalf("MySQL schema differs from the epoch 5 semantic manifest:\n%s", strings.Join(diffs, "\n"))
 	}
 }

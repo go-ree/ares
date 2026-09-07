@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-ree/ares/internal/canonicaljson"
 	"github.com/go-ree/ares/internal/entity"
 
 	"xorm.io/xorm"
@@ -29,6 +30,10 @@ func (s *XORMStore) SaveWorkflow(ctx context.Context, command SaveWorkflowComman
 	specJSON, err := json.Marshal(command.Spec)
 	if err != nil {
 		return WorkflowView{}, fmt.Errorf("序列化工作流规范: %w", err)
+	}
+	specJSON, err = canonicaljson.Canonicalize(specJSON)
+	if err != nil {
+		return WorkflowView{}, fmt.Errorf("规范化工作流规范: %w", err)
 	}
 	digest := sha256.Sum256(specJSON)
 
@@ -88,6 +93,9 @@ func (s *XORMStore) SaveWorkflow(ctx context.Context, command SaveWorkflowComman
 		if !hasLatest {
 			return WorkflowView{}, fmt.Errorf("流程 %d 没有版本: %w", workflowID, ErrNotFound)
 		}
+		if _, decodeErr := decodeStoredWorkflowSpec(latest); decodeErr != nil {
+			return WorkflowView{}, decodeErr
+		}
 		nextVersion = latest.Version + 1
 		nextRevision = binding.Revision + 1
 		if _, err = session.Context(ctx).ID(workflowID).Cols("name").Update(&entity.ReleaseWorkflow{Name: command.Spec.Name}); err != nil {
@@ -96,11 +104,12 @@ func (s *XORMStore) SaveWorkflow(ctx context.Context, command SaveWorkflowComman
 	}
 
 	versionRow := entity.ReleaseWorkflowVersion{
-		WorkflowID: workflowID,
-		Version:    nextVersion,
-		Spec:       append(json.RawMessage(nil), specJSON...),
-		Checksum:   hex.EncodeToString(digest[:]),
-		CreatedBy:  actor,
+		WorkflowID:      workflowID,
+		Version:         nextVersion,
+		Spec:            append(json.RawMessage(nil), specJSON...),
+		Checksum:        hex.EncodeToString(digest[:]),
+		CreatedBy:       actor,
+		CreatedByUserID: command.ActorUserID,
 	}
 	if _, err = session.Context(ctx).Insert(&versionRow); err != nil {
 		return WorkflowView{}, err
@@ -162,9 +171,9 @@ func (s *XORMStore) GetCurrentWorkflow(ctx context.Context, configID int) (Workf
 	if !has {
 		return WorkflowView{}, ErrNotFound
 	}
-	spec, err := DecodeSpecJSON(version.Spec)
+	spec, err := decodeStoredWorkflowSpec(version)
 	if err != nil {
-		return WorkflowView{}, fmt.Errorf("读取工作流版本 %d: %w", version.VersionID, err)
+		return WorkflowView{}, err
 	}
 	return WorkflowView{
 		ConfigID:          configID,
@@ -174,6 +183,23 @@ func (s *XORMStore) GetCurrentWorkflow(ctx context.Context, configID int) (Workf
 		Revision:          binding.Revision,
 		Spec:              spec,
 	}, nil
+}
+
+func decodeStoredWorkflowSpec(version entity.ReleaseWorkflowVersion) (WorkflowSpec, error) {
+	spec, err := DecodeSpecJSON(version.Spec)
+	if err != nil {
+		return WorkflowSpec{}, fmt.Errorf("读取工作流版本 %d: %w", version.VersionID, err)
+	}
+	canonical, err := canonicaljson.Canonicalize(version.Spec)
+	if err != nil {
+		return WorkflowSpec{}, fmt.Errorf("读取工作流版本 %d: %w", version.VersionID, err)
+	}
+	digest := sha256.Sum256(canonical)
+	wantChecksum := hex.EncodeToString(digest[:])
+	if len(version.Checksum) != len(wantChecksum) || version.Checksum != wantChecksum {
+		return WorkflowSpec{}, fmt.Errorf("工作流版本 %d 完整性校验失败", version.VersionID)
+	}
+	return spec, nil
 }
 
 // CreateTaskWithSnapshot is the normal v2 publishing path. The task row and

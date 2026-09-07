@@ -5,10 +5,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/go-ree/ares/internal/entity"
-	"github.com/go-ree/ares/internal/workflow"
 	"log/slog"
 	"time"
+
+	"github.com/go-ree/ares/internal/canonicaljson"
+	"github.com/go-ree/ares/internal/entity"
+	"github.com/go-ree/ares/internal/workflow"
 
 	"xorm.io/xorm"
 )
@@ -270,6 +272,10 @@ func insertDemoWorkflow(session *xorm.Session, appName, env string, configID int
 	specJSON, err := json.Marshal(spec)
 	if err != nil {
 		return 0, fmt.Errorf("marshal demo workflow %s/%s: %w", appName, env, err)
+	}
+	specJSON, err = canonicaljson.Canonicalize(specJSON)
+	if err != nil {
+		return 0, fmt.Errorf("canonicalize demo workflow %s/%s: %w", appName, env, err)
 	}
 	digest := sha256.Sum256(specJSON)
 	workflowRow := entity.ReleaseWorkflow{

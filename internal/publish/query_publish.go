@@ -115,14 +115,20 @@ func (pm *PublishManager) taskSorting(session *xorm.Session, params *PublishQuer
 
 // QueryBuildPublish 查询构建任务列表
 func (pm *PublishManager) QueryBuildPublish(ctx context.Context, params PublishQuery) (*PublishQueryResult, error) {
+	// Reject invalid or overflowing pagination before parsing filters or touching
+	// the database. Both published query endpoints share this strict boundary.
+	pageSize, offset, err := pm.utilManager.NormalizePagination(&params.ParamPage)
+	if err != nil {
+		return nil, newInputError(fmt.Sprintf("分页参数无效: %s", err))
+	}
 	// 时间格式兼容处理
 	if err := pm.parseTimeFormats(&params); err != nil {
-		return nil, fmt.Errorf("时间格式解析失败: %w", err)
+		return nil, newInputError(fmt.Sprintf("时间格式解析失败: %s", err))
 	}
 
 	// 参数验证
 	if err := params.Validate(); err != nil {
-		return nil, fmt.Errorf("参数验证失败: %w", err)
+		return nil, newInputError(fmt.Sprintf("参数验证失败: %s", err))
 	}
 
 	slog.Info("查询构建任务列表",
@@ -156,16 +162,13 @@ func (pm *PublishManager) QueryBuildPublish(ctx context.Context, params PublishQ
 		return nil, err
 	}
 
-	// 规范化分页参数
-	pageSize, offset := pm.utilManager.NormalizePagination(&params.ParamPage)
-
 	// 计算总页数
 	totalPages := pm.utilManager.CalculateTotalPages(total, pageSize)
 
 	// 验证页码是否合法
 	pageNum := params.GetPageNum()
 	if totalPages > 0 && pageNum > totalPages {
-		return nil, fmt.Errorf("请求的页码 %d 超出总页数 %d", pageNum, totalPages)
+		return nil, newInputError(fmt.Sprintf("请求的页码 %d 超出总页数 %d", pageNum, totalPages))
 	}
 
 	// 如果有数据，再进行分页查询

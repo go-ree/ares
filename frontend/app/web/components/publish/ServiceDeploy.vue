@@ -6,8 +6,8 @@
 
     <el-card>
       <el-tabs v-model="activeTab" type="border-card">
-        <el-tab-pane label="工具" name="tool">
-          <DeployTool :is-active="activeTab === 'tool'" />
+        <el-tab-pane label="发布" name="tool">
+          <DeployTool v-if="canCreateRelease" :is-active="activeTab === 'tool'" />
           <DeployingList
             ref="deployingListRef"
             :is-active="activeTab === 'tool'"
@@ -15,7 +15,7 @@
           />
         </el-tab-pane>
 
-        <el-tab-pane label="日志" name="log">
+        <el-tab-pane v-if="canReadLogs" label="日志" name="log">
           <LogQuery :is-active="activeTab === 'log'" @view-log-detail="handleViewLogDetail" />
         </el-tab-pane>
       </el-tabs>
@@ -30,14 +30,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue';
+import { computed, ref, watch, onMounted } from 'vue';
 import DeployTool from './DeployTool.vue';
 import DeployingList from './DeployingList.vue';
 import LogQuery from './LogQuery.vue';
 import LogDetail from './LogDetail.vue';
 import type { DeployingService } from '@/types/deploy';
+import { useAuthStore } from '@/stores/auth';
+import { PERMISSIONS } from '@/types/auth';
 
 // 当前激活的标签页
+const authStore = useAuthStore();
+const canCreateRelease = computed(() => authStore.can(PERMISSIONS.RELEASES_CREATE));
+const canReadLogs = computed(() => authStore.can(PERMISSIONS.LOGS_READ));
 const activeTab = ref('tool');
 
 // 日志详情相关

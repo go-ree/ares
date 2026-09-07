@@ -48,7 +48,7 @@ func NewService() *Service { return &Service{} }
 func NormalizeCode(value string) (string, error) {
 	code := strings.ToLower(strings.TrimSpace(value))
 	if !environmentCodePattern.MatchString(code) {
-		return "", fmt.Errorf("环境代码必须匹配 %s", environmentCodePattern.String())
+		return "", newValidationError(fmt.Sprintf("环境代码必须匹配 %s", environmentCodePattern.String()))
 	}
 	return code, nil
 }
@@ -105,7 +105,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*View, error) 
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, fmt.Errorf("环境名称不能为空")
+		return nil, newValidationError("环境名称不能为空")
 	}
 	enabled := true
 	if req.Enabled != nil {
@@ -135,7 +135,7 @@ func (s *Service) Update(ctx context.Context, code string, req UpdateRequest) (*
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return nil, fmt.Errorf("环境名称不能为空")
+			return nil, newValidationError("环境名称不能为空")
 		}
 		updates["description_cn"] = name
 	}

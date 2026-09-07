@@ -9,7 +9,7 @@
               >刷新</el-button
             >
             <el-button
-              v-if="!isEditing"
+              v-if="!isEditing && authStore.can(PERMISSIONS.APPLICATIONS_WRITE)"
               type="primary"
               :disabled="loading || !appDetail"
               @click="startEdit"
@@ -17,7 +17,7 @@
               编辑
             </el-button>
             <el-button
-              v-else
+              v-if="isEditing && authStore.can(PERMISSIONS.APPLICATIONS_WRITE)"
               type="primary"
               :loading="saving"
               :disabled="loading || !isDirty"
@@ -130,8 +130,11 @@ import { ElMessage, type FormInstance, type FormRules } from 'element-plus';
 import type { AppInfo, PatchAppRequest } from '@/models/application';
 import { getAppDetail, patchApp } from '@/services/application';
 import { normalizeLegacyNullableText } from '@/utils/legacy-nullable-text';
+import { useAuthStore } from '@/stores/auth';
+import { PERMISSIONS } from '@/types/auth';
 
 const route = useRoute();
+const authStore = useAuthStore();
 const appId = computed(() => Number(route.params.appId));
 
 const loading = ref(false);
@@ -243,6 +246,7 @@ const buildPatch = (): PatchAppRequest => {
 };
 
 const startEdit = () => {
+  if (!authStore.can(PERMISSIONS.APPLICATIONS_WRITE)) return;
   if (!appDetail.value) return;
   isEditing.value = true;
 };
@@ -254,6 +258,7 @@ const cancelEdit = () => {
 };
 
 const save = async () => {
+  if (!authStore.can(PERMISSIONS.APPLICATIONS_WRITE)) return;
   if (!Number.isFinite(appId.value) || appId.value <= 0) return;
   if (!isEditing.value) return;
   const ok = await formRef.value?.validate().catch(() => false);

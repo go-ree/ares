@@ -10,6 +10,9 @@ func TestIsSensitiveKeyRecognizesCommonSpellings(t *testing.T) {
 		"credential_id", "passwd", "credentials", "clientSecrets", "accessTokens",
 		"dbPasswords", "apiKeys", "privateKeys", "Authorization", "cookie", "session_id",
 		"clientKey", "access_key_id", "AWSAccessKeyID", "sshKey", "signingKey",
+		"pwd", "dbPwd", "pass", "passphrase", "keyPassphrase", "kubeconfig", "clusterKubeconfig",
+		"auth", "basicAuth", "registryAuth", "dockerConfigJson", ".dockerconfigjson", "tlsKey",
+		"githubPat", "gitlabPAT", "sonar.login", "oauthBearer", "personalAccessToken",
 	} {
 		if !IsSensitiveKey(key) {
 			t.Errorf("IsSensitiveKey(%q) = false, want true", key)

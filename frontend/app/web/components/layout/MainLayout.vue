@@ -9,14 +9,22 @@
         <div class="header-right">
           <el-dropdown>
             <span class="user-info">
-              <el-avatar :size="32" :src="user.avatar" />
+              <el-avatar :size="32">{{ userInitials }}</el-avatar>
               <span class="username">{{ userDisplayName }}</span>
               <el-icon><ArrowDown /></el-icon>
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item>修改密码</el-dropdown-item>
-                <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
+                <el-dropdown-item
+                  v-if="authStore.user?.auth_source === 'bootstrap'"
+                  :disabled="passwordSubmitting"
+                  @click="openPasswordDialog"
+                >
+                  修改密码
+                </el-dropdown-item>
+                <el-dropdown-item :disabled="logoutLoading" @click="handleLogout">
+                  {{ logoutLoading ? '正在退出…' : '退出登录' }}
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -40,48 +48,83 @@
               <el-icon><House /></el-icon>
               <span class="menu-text">首页</span>
             </el-menu-item>
-            <el-sub-menu index="/application">
+            <el-sub-menu
+              v-if="
+                authStore.canAny([PERMISSIONS.APPLICATIONS_READ, PERMISSIONS.APPLICATIONS_WRITE])
+              "
+              index="/application"
+            >
               <template #title>
                 <el-icon><Collection /></el-icon>
                 <span class="menu-text">应用管理</span>
               </template>
-              <el-menu-item index="/application/list">
+              <el-menu-item
+                v-if="authStore.can(PERMISSIONS.APPLICATIONS_READ)"
+                index="/application/list"
+              >
                 <el-icon><List /></el-icon>
                 <span class="menu-text">应用列表</span>
               </el-menu-item>
-              <el-menu-item index="/application/apply">
+              <el-menu-item
+                v-if="authStore.can(PERMISSIONS.APPLICATIONS_WRITE)"
+                index="/application/apply"
+              >
                 <el-icon><Edit /></el-icon>
                 <span class="menu-text">应用申请</span>
               </el-menu-item>
             </el-sub-menu>
-            <el-sub-menu index="/publish">
+            <el-sub-menu
+              v-if="authStore.canAny([PERMISSIONS.RELEASES_READ, PERMISSIONS.RELEASES_CREATE])"
+              index="/publish"
+            >
               <template #title>
                 <el-icon><UploadFilled /></el-icon>
                 <span class="menu-text">发布工具</span>
               </template>
-              <el-menu-item index="/publish/deploy">
+              <el-menu-item v-if="authStore.can(PERMISSIONS.RELEASES_READ)" index="/publish/deploy">
                 <el-icon><Upload /></el-icon>
                 <span class="menu-text">服务发布</span>
               </el-menu-item>
-              <el-menu-item index="/publish/merge">
+              <el-menu-item
+                v-if="authStore.can(PERMISSIONS.RELEASES_CREATE)"
+                index="/publish/merge"
+              >
                 <el-icon><Link /></el-icon>
                 <span class="menu-text">代码合并</span>
               </el-menu-item>
             </el-sub-menu>
-            <el-sub-menu index="/operation">
+            <el-sub-menu
+              v-if="
+                authStore.canAny([
+                  PERMISSIONS.LOGS_READ,
+                  PERMISSIONS.RELEASES_CREATE,
+                  PERMISSIONS.KUBERNETES_READ,
+                ])
+              "
+              index="/operation"
+            >
               <template #title>
                 <el-icon><Tools /></el-icon>
                 <span class="menu-text">运维管理</span>
               </template>
-              <el-menu-item index="/operation/log">
+              <el-menu-item v-if="authStore.can(PERMISSIONS.LOGS_READ)" index="/operation/log">
                 <el-icon><Document /></el-icon>
                 <span class="menu-text">日志查询</span>
               </el-menu-item>
-              <el-menu-item index="/operation/batch-deploy">
+              <el-menu-item
+                v-if="
+                  authStore.can(PERMISSIONS.APPLICATIONS_READ) &&
+                  authStore.can(PERMISSIONS.RELEASES_CREATE)
+                "
+                index="/operation/batch-deploy"
+              >
                 <el-icon><Upload /></el-icon>
                 <span class="menu-text">一键批量发布</span>
               </el-menu-item>
-              <el-menu-item index="/operation/monitor">
+              <el-menu-item
+                v-if="authStore.can(PERMISSIONS.KUBERNETES_READ)"
+                index="/operation/monitor"
+              >
                 <el-icon><DataAnalysis /></el-icon>
                 <span class="menu-text">监控面板</span>
               </el-menu-item>
@@ -91,9 +134,16 @@
                 <el-icon><Setting /></el-icon>
                 <span class="menu-text">系统设置</span>
               </template>
-              <el-menu-item index="/system/settings">
+              <el-menu-item
+                v-if="authStore.can(PERMISSIONS.SYSTEM_SETTINGS_READ)"
+                index="/system/settings"
+              >
                 <el-icon><Tools /></el-icon>
                 <span class="menu-text">系统配置</span>
+              </el-menu-item>
+              <el-menu-item v-if="authStore.can(PERMISSIONS.USERS_READ)" index="/system/users">
+                <el-icon><UserFilled /></el-icon>
+                <span class="menu-text">用户与角色</span>
               </el-menu-item>
               <el-menu-item index="/system/version">
                 <el-icon><InfoFilled /></el-icon>
@@ -126,13 +176,71 @@
         </el-main>
       </el-container>
     </el-container>
+
+    <el-dialog
+      v-model="passwordDialogVisible"
+      title="修改密码"
+      width="440px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!passwordSubmitting"
+      :show-close="!passwordSubmitting"
+      @closed="resetPasswordForm"
+    >
+      <el-alert
+        title="修改成功后会撤销该账号的全部会话，需要使用新密码重新登录。"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+      <el-form label-position="top" class="password-form" @submit.prevent="submitPasswordChange">
+        <el-form-item label="当前密码" required>
+          <el-input
+            v-model="passwordForm.current"
+            type="password"
+            show-password
+            autocomplete="current-password"
+            :disabled="passwordSubmitting"
+          />
+        </el-form-item>
+        <el-form-item label="新密码" required>
+          <el-input
+            v-model="passwordForm.next"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            :disabled="passwordSubmitting"
+          />
+        </el-form-item>
+        <el-form-item label="确认新密码" required>
+          <el-input
+            v-model="passwordForm.confirmation"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            :disabled="passwordSubmitting"
+            @keyup.enter="submitPasswordChange"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="passwordSubmitting" @click="passwordDialogVisible = false">
+          取消
+        </el-button>
+        <el-button type="primary" :loading="passwordSubmitting" @click="submitPasswordChange">
+          确认修改
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { useUserStore } from '@/stores/user';
+import { ElMessage } from 'element-plus';
+import { getPasswordChangeErrorMessage } from '@/services/auth';
+import { useAuthStore } from '@/stores/auth';
+import { PERMISSIONS } from '@/types/auth';
 import {
   ArrowDown,
   House,
@@ -147,11 +255,16 @@ import {
   Document,
   DataAnalysis,
   InfoFilled,
+  UserFilled,
 } from '@element-plus/icons-vue';
 
 const router = useRouter();
-const userStore = useUserStore();
+const authStore = useAuthStore();
 const isCollapse = ref(false);
+const logoutLoading = ref(false);
+const passwordDialogVisible = ref(false);
+const passwordSubmitting = ref(false);
+const passwordForm = ref({ current: '', next: '', confirmation: '' });
 const activeMenu = computed(() => router.currentRoute.value.path);
 
 // 定义响应式变量存储窗口宽度
@@ -182,25 +295,70 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
 });
 
-const user = ref({
-  name: '测试用户',
-  avatar: 'https://gw.alipayobjects.com/zos/rmsportal/ubnKSIfAJTxIgXOKlciN.png',
-});
-
-// 计算用户显示名称
 const userDisplayName = computed(() => {
-  return userStore.userInfo?.nameCn || '未登录';
+  return authStore.user?.display_name || authStore.user?.username || '未登录';
 });
+const userInitials = computed(() => userDisplayName.value.trim().slice(0, 2).toUpperCase());
 
 const toggleCollapse = () => {
   isCollapse.value = !isCollapse.value;
 };
 
-const handleLogout = () => {
-  // 清除用户信息
-  userStore.logout();
-  // 跳转到登录页
-  router.push('/login');
+const handleLogout = async () => {
+  if (logoutLoading.value) return;
+  logoutLoading.value = true;
+  try {
+    await authStore.logout();
+    await router.replace({ name: 'login' });
+  } catch {
+    ElMessage.error('退出登录失败，会话尚未确认撤销，请重试');
+  } finally {
+    logoutLoading.value = false;
+  }
+};
+
+const resetPasswordForm = () => {
+  passwordForm.value = { current: '', next: '', confirmation: '' };
+};
+
+const openPasswordDialog = () => {
+  resetPasswordForm();
+  passwordDialogVisible.value = true;
+};
+
+const submitPasswordChange = async () => {
+  if (passwordSubmitting.value) return;
+  const current = passwordForm.value.current;
+  const next = passwordForm.value.next;
+  if (!current || !next || !passwordForm.value.confirmation) {
+    ElMessage.warning('请完整填写当前密码、新密码和确认密码');
+    return;
+  }
+  const passwordBytes = new TextEncoder().encode(next).byteLength;
+  if (passwordBytes < 12 || passwordBytes > 1024) {
+    ElMessage.warning('新密码长度必须在 12 到 1024 字节之间');
+    return;
+  }
+  if (next !== passwordForm.value.confirmation) {
+    ElMessage.warning('两次输入的新密码不一致');
+    return;
+  }
+  if (current === next) {
+    ElMessage.warning('新密码不能与当前密码相同');
+    return;
+  }
+
+  passwordSubmitting.value = true;
+  try {
+    await authStore.changePassword({ current_password: current, new_password: next });
+    passwordDialogVisible.value = false;
+    ElMessage.success('密码已更新，请重新登录');
+    await router.replace({ name: 'login' });
+  } catch (error) {
+    ElMessage.error(getPasswordChangeErrorMessage(error));
+  } finally {
+    passwordSubmitting.value = false;
+  }
 };
 </script>
 

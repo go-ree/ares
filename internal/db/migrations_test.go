@@ -19,6 +19,7 @@ func TestPublishedMigrationChecksumsAreStable(t *testing.T) {
 		2: "0d7e2a98c2981a9e3383b0003bdddb10b4e10a15ad8dc0aebf9ac14223ebfac5",
 		3: "f889da04714679e3cc304b82d9a26b6100f63e23569bd5a04f26d361ca279912",
 		4: "0301b14dea0c3dacf2260dcdfd28fa2da486a596308ae43ccfeec47cb5638e01",
+		5: "5fdb78c86cb338613d32e6e05c9ad38e652ba30fe83bf02564d0e110574aef0a",
 	}
 	for _, migration := range schemaMigrations {
 		if got := migration.checksum(); got != want[migration.epoch] {
@@ -34,6 +35,7 @@ func TestPublishedMigrationImplementationFingerprintsAreStable(t *testing.T) {
 		2: {"null_string_migration.go", "../tool/nullable_text.go", "pluggable_cicd_migration.go"},
 		3: {"null_string_migration.go", "../tool/nullable_text.go", "pluggable_cicd_migration.go", "cicd_runtime_hardening_migration.go"},
 		4: {"null_string_migration.go", "../tool/nullable_text.go", "pluggable_cicd_migration.go", "versioned_schema_migration.go"},
+		5: {"pluggable_cicd_migration.go", "auth_rbac_migration.go", "../canonicaljson/canonical.go"},
 	}
 	for _, migration := range schemaMigrations {
 		got := sourceFingerprint(t, filesByEpoch[migration.epoch])
@@ -54,6 +56,7 @@ func TestPersistentEntitySourcesAreStable(t *testing.T) {
 	files := []string{
 		"../entity/app.go",
 		"../entity/app_config_domains.go",
+		"../entity/auth.go",
 		"../entity/dev_language_rules.go",
 		"../entity/integration_setting.go",
 		"../entity/publish.go",
@@ -61,7 +64,7 @@ func TestPersistentEntitySourcesAreStable(t *testing.T) {
 		"../entity/task_record_images.go",
 		"../entity/workflow.go",
 	}
-	const expected = "cab7f1949aec9a6ed12d001d88499364317b18495d317bdd48ac23e108178db5"
+	const expected = "780f3345381c4c3386ca9ce1e774e1abd8d5e5073e976af62cc1a7e0ddb67510"
 	if got := sourceFingerprint(t, files); got != expected {
 		t.Errorf("persistent entity fingerprint = %s, want %s; entity changes require a migration and manifest review", got, expected)
 	}
@@ -247,16 +250,25 @@ func TestMigrationStatusPrintsPendingChecksums(t *testing.T) {
 	}
 }
 
-func TestComposeRuntimeGrantsCoverBusinessTablesButNotLedger(t *testing.T) {
+func TestComposeRuntimeGrantsCoverManagedTablesWithLeastPrivilege(t *testing.T) {
 	script, err := os.ReadFile("../../deploy/compose/mysql/01-create-users.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
 	content := string(script)
-	for _, tableName := range sortedStringKeys(epoch4SemanticSchemaManifest.tables) {
-		needle := ".\\`" + tableName + "\\` TO '${MYSQL_RUNTIME_USER}'@'%'"
+	for _, tableName := range sortedStringKeys(epoch5SemanticSchemaManifest.tables) {
+		privilege := expectedRuntimeDMLPrivileges(tableName)
+		if privilege == "" {
+			needle := ".\\`" + tableName + "\\` TO '${MYSQL_RUNTIME_USER}'@'%'"
+			if strings.Contains(content, needle) {
+				t.Errorf("runtime grant script unexpectedly grants table-level privileges on %s", tableName)
+			}
+			continue
+		}
+		needle := "GRANT " + privilege + " ON \\`${MYSQL_DATABASE}\\`.\\`" + tableName +
+			"\\` TO '${MYSQL_RUNTIME_USER}'@'%'"
 		if !strings.Contains(content, needle) {
-			t.Errorf("runtime grant script does not explicitly grant business DML on %s", tableName)
+			t.Errorf("runtime grant script does not explicitly grant %s on %s", privilege, tableName)
 		}
 	}
 	if strings.Contains(content, ".\\`schema_migrations\\` TO '${MYSQL_RUNTIME_USER}'@'%'") {
@@ -368,6 +380,28 @@ func TestComposeRuntimeGrantsCoverBusinessTablesButNotLedger(t *testing.T) {
 		if got := strings.Count(string(compose), "\n      "+setting); got != 2 {
 			t.Errorf("compose account jobs contain %d occurrences of %q, want 2", got, setting)
 		}
+	}
+}
+
+func expectedRuntimeDMLPrivileges(tableName string) string {
+	switch tableName {
+	case "pipelines", "pipelines_job_combination":
+		return ""
+	case "apps", "app_configs", "task_record", "env_configs", "integration_settings",
+		"release_workflows", "app_config_workflows", "task_step_records":
+		return "INSERT, UPDATE"
+	case "app_config_domains", "auth_sessions", "auth_oidc_flows":
+		return "INSERT, UPDATE, DELETE"
+	case "task_record_images":
+		return "INSERT, DELETE"
+	case "auth_users":
+		return "INSERT, UPDATE"
+	case "auth_identities", "audit_events", "dev_language_rules", "release_workflow_versions":
+		return "INSERT"
+	case "auth_bootstrap_state":
+		return "UPDATE"
+	default:
+		return "INSERT, UPDATE, DELETE"
 	}
 }
 

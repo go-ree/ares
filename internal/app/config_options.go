@@ -26,7 +26,7 @@ func (am *AppManager) GetAppConfigOptions(ctx context.Context, appID int64) (*Ap
 	}
 	rules, err := loadDevLanguageRules(ctx, appRow.DevLanguage)
 	if err != nil {
-		return nil, NewValidationError(err.Error())
+		return nil, err
 	}
 	return &AppConfigOptions{
 		DevLanguage: strings.ToLower(strings.TrimSpace(appRow.DevLanguage)),

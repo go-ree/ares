@@ -15,27 +15,10 @@ import type {
 
 const BASE_URL = '/api/v1/deploy';
 
-// 用户信息接口
-interface UserInfo {
-  username: string;
-  nameCn: string;
-}
-
-// 批量发布服务，需要传入用户信息
-export const batchDeploy = async (
-  deployRequests: Omit<DeployRequest, 'publisher'>[],
-  userInfo: UserInfo
-) => {
-  if (!userInfo) {
-    throw new Error('用户信息不能为空');
-  }
-
-  // 构建批量发布请求，包含发布人信息
+// 发布人由服务端从会话中确定，客户端不可代填身份。
+export const batchDeploy = async (deployRequests: DeployRequest[]) => {
   const batchRequest: BatchDeployRequest = {
-    batch_publish: deployRequests.map(request => ({
-      ...request,
-      publisher: userInfo.nameCn, // 使用中文名作为发布人
-    })),
+    batch_publish: deployRequests,
   };
 
   return api.post<ApiResponse<BatchDeployResponse>>(`${BASE_URL}/publish/batch`, batchRequest);
@@ -43,14 +26,13 @@ export const batchDeploy = async (
 
 // 单个应用发布（内部使用批量发布接口）
 export const createDeploy = async (
-  request: Omit<DeployRequest, 'publisher'>,
-  userInfo: UserInfo
+  request: DeployRequest
 ): Promise<{
   data: ApiResponse<TaskRecordResult>;
   status: number;
   statusText: string;
 }> => {
-  const response = await batchDeploy([request], userInfo);
+  const response = await batchDeploy([request]);
   // batchDeploy 返回的是 BatchDeployResponse，但后端响应在不同场景下可能出现：
   // - code=0，result=null，error 内包含 task_records
   // - code=1，但 task_records[0].success=false 且 task_record=null（任务实际创建失败）
@@ -101,17 +83,8 @@ export const getTaskDetail = (taskId: number) => {
 };
 
 // 取消发布
-export const cancelDeploy = (deployId: number, userInfo: UserInfo, comment?: string) => {
-  if (!userInfo) {
-    throw new Error('用户信息不能为空');
-  }
-
-  return api.post<ApiResponse<void>>(`${BASE_URL}/${deployId}/cancel`, {
-    publisher: userInfo.username,
-    publisher_cn: userInfo.nameCn,
-    comment,
-  });
-};
+export const cancelDeploy = (deployId: number, comment?: string) =>
+  api.post<ApiResponse<void>>(`${BASE_URL}/${deployId}/cancel`, { comment });
 
 // 获取发布日志
 export const getDeployLogs = (deployId: number) => {
@@ -119,17 +92,8 @@ export const getDeployLogs = (deployId: number) => {
 };
 
 // 重新发布
-export const redeploy = async (deployId: number, userInfo: UserInfo, comment?: string) => {
-  if (!userInfo) {
-    throw new Error('用户信息不能为空');
-  }
-
-  return api.post<ApiResponse<DeployInfo>>(`${BASE_URL}/${deployId}/redeploy`, {
-    publisher: userInfo.username,
-    publisher_cn: userInfo.nameCn,
-    comment,
-  });
-};
+export const redeploy = async (deployId: number, comment?: string) =>
+  api.post<ApiResponse<DeployInfo>>(`${BASE_URL}/${deployId}/redeploy`, { comment });
 
 // 查询发布日志
 export const queryPublishLogs = async (params: PublishLogQueryParams) => {
@@ -139,74 +103,4 @@ export const queryPublishLogs = async (params: PublishLogQueryParams) => {
 // 查询单个任务的日志
 export const queryTaskLogs = async (taskId: number, logType: 'ci' | 'cd' = 'ci') => {
   return api.get<ApiResponse<string>>(`${BASE_URL}/task/${taskId}/logs/${logType}`);
-};
-
-// SSE流式日志查询接口
-export const streamJobLogs = (taskId: number, logType: 'ci' | 'cd') => {
-  const url = `/api/v1/job/stream/log?task_id=${taskId}&log_type=${logType}`;
-
-  return new Promise<string>((resolve, reject) => {
-    const eventSource = new EventSource(url);
-    let logContent = '';
-
-    eventSource.onmessage = (event: MessageEvent) => {
-      try {
-        // 解析JSON数据
-        const data = JSON.parse(event.data);
-        if (data.code === 1 && data.result && Array.isArray(data.result)) {
-          // 将每一行日志添加到内容中
-          logContent += data.result.join('\n') + '\n';
-        } else if (data.code === 0) {
-          // 处理错误
-          reject(new Error(data.msg || data.error || '获取日志失败'));
-          eventSource.close();
-        }
-      } catch (error) {
-        console.error('解析SSE数据失败:', error);
-        reject(error);
-        eventSource.close();
-      }
-    };
-
-    // 监听错误事件
-    eventSource.addEventListener('error', (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data);
-        reject(new Error(data.msg || data.error || '获取日志失败'));
-      } catch (error) {
-        reject(new Error('获取日志失败'));
-      }
-      eventSource.close();
-    });
-
-    // 监听结束事件
-    eventSource.addEventListener('end', () => {
-      console.log('SSE流结束');
-      eventSource.close();
-      resolve(logContent);
-    });
-
-    eventSource.onerror = error => {
-      console.error('SSE连接错误:', error);
-      eventSource.close();
-      reject(new Error('SSE连接失败'));
-    };
-
-    // 监听连接打开
-    eventSource.onopen = () => {
-      console.log('SSE连接已建立');
-    };
-
-    // 设置超时处理
-    const timeout = setTimeout(() => {
-      eventSource.close();
-      resolve(logContent); // 超时后返回已获取的日志内容
-    }, 30000); // 30秒超时
-
-    // 监听连接关闭
-    eventSource.addEventListener('close', () => {
-      clearTimeout(timeout);
-      resolve(logContent);
-    });
-  });
 };

@@ -14,6 +14,7 @@ type memoryDefinitionStore struct {
 	mu       sync.Mutex
 	current  map[int]WorkflowView
 	versions map[int][]WorkflowView
+	commands []SaveWorkflowCommand
 }
 
 func newMemoryDefinitionStore() *memoryDefinitionStore {
@@ -23,6 +24,7 @@ func newMemoryDefinitionStore() *memoryDefinitionStore {
 func (m *memoryDefinitionStore) SaveWorkflow(_ context.Context, command SaveWorkflowCommand) (WorkflowView, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.commands = append(m.commands, command)
 	current, exists := m.current[command.ConfigID]
 	if (!exists && command.ExpectedRevision != 0) || (exists && command.ExpectedRevision != current.Revision) {
 		return WorkflowView{}, ErrRevisionConflict
@@ -55,21 +57,62 @@ func TestServiceCreatesImmutableVersionsWithRevisionGuard(t *testing.T) {
 	store := newMemoryDefinitionStore()
 	service := NewService(store, DefaultRegistry())
 	firstSpec := WorkflowSpec{SchemaVersion: 1, Name: "first", Steps: []StepSpec{{Key: "one", Name: "one", Uses: NoopUses}}}
-	first, err := service.Save(context.Background(), 42, 0, "tester", firstSpec)
+	first, err := service.Save(context.Background(), 42, 0, "tester", 101, firstSpec)
 	if err != nil {
 		t.Fatal(err)
 	}
 	secondSpec := WorkflowSpec{SchemaVersion: 1, Name: "second", Steps: []StepSpec{{Key: "two", Name: "two", Uses: NoopUses}}}
-	second, err := service.Save(context.Background(), 42, first.Revision, "tester", secondSpec)
+	second, err := service.Save(context.Background(), 42, first.Revision, "tester", 101, secondSpec)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if second.Version != 2 || second.Revision != 2 || first.Spec.Name != "first" {
 		t.Fatalf("first=%#v second=%#v", first, second)
 	}
-	_, err = service.Save(context.Background(), 42, first.Revision, "stale", secondSpec)
+	_, err = service.Save(context.Background(), 42, first.Revision, "stale", 101, secondSpec)
 	if !errors.Is(err, ErrRevisionConflict) {
 		t.Fatalf("stale save error = %v", err)
+	}
+}
+
+func TestServiceRejectsPersistedCredentialContainersBeforeTheyBecomeReadable(t *testing.T) {
+	store := newMemoryDefinitionStore()
+	service := NewService(store, DefaultRegistry())
+	spec := WorkflowSpec{SchemaVersion: 1, Name: "unsafe", Steps: []StepSpec{{
+		Key: "one", Name: "one", Uses: NoopUses,
+		With: []byte(`{"output":{"kubeconfig":"apiVersion: v1\\nusers:\\n- token: cluster-super-secret"}}`),
+	}}}
+	if _, err := service.Save(context.Background(), 42, 0, "admin", 7, spec); err == nil || !strings.Contains(err.Error(), "kubeconfig") {
+		t.Fatalf("credential-bearing workflow error = %v", err)
+	}
+	if len(store.commands) != 0 {
+		t.Fatalf("unsafe workflow reached persistence: %#v", store.commands)
+	}
+}
+
+func TestServiceCarriesStableActorIdentity(t *testing.T) {
+	store := newMemoryDefinitionStore()
+	service := NewService(store, DefaultRegistry())
+	spec := WorkflowSpec{
+		SchemaVersion: SchemaVersionV1,
+		Name:          "actor identity",
+		Steps:         []StepSpec{{Key: "one", Name: "one", Uses: NoopUses}},
+	}
+
+	if _, err := service.Save(context.Background(), 41, 0, "  Alice  ", 88, spec); err != nil {
+		t.Fatal(err)
+	}
+	command := store.commands[len(store.commands)-1]
+	if command.Actor != "Alice" || command.ActorUserID == nil || *command.ActorUserID != 88 {
+		t.Fatalf("authenticated actor was not preserved: %#v", command)
+	}
+
+	if _, err := service.Save(context.Background(), 42, 0, "legacy-admin-token", 0, spec); err != nil {
+		t.Fatal(err)
+	}
+	command = store.commands[len(store.commands)-1]
+	if command.ActorUserID != nil {
+		t.Fatalf("legacy actor ID must be stored as NULL: %#v", command.ActorUserID)
 	}
 }
 
@@ -102,7 +145,7 @@ func TestServiceAllowsSavingUnavailableExecutorButBlocksTaskCreation(t *testing.
 			Key: "build", Name: "build", Uses: "test.unavailable@v1",
 		}},
 	}
-	if _, err := service.Save(context.Background(), 9, 0, "tester", spec); err != nil {
+	if _, err := service.Save(context.Background(), 9, 0, "tester", 101, spec); err != nil {
 		t.Fatalf("Save() should validate configuration without requiring runtime availability: %v", err)
 	}
 
@@ -121,7 +164,7 @@ func TestServiceCreateTaskUsesAtomicStoreAndFillsTaskID(t *testing.T) {
 	definitions := newMemoryDefinitionStore()
 	service := NewService(definitions, DefaultRegistry())
 	spec := WorkflowSpec{SchemaVersion: 1, Name: "demo", Steps: []StepSpec{{Key: "one", Name: "one", Uses: NoopUses}}}
-	view, err := service.Save(context.Background(), 7, 0, "tester", spec)
+	view, err := service.Save(context.Background(), 7, 0, "tester", 101, spec)
 	if err != nil {
 		t.Fatal(err)
 	}

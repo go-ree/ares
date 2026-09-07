@@ -3,12 +3,12 @@ package controller
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-ree/ares/internal/api/util"
+	"github.com/go-ree/ares/internal/auth"
 	"github.com/go-ree/ares/internal/entity"
 	"github.com/go-ree/ares/internal/workflow"
 
@@ -45,14 +45,19 @@ func NewDefaultWorkflowController(engine *xorm.Engine) *WorkflowController {
 // @Success 200 {object} util.ResponseTemplate{code=int,result=[]workflow.Descriptor}
 // @Router /api/v1/pipeline-step-types [get]
 func (wc *WorkflowController) ListPipelineStepTypes(c *gin.Context) {
-	c.JSON(http.StatusOK, util.ResponseSuccessful("查询成功", wc.service.Registry().Descriptors(c.Request.Context())))
+	descriptors := wc.service.Registry().Descriptors(c.Request.Context())
+	for index := range descriptors {
+		if !descriptors[index].Available {
+			descriptors[index].UnavailableReason = "executor unavailable"
+		}
+	}
+	c.JSON(http.StatusOK, util.ResponseSuccessful("查询成功", descriptors))
 }
 
 // GetAppConfigWorkflow
 // @Tags Pipeline
 // @Summary 获取应用环境配置当前绑定的工作流
 // @Param config_id path int true "应用环境配置 ID"
-// @Param X-Ares-Admin-Token header string true "系统设置管理员令牌"
 // @Success 200 {object} util.ResponseTemplate{code=int,result=workflow.WorkflowView}
 // @Failure 404 {object} util.ResponseTemplate{code=int}
 // @Router /api/v1/app-configs/{config_id}/workflow [get]
@@ -66,7 +71,19 @@ func (wc *WorkflowController) GetAppConfigWorkflow(c *gin.Context) {
 		writeWorkflowError(c, "查询工作流失败", err)
 		return
 	}
+	principal, _ := CurrentPrincipal(c)
+	if !principal.Has(auth.PermissionWorkflowsWrite) {
+		view = redactWorkflowExecutorConfig(view)
+	}
 	c.JSON(http.StatusOK, util.ResponseSuccessful("查询成功", view))
+}
+
+func redactWorkflowExecutorConfig(view workflow.WorkflowView) workflow.WorkflowView {
+	view.Spec.Steps = append([]workflow.StepSpec(nil), view.Spec.Steps...)
+	for index := range view.Spec.Steps {
+		view.Spec.Steps[index].With = json.RawMessage(`{}`)
+	}
+	return view
 }
 
 type putWorkflowRequest struct {
@@ -78,36 +95,38 @@ type putWorkflowRequest struct {
 // @Tags Pipeline
 // @Summary 发布新的不可变工作流版本并切换应用环境绑定
 // @Param config_id path int true "应用环境配置 ID"
-// @Param X-Ares-Admin-Token header string true "系统设置管理员令牌"
 // @Param request body putWorkflowRequest true "工作流与当前 revision"
 // @Success 200 {object} util.ResponseTemplate{code=int,result=workflow.WorkflowView}
 // @Failure 409 {object} util.ResponseTemplate{code=int}
 // @Failure 422 {object} util.ResponseTemplate{code=int}
 // @Router /api/v1/app-configs/{config_id}/workflow [put]
 func (wc *WorkflowController) PutAppConfigWorkflow(c *gin.Context) {
+	principal, ok := CurrentPrincipal(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, util.ResponseFailure("认证主体不可用", "unauthenticated"))
+		return
+	}
 	configID, ok := positivePathID(c, "config_id", "配置ID")
 	if !ok {
 		return
 	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxWorkflowRequestBytes)
 	var request putWorkflowRequest
-	decoder := json.NewDecoder(c.Request.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			c.JSON(http.StatusRequestEntityTooLarge, util.ResponseFailure("请求数据过大", err.Error()))
-			return
-		}
-		c.JSON(http.StatusBadRequest, util.ResponseFailure("请求参数格式错误", err.Error()))
+	if !BindJSON(c, &request, maxWorkflowRequestBytes) {
 		return
 	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		c.JSON(http.StatusBadRequest, util.ResponseFailure("请求参数格式错误", "请求只能包含一个 JSON 对象"))
+	actor := strings.TrimSpace(principal.DisplayName)
+	if actor == "" {
+		actor = strings.TrimSpace(principal.Username)
+	}
+	if actor == "" {
+		c.JSON(http.StatusUnauthorized, util.ResponseFailure("认证主体不可用", "unauthenticated"))
 		return
 	}
-	view, err := wc.service.Save(c.Request.Context(), configID, request.Revision, "settings-admin", request.Spec)
+	actorRunes := []rune(actor)
+	if len(actorRunes) > 100 {
+		actor = string(actorRunes[:100])
+	}
+	view, err := wc.service.Save(c.Request.Context(), configID, request.Revision, actor, principal.UserID, request.Spec)
 	if err != nil {
 		writeWorkflowError(c, "保存工作流失败", err)
 		return
@@ -148,15 +167,15 @@ func positivePathID(c *gin.Context, name, label string) (int, bool) {
 }
 
 func writeWorkflowError(c *gin.Context, message string, err error) {
-	status := http.StatusInternalServerError
 	var validation *workflow.ValidationError
 	switch {
 	case errors.Is(err, workflow.ErrNotFound):
-		status = http.StatusNotFound
+		c.JSON(http.StatusNotFound, util.ResponseFailure(message, workflow.ErrNotFound.Error()))
 	case errors.Is(err, workflow.ErrRevisionConflict):
-		status = http.StatusConflict
+		c.JSON(http.StatusConflict, util.ResponseFailure(message, workflow.ErrRevisionConflict.Error()))
 	case errors.As(err, &validation):
-		status = http.StatusUnprocessableEntity
+		c.JSON(http.StatusUnprocessableEntity, util.ResponseFailure(message, validation.Error()))
+	default:
+		writeInternalFailure(c, http.StatusInternalServerError, message, "database", "workflow", err)
 	}
-	c.JSON(status, util.ResponseFailure(message, fmt.Sprint(err)))
 }

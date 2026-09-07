@@ -2,7 +2,7 @@ package app
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"github.com/go-ree/ares/internal/api/util"
 	"github.com/go-ree/ares/internal/db"
 	"github.com/go-ree/ares/internal/entity"
@@ -86,7 +86,7 @@ func (am *AppManager) CreateApps(ctx context.Context, req CreateAppsRequest) (*C
 		app, err := am.CreateApp(ctx, appReq)
 		if err != nil {
 			response.FailureCount++
-			response.Apps[i].Error = fmt.Sprintf("应用 %s 创建失败，失败原因：", appReq.AppName) + err.Error()
+			response.Apps[i].Error = safeAppCreationError(err)
 		}
 		if app != nil {
 			response.Apps[i] = *app
@@ -95,6 +95,19 @@ func (am *AppManager) CreateApps(ctx context.Context, req CreateAppsRequest) (*C
 	}
 
 	return response, nil
+}
+
+func safeAppCreationError(err error) string {
+	var validationError *ValidationError
+	var duplicateError *DuplicateAppError
+	switch {
+	case errors.As(err, &validationError):
+		return validationError.Error()
+	case errors.As(err, &duplicateError):
+		return duplicateError.Error()
+	default:
+		return "应用创建失败，请稍后重试"
+	}
 }
 
 // CreateAppWithTx 使用事务创建应用

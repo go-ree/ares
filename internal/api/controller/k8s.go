@@ -2,11 +2,12 @@ package controller
 
 import (
 	"fmt"
+	"log/slog"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-ree/ares/internal/api/util"
 	"github.com/go-ree/ares/internal/k8s"
-	"log/slog"
-	"strings"
 )
 
 type PodController struct {
@@ -110,12 +111,7 @@ func (pc *PodController) GetAppPods(c *gin.Context) {
 	// 方式4: 获取所有pod，然后过滤
 	podInfo, err = pc.podManager.GetPodsInNamespace(c.Request.Context(), namespace, env, "")
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("查询失败", err.Error()))
-		slog.Error("获取pod信息失败",
-			"app_name", appName,
-			"env", env,
-			"namespace", namespace,
-			"error", err.Error())
+		respondUpstreamFailure(c, "kubernetes", "list_application_pods", err)
 		return
 	}
 
@@ -167,11 +163,7 @@ func (pc *PodController) GetAllPods(c *gin.Context) {
 	// 获取所有Pod
 	podInfo, err := pc.podManager.GetPodsInNamespace(c.Request.Context(), namespace, env, "")
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("查询失败", err.Error()))
-		slog.Error("获取pod信息失败",
-			"env", env,
-			"namespace", namespace,
-			"error", err.Error())
+		respondUpstreamFailure(c, "kubernetes", "list_pods", err)
 		return
 	}
 
@@ -223,14 +215,12 @@ func (pc *PodController) GetK8sDebugInfo(c *gin.Context) {
 					"check_time": envStatus[env].CheckTime,
 				}
 			}
-		} else {
-			if envStatus[env] != nil {
-				debugInfo[fmt.Sprintf("%s_error", env)] = envStatus[env].Error
-			}
+		} else if envStatus[env] != nil {
+			debugInfo[fmt.Sprintf("%s_error", env)] = "upstream integration unavailable"
 		}
 	}
 
-	slog.Info("K8s调试信息获取完成", "debug_info", debugInfo)
+	slog.Info("K8s调试信息获取完成", "request_id", RequestID(c), "environment_count", len(envStatus))
 	c.JSON(200, util.ResponseSuccessful("调试信息获取成功", debugInfo))
 }
 
@@ -274,12 +264,7 @@ func (pc *PodController) GetDeploymentsByLabel(c *gin.Context) {
 	// 调用ApplicationManager查询Deployment
 	deployments, err := appManager.GetDeploymentsByLabel(c.Request.Context(), namespace, env, labelSelector)
 	if err != nil {
-		c.JSON(500, util.ResponseFailure("查询失败", err.Error()))
-		slog.Error("查询Deployment失败",
-			"label_selector", labelSelector,
-			"env", env,
-			"namespace", namespace,
-			"error", err.Error())
+		respondUpstreamFailure(c, "kubernetes", "list_deployments", err)
 		return
 	}
 

@@ -6,13 +6,14 @@ type Snapshot struct {
 }
 
 type JenkinsView struct {
-	Enabled         bool   `json:"enabled"`
-	Address         string `json:"address"`
-	Username        string `json:"username"`
-	TimeoutSeconds  int    `json:"timeout_seconds"`
-	TokenConfigured bool   `json:"token_configured"`
-	Connected       bool   `json:"connected"`
-	LastError       string `json:"last_error"`
+	Enabled                   bool   `json:"enabled"`
+	Address                   string `json:"address"`
+	Username                  string `json:"username"`
+	TimeoutSeconds            int    `json:"timeout_seconds"`
+	TokenConfigured           bool   `json:"token_configured"`
+	CredentialReentryRequired bool   `json:"credential_reentry_required"`
+	Connected                 bool   `json:"connected"`
+	LastError                 string `json:"last_error"`
 }
 
 type KubernetesView struct {
@@ -24,10 +25,11 @@ type KubernetesView struct {
 }
 
 type KubernetesClusterView struct {
-	Environment          string `json:"environment"`
-	Name                 string `json:"name"`
-	Description          string `json:"description"`
-	KubeconfigConfigured bool   `json:"kubeconfig_configured"`
+	Environment               string `json:"environment"`
+	Name                      string `json:"name"`
+	Description               string `json:"description"`
+	KubeconfigConfigured      bool   `json:"kubeconfig_configured"`
+	CredentialReentryRequired bool   `json:"credential_reentry_required"`
 }
 
 type UpdateJenkinsRequest struct {

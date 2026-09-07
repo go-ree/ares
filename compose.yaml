@@ -9,6 +9,27 @@ x-ares-backend: &ares-backend
       GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
 
 services:
+  auth-secrets:
+    image: alpine:3.23.5
+    restart: "no"
+    init: true
+    entrypoint: ["/bin/sh", "/opt/ares/init-auth-secrets.sh"]
+    environment:
+      ARES_AUTH_SECRETS_PRINT_BOOTSTRAP: ${ARES_AUTH_SECRETS_PRINT_BOOTSTRAP:-false}
+    volumes:
+      - ./deploy/compose/init-auth-secrets.sh:/opt/ares/init-auth-secrets.sh:ro
+      - auth_secrets:/run/ares-auth
+    healthcheck:
+      disable: true
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    network_mode: none
+
   mysql:
     image: mysql:8.4
     restart: unless-stopped
@@ -133,9 +154,23 @@ services:
       ARES_DB_CONN_STR: "${MYSQL_RUNTIME_USER:-ares_runtime}:${MYSQL_RUNTIME_PASSWORD:-ares-runtime-demo-password}@tcp(mysql:3306)/${MYSQL_DATABASE:-ares}?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai&timeout=5s&readTimeout=10s&writeTimeout=10s"
       ARES_DB_SCHEMA_MIGRATION_TIMEOUT: ${ARES_DB_SCHEMA_MIGRATION_TIMEOUT:-2m}
       ARES_DEMO_DATA_ENABLED: ${ARES_DEMO_DATA_ENABLED:-true}
-      ARES_SETTINGS_ADMIN_TOKEN: ${ARES_SETTINGS_ADMIN_TOKEN:-ares-local-admin-token}
-      ARES_SETTINGS_ENCRYPTION_KEY: ${ARES_SETTINGS_ENCRYPTION_KEY:-ares-local-encryption-key-change-me-32chars}
+      ARES_WEB_PUBLIC_URL: http://localhost:${ARES_HTTP_PORT:-8080}
+      # The bundled proxy has a fixed address so client-keyed authentication
+      # limits can trust exactly one hop instead of collapsing every browser
+      # into the Nginx container address.
+      ARES_WEB_TRUSTED_PROXY_CIDRS: ${ARES_COMPOSE_WEB_IP:-172.30.238.10}/32
+      ARES_AUTH_ROOT_KEY_FILE: /run/ares-auth/root_key
+      ARES_AUTH_LOCAL_LOGIN_ENABLED: "true"
+      ARES_AUTH_BOOTSTRAP_ENABLED: "true"
+      ARES_AUTH_BOOTSTRAP_TOKEN_FILE: /run/ares-auth/bootstrap_token
+      ARES_SETTINGS_ENCRYPTION_KEY_FILE: /run/ares-auth/settings_encryption_key
+      ARES_AUTH_LEGACY_ADMIN_TOKEN_ENABLED: ${ARES_AUTH_LEGACY_ADMIN_TOKEN_ENABLED:-false}
+      ARES_AUTH_LEGACY_ADMIN_TOKEN_FILE: ${ARES_AUTH_LEGACY_ADMIN_TOKEN_FILE:-}
+    volumes:
+      - auth_secrets:/run/ares-auth:ro
     depends_on:
+      auth-secrets:
+        condition: service_completed_successfully
       database-runtime-user:
         condition: service_completed_successfully
     expose:
@@ -184,11 +219,16 @@ services:
     cap_drop:
       - ALL
     networks:
-      - ares
+      ares:
+        ipv4_address: ${ARES_COMPOSE_WEB_IP:-172.30.238.10}
 
 volumes:
   mysql_data:
+  auth_secrets:
 
 networks:
   ares:
     driver: bridge
+    ipam:
+      config:
+        - subnet: ${ARES_COMPOSE_SUBNET:-172.30.238.0/24}

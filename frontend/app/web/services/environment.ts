@@ -19,19 +19,6 @@ export interface UpdateEnvironmentRequest {
   sort_order?: number;
 }
 
-const systemEnvironmentApi = axios.create({
-  timeout: DEFAULT_REQUEST_TIMEOUT_MS,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-const adminHeaders = (adminToken: string) => {
-  const token = adminToken.trim();
-  if (!token) throw new Error('请输入管理员令牌');
-  return { 'X-Ares-Admin-Token': token };
-};
-
 const unwrap = <T>(response: ApiResponse<T>): T => {
   if (response.code !== 1) {
     throw new Error(response.error || response.message || '请求失败');
@@ -41,35 +28,25 @@ const unwrap = <T>(response: ApiResponse<T>): T => {
 
 export const getEnvironments = () => api.get<ApiResponse<EnvironmentCatalogItem[]>>(BASE_URL);
 
-export const getSystemEnvironments = async (adminToken: string) => {
-  const response = await systemEnvironmentApi.get<ApiResponse<EnvironmentCatalogItem[]>>(
-    SYSTEM_BASE_URL,
-    { headers: adminHeaders(adminToken) }
-  );
+export const getSystemEnvironments = async () => {
+  const response = await api.get<ApiResponse<EnvironmentCatalogItem[]>>(SYSTEM_BASE_URL, {
+    timeout: DEFAULT_REQUEST_TIMEOUT_MS,
+  });
   return unwrap(response.data);
 };
 
-export const createSystemEnvironment = async (
-  adminToken: string,
-  payload: CreateEnvironmentRequest
-) => {
-  const response = await systemEnvironmentApi.post<ApiResponse<EnvironmentCatalogItem>>(
-    SYSTEM_BASE_URL,
-    payload,
-    { headers: adminHeaders(adminToken) }
-  );
+export const createSystemEnvironment = async (payload: CreateEnvironmentRequest) => {
+  const response = await api.post<ApiResponse<EnvironmentCatalogItem>>(SYSTEM_BASE_URL, payload, {
+    timeout: DEFAULT_REQUEST_TIMEOUT_MS,
+  });
   return unwrap(response.data);
 };
 
-export const updateSystemEnvironment = async (
-  adminToken: string,
-  code: string,
-  payload: UpdateEnvironmentRequest
-) => {
-  const response = await systemEnvironmentApi.patch<ApiResponse<EnvironmentCatalogItem>>(
+export const updateSystemEnvironment = async (code: string, payload: UpdateEnvironmentRequest) => {
+  const response = await api.patch<ApiResponse<EnvironmentCatalogItem>>(
     `${SYSTEM_BASE_URL}/${encodeURIComponent(code)}`,
     payload,
-    { headers: adminHeaders(adminToken) }
+    { timeout: DEFAULT_REQUEST_TIMEOUT_MS }
   );
   return unwrap(response.data);
 };

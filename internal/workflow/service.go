@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/go-ree/ares/internal/entity"
 )
@@ -26,21 +27,30 @@ func (s *Service) GetCurrent(ctx context.Context, configID int) (WorkflowView, e
 	return s.definitions.GetCurrentWorkflow(ctx, configID)
 }
 
-func (s *Service) Save(ctx context.Context, configID, revision int, actor string, spec WorkflowSpec) (WorkflowView, error) {
+func (s *Service) Save(ctx context.Context, configID, revision int, actor string, actorUserID int64, spec WorkflowSpec) (WorkflowView, error) {
 	if configID <= 0 {
 		return WorkflowView{}, fmt.Errorf("config_id 必须大于 0")
 	}
 	if revision < 0 {
 		return WorkflowView{}, fmt.Errorf("revision 不能小于 0")
 	}
+	actor = strings.TrimSpace(actor)
+	if actor == "" || utf8.RuneCountInString(actor) > 100 {
+		return WorkflowView{}, fmt.Errorf("修改主体不能为空且不能超过 100 个字符")
+	}
 	normalized, err := NormalizeAndValidate(spec, s.registry)
 	if err != nil {
 		return WorkflowView{}, err
 	}
+	var stableActorUserID *int64
+	if actorUserID > 0 {
+		stableActorUserID = &actorUserID
+	}
 	return s.definitions.SaveWorkflow(ctx, SaveWorkflowCommand{
 		ConfigID:         configID,
 		ExpectedRevision: revision,
-		Actor:            strings.TrimSpace(actor),
+		Actor:            actor,
+		ActorUserID:      stableActorUserID,
 		Spec:             normalized,
 	})
 }

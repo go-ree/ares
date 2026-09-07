@@ -26,13 +26,13 @@ func NewTaskManager() *TaskManager {
 // UpdateTaskStatuses 更新任务状态
 func (tm *TaskManager) UpdateTaskStatuses() {
 	if err := tm.updateWorkflowTasks(context.Background()); err != nil {
-		slog.Error("推进通用发布任务失败", slog.Any("error", err))
+		slog.Error("推进通用发布任务失败", "error_type", fmt.Sprintf("%T", err))
 	}
 	// v1 任务只由旧状态机收尾。新任务即使使用 Jenkins，也只进入
 	// 通用步骤引擎，二者不会 shadow 双执行。
 	tasks, err := tm.fetchTasks()
 	if err != nil {
-		slog.Error("查询任务列表失败", slog.Any("error", err))
+		slog.Error("查询任务列表失败", "error_type", fmt.Sprintf("%T", err))
 		return
 	}
 	jobs := make(chan entity.TaskRecord)
@@ -48,7 +48,7 @@ func (tm *TaskManager) UpdateTaskStatuses() {
 			for task := range jobs {
 				if err := validateLegacyTaskAddress(task.JenkinsAddress); err != nil {
 					if failErr := tm.failUnsafeLegacyTask(task, err); failErr != nil {
-						slog.Error("终止无法安全续跑的旧版任务失败", slog.Any("taskId", task.TaskId), slog.Any("error", failErr))
+						slog.Error("终止无法安全续跑的旧版任务失败", slog.Any("taskId", task.TaskId), "error_type", fmt.Sprintf("%T", failErr))
 					}
 					continue
 				}
@@ -60,22 +60,22 @@ func (tm *TaskManager) UpdateTaskStatuses() {
 				if snapshot.Address() != normalizedLegacyTaskAddress(task.JenkinsAddress) {
 					release()
 					if failErr := tm.failUnsafeLegacyTask(task, fmt.Errorf("任务绑定的 Jenkins 实例与当前设置不一致")); failErr != nil {
-						slog.Error("终止 Jenkins 实例不匹配的旧版任务失败", slog.Any("taskId", task.TaskId), slog.Any("error", failErr))
+						slog.Error("终止 Jenkins 实例不匹配的旧版任务失败", slog.Any("taskId", task.TaskId), "error_type", fmt.Sprintf("%T", failErr))
 					}
 					continue
 				}
 				switch task.Status {
 				case entity.StatusPackaging:
 					if err := tm.handlePackagingTask(task, snapshot); err != nil {
-						slog.Error("处理编译中任务失败", slog.Any("taskId", task.TaskId), slog.Any("error", err))
+						slog.Error("处理编译中任务失败", slog.Any("taskId", task.TaskId), "error_type", fmt.Sprintf("%T", err))
 					}
 				case entity.StatusPackaged:
 					if err := tm.handlePackagedTask(task, snapshot); err != nil {
-						slog.Error("处理编译成功任务失败", slog.Any("taskId", task.TaskId), slog.Any("error", err))
+						slog.Error("处理编译成功任务失败", slog.Any("taskId", task.TaskId), "error_type", fmt.Sprintf("%T", err))
 					}
 				case entity.StatusDeploying:
 					if err := tm.handleDeployingTask(task, snapshot); err != nil {
-						slog.Error("处理部署中任务失败", slog.Any("taskId", task.TaskId), slog.Any("error", err))
+						slog.Error("处理部署中任务失败", slog.Any("taskId", task.TaskId), "error_type", fmt.Sprintf("%T", err))
 					}
 				}
 				release()
@@ -112,14 +112,14 @@ func (tm *TaskManager) updateWorkflowTasks(ctx context.Context) error {
 			defer workers.Done()
 			for taskID := range jobs {
 				if _, err := runtime.Coordinator.RunUntilBlocked(ctx, taskID, 0); err != nil {
-					slog.Warn("通用发布任务本轮协调失败，稍后重试", "task_id", taskID, "error", err)
+					slog.Warn("通用发布任务本轮协调失败，稍后重试", "task_id", taskID, "error_type", fmt.Sprintf("%T", err))
 				}
 				// Rotate every observed task to the back of the oldest-first scan,
 				// including transient failures that do not update a step row. This
 				// prevents the first 200 long-running tasks from starving the rest.
 				if _, err := db.Engine.Context(ctx).Table(new(entity.TaskRecord)).ID(taskID).
 					Update(map[string]any{"updated_at": time.Now()}); err != nil {
-					slog.Warn("更新通用发布任务轮询时间失败", "task_id", taskID, "error", err)
+					slog.Warn("更新通用发布任务轮询时间失败", "task_id", taskID, "error_type", fmt.Sprintf("%T", err))
 				}
 			}
 		}()

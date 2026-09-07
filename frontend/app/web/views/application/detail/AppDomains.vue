@@ -30,6 +30,7 @@
             <el-empty description="该环境暂无配置记录，无法管理多域名" :image-size="80" />
             <div class="empty-actions">
               <el-button
+                v-if="canWriteDomains"
                 type="primary"
                 :loading="creatingEnv === env.value"
                 :disabled="loading || saving || domainsLoading || !env.enabled"
@@ -52,14 +53,14 @@
 
             <div class="toolbar">
               <el-button
-                v-if="!isEditingByEnv[env.value]"
+                v-if="!isEditingByEnv[env.value] && canWriteDomains"
                 type="primary"
                 :disabled="loading || saving || domainsLoading"
                 @click="startEdit(env.value)"
               >
                 编辑
               </el-button>
-              <template v-else>
+              <template v-if="isEditingByEnv[env.value] && canWriteDomains">
                 <el-button
                   type="primary"
                   plain
@@ -148,8 +149,12 @@ import {
   upsertAppConfigDomains,
 } from '@/services/application';
 import { useEnvironments } from '@/composables/useEnvironments';
+import { useAuthStore } from '@/stores/auth';
+import { PERMISSIONS } from '@/types/auth';
 
 const route = useRoute();
+const authStore = useAuthStore();
+const canWriteDomains = computed(() => authStore.can(PERMISSIONS.DOMAINS_WRITE));
 const appId = ref<number>(Number(route.params.appId));
 
 const { environments, loadEnvironments, labelForEnvironment } = useEnvironments();
@@ -226,6 +231,7 @@ const fetchConfigs = async () => {
 };
 
 const createEnvConfig = async (env: AppEnv) => {
+  if (!canWriteDomains.value) return;
   if (!Number.isFinite(appId.value) || appId.value <= 0) return;
   creatingEnv.value = env;
   try {
@@ -271,6 +277,7 @@ const loadDomains = async (env: AppEnv, force = false) => {
 };
 
 const startEdit = (env: AppEnv) => {
+  if (!canWriteDomains.value) return;
   if (!configsByEnv[env]?.config_id) return;
   originalDomainsByEnv[env] = domainsByEnv[env].map(d => ({ host: d.host, path: d.path }));
   isEditingByEnv[env] = true;
@@ -292,6 +299,7 @@ const removeRow = (env: AppEnv, index: number) => {
 };
 
 const save = async (env: AppEnv) => {
+  if (!canWriteDomains.value) return;
   const cfg = configsByEnv[env];
   if (!cfg?.config_id) return;
   if (!isEditingByEnv[env]) return;

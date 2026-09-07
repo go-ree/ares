@@ -85,7 +85,7 @@ func (am *AppManager) PatchAppByID(ctx context.Context, appID int64, req PatchAp
 		newLang := strings.ToLower(strings.TrimSpace(*req.DevLanguage))
 		rules, err := loadDevLanguageRules(ctx, newLang)
 		if err != nil {
-			return nil, NewValidationError(err.Error())
+			return nil, err
 		}
 		var cfgs []entity.AppConfigs
 		if err := db.Engine.Context(ctx).

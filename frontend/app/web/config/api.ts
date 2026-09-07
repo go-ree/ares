@@ -1,62 +1,53 @@
 import axios from 'axios';
-import type { AxiosInstance } from 'axios';
-import { useUserStore } from '../stores/user';
-import router from '../routes';
+import type { AxiosError, AxiosInstance } from 'axios';
 
-// 创建axios实例
+const SAFE_METHODS = new Set(['get', 'head', 'options']);
+
+interface ApiAuthHooks {
+  getCsrfToken: () => string | null;
+  onUnauthorized: (error: AxiosError) => void | Promise<void>;
+  onForbidden: (error: AxiosError) => void | Promise<void>;
+}
+
+const noAuthHooks: ApiAuthHooks = {
+  getCsrfToken: () => null,
+  onUnauthorized: () => undefined,
+  onForbidden: () => undefined,
+};
+
+let authHooks: ApiAuthHooks = noAuthHooks;
+
+export const configureApiAuth = (hooks: ApiAuthHooks) => {
+  authHooks = hooks;
+};
+
+export const resetApiAuth = () => {
+  authHooks = noAuthHooks;
+};
+
 const api: AxiosInstance = axios.create({
-  timeout: 10000, // 请求超时时间
+  timeout: 10000,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// 请求拦截器
-api.interceptors.request.use(
-  config => {
-    // 在发送请求之前做些什么
-    // 例如：添加token
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  error => {
-    // 对请求错误做些什么
-    return Promise.reject(error);
+api.interceptors.request.use(config => {
+  const method = (config.method || 'get').toLowerCase();
+  if (!config.skipCsrf && !SAFE_METHODS.has(method)) {
+    const csrfToken = authHooks.getCsrfToken();
+    if (csrfToken) config.headers.set('X-CSRF-Token', csrfToken);
   }
-);
+  return config;
+});
 
-// 响应拦截器
 api.interceptors.response.use(
-  response => {
-    // 对响应数据做点什么
-    return response;
-  },
-  error => {
-    // 对响应错误做点什么
-    if (error.response) {
-      switch (error.response.status) {
-        case 401: {
-          // 未授权，清除用户信息并跳转到登录页
-          const userStore = useUserStore();
-          userStore.clearUserInfo();
-          localStorage.removeItem('token');
-          router.push('/login');
-          break;
-        }
-        case 403:
-          // 权限不足
-          console.error('没有权限访问该资源');
-          break;
-        case 500:
-          // 服务器错误
-          console.error('服务器错误');
-          break;
-        default:
-          console.error('请求失败:', error.response.data);
-      }
+  response => response,
+  async (error: AxiosError) => {
+    if (!error.config?.skipAuthHandling) {
+      if (error.response?.status === 401) await authHooks.onUnauthorized(error);
+      if (error.response?.status === 403) await authHooks.onForbidden(error);
     }
     return Promise.reject(error);
   }

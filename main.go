@@ -8,8 +8,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/go-ree/ares/internal/api"
+	"github.com/go-ree/ares/internal/auth"
 	"github.com/go-ree/ares/internal/cli"
 	"github.com/go-ree/ares/internal/config"
 	"github.com/go-ree/ares/internal/db"
@@ -100,6 +103,11 @@ func runServer(ctx context.Context, stderr io.Writer) int {
 		}
 		return exitOperational
 	}
+	authRuntime, err := initializeAuthRuntime(ctx)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "初始化身份与权限服务失败：%v\n", err)
+		return exitOperational
+	}
 	if err := integration.Initialize(config.SettingsEncryptionKey()); err != nil {
 		_, _ = fmt.Fprintf(stderr, "初始化外部集成失败：%v\n", err)
 		return exitOperational
@@ -108,6 +116,59 @@ func runServer(ctx context.Context, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "初始化后台任务失败：%v\n", err)
 		return exitOperational
 	}
-	webserver.Run(ctx, api.Router)
+	webserver.Run(ctx, func(router gin.IRouter) {
+		api.RouterWithRuntime(router, authRuntime)
+	})
 	return exitSuccess
+}
+
+func initializeAuthRuntime(ctx context.Context) (api.Runtime, error) {
+	if config.Main == nil || (!config.Main.Auth.OIDC.Enabled &&
+		!config.Main.Auth.LocalLogin.Enabled && !config.Main.Auth.Bootstrap.Enabled) {
+		return api.Runtime{}, errors.New("至少启用 OIDC、本地登录或一次性 bootstrap 中的一种认证方式")
+	}
+	if db.Engine == nil {
+		return api.Runtime{}, errors.New("数据库尚未初始化")
+	}
+	store, err := auth.NewSQLStore(db.Engine.DB().DB)
+	if err != nil {
+		return api.Runtime{}, err
+	}
+	var oidcClient auth.OIDCClient
+	if config.Main.Auth.OIDC.Enabled {
+		oidcClient, err = auth.NewOIDCClient(auth.OIDCConfig{
+			IssuerURL: config.Main.Auth.OIDC.IssuerURL, ClientID: config.Main.Auth.OIDC.ClientID,
+			ClientSecret: config.OIDCClientSecret(), RedirectURL: config.OIDCRedirectURL(),
+			Scopes:                   append([]string(nil), config.Main.Auth.OIDC.Scopes...),
+			RequireVerifiedEmail:     config.Main.Auth.OIDC.RequireVerifiedEmail,
+			AllowedSigningAlgorithms: append([]string(nil), config.Main.Auth.OIDC.AllowedSigningAlgorithms...),
+			MaxClockSkew:             config.OIDCMaxClockSkew(), HTTPTimeout: config.OIDCHTTPTimeout(),
+		})
+		if err != nil {
+			return api.Runtime{}, err
+		}
+	}
+	service, err := auth.NewService(store, auth.Config{
+		RootKey: config.AuthRootKey(), BootstrapToken: config.BootstrapToken(),
+		PublicURL: config.WebPublicURL(), CookieSecure: config.AuthCookieSecure(),
+		LocalLoginEnabled:      config.Main.Auth.LocalLogin.Enabled,
+		BootstrapEnabled:       config.Main.Auth.Bootstrap.Enabled,
+		OIDCAutoProvision:      config.Main.Auth.OIDC.AutoProvision,
+		SessionAbsoluteTimeout: config.SessionAbsoluteTimeout(),
+		SessionIdleTimeout:     config.SessionIdleTimeout(), SessionTouchInterval: config.SessionTouchInterval(),
+		OIDCFlowTTL: config.OIDCFlowTTL(),
+	}, oidcClient)
+	if err != nil {
+		return api.Runtime{}, err
+	}
+	adminCheckContext, cancelAdminCheck := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelAdminCheck()
+	if err := service.EnsureAdministrativeAccess(adminCheckContext); err != nil {
+		return api.Runtime{}, fmt.Errorf("管理员访问边界不可用: %w", err)
+	}
+	return api.Runtime{
+		Auth: service, LegacyAdminTokenEnabled: config.Main.Auth.LegacyAdminToken.Enabled,
+		LegacyAdminToken:       config.LegacyAdminToken(),
+		LegacyAdminTokenSunset: config.Main.Auth.LegacyAdminToken.SunsetAt,
+	}, nil
 }

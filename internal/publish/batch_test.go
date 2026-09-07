@@ -7,7 +7,9 @@ import (
 )
 
 func TestCreateBatchPublishRejectsEmptyBatch(t *testing.T) {
-	result, err := NewPublishManager().CreateBatchPublish(context.Background(), &CreateBatchPublishRequest{})
+	result, err := NewPublishManager().CreateBatchPublish(context.Background(), &CreateBatchPublishRequest{}, PublishActor{
+		UserID: 1, DisplayName: "tester",
+	})
 	if err == nil || !strings.Contains(err.Error(), "至少需要 1 个") {
 		t.Fatalf("CreateBatchPublish() result=%#v error=%v, want empty-batch error", result, err)
 	}

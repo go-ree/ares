@@ -178,12 +178,14 @@ var (
 	epoch1SemanticSchemaManifest semanticSchemaManifest
 	epoch2SemanticSchemaManifest semanticSchemaManifest
 	epoch3SemanticSchemaManifest semanticSchemaManifest
+	epoch5SemanticSchemaManifest semanticSchemaManifest
 )
 
 const (
 	canonicalTextValuesDataContractID        = "canonical-text-values-v1"
 	normalizedEnvironmentCodesDataContractID = "normalized-active-environment-codes-v1"
 	activeEnvironmentCatalogDataContractID   = "active-app-environments-resolve-to-catalog-v1"
+	authBootstrapSingletonDataContractID     = "auth-bootstrap-singleton-v1"
 )
 
 // epochDataContractCatalog makes retained row-level invariants explicit at
@@ -195,6 +197,7 @@ var epochDataContractCatalog = map[uint64][]string{
 	2: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID},
 	3: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID},
 	4: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID},
+	5: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID},
 }
 
 func epochDataContractIDs(epoch uint64) []string {
@@ -218,6 +221,10 @@ func (s *migrationSession) verifyEpochDataContracts(epoch uint64) error {
 			}
 		case activeEnvironmentCatalogDataContractID:
 			if err := s.verifyActiveAppEnvironmentsResolveToCatalog(); err != nil {
+				return err
+			}
+		case authBootstrapSingletonDataContractID:
+			if err := s.verifyAuthBootstrapRows(false); err != nil {
 				return err
 			}
 		default:
@@ -247,6 +254,7 @@ func init() {
 		epoch4SemanticSchemaManifest.tables[tableName] = table
 	}
 	initializeHistoricalEpochManifests()
+	initializeEpoch5SemanticSchemaManifest()
 }
 
 func publishedTableCollation(tableName string) string {

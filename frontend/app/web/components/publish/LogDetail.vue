@@ -400,18 +400,15 @@ watch(activeLogTab, async newTab => {
     }
     console.log(`切换到${newTab}标签页`);
 
-    // 检查当前标签页是否已经有日志内容
-    const hasLogContent = newTab === 'ci' ? !!ciLog.value : !!cdLog.value;
     const isConnectionActive =
       newTab === 'ci' ? getCurrentStreamingStatus('ci') : getCurrentStreamingStatus('cd');
 
-    // 如果已经有日志内容或连接活跃，跳过重新获取
-    if (hasLogContent || isConnectionActive) {
-      console.log(`${newTab}标签页已有日志内容或连接活跃，跳过重新获取`);
+    // 已有 buffer 不代表连接仍存活；关闭后重新打开时要从保存的游标续传。
+    if (isConnectionActive) {
+      console.log(`${newTab}标签页连接活跃，跳过重新获取`);
       return;
     }
 
-    // 只有在没有日志内容且没有活跃连接时才获取
     console.log(`${newTab}标签页需要获取日志`);
     await fetchLogs(currentLog.value);
   }

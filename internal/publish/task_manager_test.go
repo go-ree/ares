@@ -12,7 +12,8 @@ func TestValidateLegacyTaskAddress(t *testing.T) {
 		address string
 		wantErr bool
 	}{
-		{name: "valid http", address: "http://jenkins.example"},
+		{name: "valid loopback http", address: "http://127.0.0.1:8080"},
+		{name: "remote http", address: "http://jenkins.example", wantErr: true},
 		{name: "valid https normalized", address: " https://jenkins.example/ "},
 		{name: "missing", address: "", wantErr: true},
 		{name: "whitespace", address: "  ", wantErr: true},

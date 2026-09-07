@@ -63,6 +63,25 @@ func TestCreatePublishRequestRequiresObjectExtraData(t *testing.T) {
 	}
 }
 
+func TestComposePublishDataPreservesServerOwnedActor(t *testing.T) {
+	manager := NewPublishManager()
+	request := &PublishRequest{
+		AppName: "demo", Branch: "main", Env: "qa", Publisher: "Alice", PublisherUserID: 88,
+	}
+	_, task, err := manager.ComposePublishData(
+		request,
+		&entity.Apps{AppName: "demo"},
+		&entity.AppConfigs{},
+		&entity.EnvConfigs{Env: "qa"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Publisher != "Alice" || task.PublisherUserID == nil || *task.PublisherUserID != 88 {
+		t.Fatalf("server-owned actor was not preserved: %#v", task)
+	}
+}
+
 func TestTaskRecordDoesNotSerializeInternalPipelineInputs(t *testing.T) {
 	record := entity.TaskRecord{
 		TaskId:         1,

@@ -11,36 +11,15 @@
       </template>
 
       <el-alert
-        title="管理员令牌仅保存在当前页面内存中，刷新或离开页面后会被清除。"
+        v-if="!canWriteSettings"
+        title="当前账号拥有只读权限，配置修改操作已隐藏。"
         type="info"
         :closable="false"
         show-icon
       />
-
-      <div class="token-row">
-        <el-input
-          v-model="adminToken"
-          type="password"
-          show-password
-          autocomplete="off"
-          placeholder="输入 X-Ares-Admin-Token"
-          clearable
-          @keyup.enter="loadSettings"
-        >
-          <template #prepend>管理员令牌</template>
-        </el-input>
-        <el-button
-          type="primary"
-          :loading="loading"
-          :disabled="savingJenkins || savingKubernetes || creatingEnvironment"
-          @click="loadSettings"
-        >
-          加载配置
-        </el-button>
-      </div>
     </el-card>
 
-    <el-empty v-if="!loaded" description="输入管理员令牌后加载系统配置" />
+    <el-empty v-if="!loaded && !loading" description="系统配置暂时无法加载" />
 
     <template v-else>
       <el-card class="integration-card" shadow="never">
@@ -56,7 +35,7 @@
           </div>
         </template>
 
-        <el-form class="environment-create-form" label-position="top">
+        <el-form v-if="canWriteSettings" class="environment-create-form" label-position="top">
           <el-form-item label="环境代码" required>
             <el-input
               v-model="newEnvironment.code"
@@ -114,7 +93,7 @@
           </el-table-column>
           <el-table-column label="环境名称" min-width="220">
             <template #default="{ row }">
-              <el-input v-model="row.name" maxlength="128" />
+              <el-input v-model="row.name" maxlength="128" :disabled="!canWriteSettings" />
             </template>
           </el-table-column>
           <el-table-column label="排序" width="150">
@@ -124,6 +103,7 @@
                 controls-position="right"
                 :step="10"
                 class="environment-sort-input"
+                :disabled="!canWriteSettings"
               />
             </template>
           </el-table-column>
@@ -132,6 +112,7 @@
               <el-switch
                 :model-value="row.enabled"
                 :loading="savingEnvironmentCodes.has(row.code)"
+                :disabled="!canWriteSettings"
                 inline-prompt
                 active-text="启用"
                 inactive-text="停用"
@@ -139,7 +120,7 @@
               />
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="110" align="right">
+          <el-table-column v-if="canWriteSettings" label="操作" width="110" align="right">
             <template #default="{ row }">
               <el-button
                 type="primary"
@@ -165,9 +146,13 @@
               <el-tag v-if="jenkinsForm.enabled !== jenkinsStatus.enabled" type="warning">
                 启停状态未保存
               </el-tag>
+              <el-tag v-if="jenkinsStatus.credential_reentry_required" type="danger">
+                凭据需重新录入
+              </el-tag>
             </div>
             <el-switch
               v-model="jenkinsForm.enabled"
+              :disabled="!canWriteSettings"
               inline-prompt
               active-text="启用"
               inactive-text="停用"
@@ -189,11 +174,16 @@
             <el-form-item label="服务地址" :required="jenkinsForm.enabled">
               <el-input
                 v-model="jenkinsForm.address"
+                :disabled="!canWriteSettings"
                 placeholder="例如：https://jenkins.example.com"
               />
             </el-form-item>
             <el-form-item label="用户名" :required="jenkinsForm.enabled">
-              <el-input v-model="jenkinsForm.username" placeholder="Jenkins 用户名" />
+              <el-input
+                v-model="jenkinsForm.username"
+                placeholder="Jenkins 用户名"
+                :disabled="!canWriteSettings"
+              />
             </el-form-item>
           </div>
 
@@ -204,6 +194,7 @@
                 :min="1"
                 :max="120"
                 controls-position="right"
+                :disabled="!canWriteSettings"
               />
             </el-form-item>
             <el-form-item label="API Token">
@@ -212,15 +203,33 @@
                 type="password"
                 show-password
                 autocomplete="new-password"
+                :disabled="!canWriteSettings"
                 :placeholder="
-                  jenkinsStatus.token_configured
-                    ? '已配置；留空将保留现有 Token'
-                    : '尚未配置，请输入 Token'
+                  jenkinsStatus.credential_reentry_required
+                    ? '旧版 Token 已失效，请重新输入'
+                    : jenkinsStatus.token_configured
+                      ? '已配置；留空将保留现有 Token'
+                      : '尚未配置，请输入 Token'
                 "
               />
               <div class="secret-hint">
-                <el-tag size="small" :type="jenkinsStatus.token_configured ? 'success' : 'info'">
-                  {{ jenkinsStatus.token_configured ? '已配置' : '未配置' }}
+                <el-tag
+                  size="small"
+                  :type="
+                    jenkinsStatus.credential_reentry_required
+                      ? 'danger'
+                      : jenkinsStatus.token_configured
+                        ? 'success'
+                        : 'info'
+                  "
+                >
+                  {{
+                    jenkinsStatus.credential_reentry_required
+                      ? '需重新录入'
+                      : jenkinsStatus.token_configured
+                        ? '已配置'
+                        : '未配置'
+                  }}
                 </el-tag>
                 <span>敏感值不会从服务端返回，留空不会覆盖。</span>
               </div>
@@ -229,6 +238,7 @@
 
           <div class="form-actions">
             <el-button
+              v-if="canWriteSettings"
               type="primary"
               :loading="savingJenkins"
               :disabled="loading || savingKubernetes"
@@ -254,6 +264,7 @@
             </div>
             <el-switch
               v-model="kubernetesForm.enabled"
+              :disabled="!canWriteSettings"
               inline-prompt
               active-text="启用"
               inactive-text="停用"
@@ -277,6 +288,7 @@
               :min="1"
               :max="120"
               controls-position="right"
+              :disabled="!canWriteSettings"
             />
           </el-form-item>
 
@@ -286,6 +298,7 @@
               <p>每个环境仅允许配置一个集群；Kubeconfig 留空将保留现有值。</p>
             </div>
             <el-button
+              v-if="canWriteSettings"
               type="primary"
               plain
               :disabled="kubernetesForm.clusters.length >= environmentOptions.length"
@@ -308,7 +321,12 @@
           >
             <div class="cluster-editor-header">
               <strong>集群 {{ index + 1 }}</strong>
-              <el-button type="danger" link @click="removeCluster(index)">删除</el-button>
+              <el-tag v-if="cluster.credential_reentry_required" size="small" type="danger">
+                Kubeconfig 需重新录入
+              </el-tag>
+              <el-button v-if="canWriteSettings" type="danger" link @click="removeCluster(index)"
+                >删除</el-button
+              >
             </div>
 
             <div class="cluster-grid">
@@ -316,7 +334,7 @@
                 <el-select
                   v-model="cluster.environment"
                   class="full-width"
-                  :disabled="cluster.kubeconfig_configured"
+                  :disabled="!canWriteSettings || cluster.kubeconfig_configured"
                 >
                   <el-option
                     v-for="option in environmentOptions"
@@ -331,12 +349,20 @@
                 </div>
               </el-form-item>
               <el-form-item label="集群名称" required>
-                <el-input v-model="cluster.name" placeholder="例如：开发集群" />
+                <el-input
+                  v-model="cluster.name"
+                  placeholder="例如：开发集群"
+                  :disabled="!canWriteSettings"
+                />
               </el-form-item>
             </div>
 
             <el-form-item label="说明">
-              <el-input v-model="cluster.description" placeholder="集群用途或备注" />
+              <el-input
+                v-model="cluster.description"
+                placeholder="集群用途或备注"
+                :disabled="!canWriteSettings"
+              />
             </el-form-item>
 
             <el-form-item label="Kubeconfig">
@@ -347,15 +373,33 @@
                 resize="vertical"
                 autocomplete="off"
                 spellcheck="false"
+                :disabled="!canWriteSettings"
                 :placeholder="
-                  cluster.kubeconfig_configured
-                    ? '已配置；留空将保留现有 Kubeconfig'
-                    : '粘贴该集群的 Kubeconfig'
+                  cluster.credential_reentry_required
+                    ? '旧版 Kubeconfig 已失效，请重新粘贴'
+                    : cluster.kubeconfig_configured
+                      ? '已配置；留空将保留现有 Kubeconfig'
+                      : '粘贴该集群的 Kubeconfig'
                 "
               />
               <div class="secret-hint">
-                <el-tag size="small" :type="cluster.kubeconfig_configured ? 'success' : 'info'">
-                  {{ cluster.kubeconfig_configured ? '已配置' : '未配置' }}
+                <el-tag
+                  size="small"
+                  :type="
+                    cluster.credential_reentry_required
+                      ? 'danger'
+                      : cluster.kubeconfig_configured
+                        ? 'success'
+                        : 'info'
+                  "
+                >
+                  {{
+                    cluster.credential_reentry_required
+                      ? '需重新录入'
+                      : cluster.kubeconfig_configured
+                        ? '已配置'
+                        : '未配置'
+                  }}
                 </el-tag>
                 <span>敏感值只用于本次保存，保存后会立即从表单中清除。</span>
               </div>
@@ -364,6 +408,7 @@
 
           <div class="form-actions">
             <el-button
+              v-if="canWriteSettings"
               type="primary"
               :loading="savingKubernetes"
               :disabled="loading || savingJenkins"
@@ -403,6 +448,8 @@ import type {
   UpdateKubernetesClusterRequest,
 } from '@/types/system';
 import { useEnvironments } from '@/composables/useEnvironments';
+import { useAuthStore } from '@/stores/auth';
+import { PERMISSIONS } from '@/types/auth';
 
 interface JenkinsFormState {
   enabled: boolean;
@@ -432,6 +479,8 @@ interface EnvironmentEditor {
 }
 
 const { environments, loadEnvironments, labelForEnvironment } = useEnvironments();
+const authStore = useAuthStore();
+const canWriteSettings = computed(() => authStore.can(PERMISSIONS.SYSTEM_SETTINGS_WRITE));
 const environmentOptions = computed<Array<{ label: string; value: KubernetesEnvironment }>>(() => {
   const codes = new Set(environments.value.filter(item => item.enabled).map(item => item.code));
   kubernetesForm.clusters.forEach(cluster => codes.add(cluster.environment));
@@ -441,7 +490,6 @@ const MAX_INTEGRATION_TIMEOUT_SECONDS = 120;
 const MAX_JENKINS_TOKEN_BYTES = 64 * 1024;
 const MAX_KUBECONFIG_BYTES = 1024 * 1024;
 
-const adminToken = ref('');
 const loading = ref(false);
 const loaded = ref(false);
 const savingJenkins = ref(false);
@@ -468,6 +516,7 @@ const jenkinsForm = reactive<JenkinsFormState>({
 const jenkinsStatus = reactive({
   enabled: false,
   token_configured: false,
+  credential_reentry_required: false,
   connected: false,
   last_error: '',
 });
@@ -501,6 +550,7 @@ const applyJenkinsSettings = (settings: JenkinsIntegrationSettings) => {
   jenkinsForm.token = '';
   jenkinsStatus.enabled = settings.enabled;
   jenkinsStatus.token_configured = settings.token_configured;
+  jenkinsStatus.credential_reentry_required = settings.credential_reentry_required;
   jenkinsStatus.connected = settings.connected;
   jenkinsStatus.last_error = settings.last_error;
   originalJenkinsIdentity.address = settings.address.trim();
@@ -541,7 +591,7 @@ const sortEnvironmentCatalog = () => {
 const loadEnvironmentCatalog = async () => {
   loadingEnvironments.value = true;
   try {
-    environmentCatalog.value = (await getSystemEnvironments(adminToken.value))
+    environmentCatalog.value = (await getSystemEnvironments())
       .map(normalizeEnvironment)
       .filter(item => item.code);
     sortEnvironmentCatalog();
@@ -555,17 +605,9 @@ const loadEnvironmentCatalog = async () => {
 
 const loadSettings = async () => {
   if (loading.value || savingJenkins.value || savingKubernetes.value) return;
-  if (!adminToken.value.trim()) {
-    ElMessage.warning('请输入管理员令牌');
-    return;
-  }
-
   loading.value = true;
   try {
-    const [settings] = await Promise.all([
-      getIntegrationSettings(adminToken.value),
-      loadEnvironmentCatalog(),
-    ]);
+    const [settings] = await Promise.all([getIntegrationSettings(), loadEnvironmentCatalog()]);
     applyJenkinsSettings(settings.jenkins);
     applyKubernetesSettings(settings.kubernetes);
     loaded.value = true;
@@ -609,6 +651,7 @@ const nextEnvironmentSortOrder = () => {
 };
 
 const createEnvironment = async () => {
+  if (!canWriteSettings.value) return;
   if (creatingEnvironment.value) return;
   const code = newEnvironment.code.trim().toLowerCase();
   if (!/^[a-z][a-z0-9._-]{0,62}$/.test(code)) {
@@ -620,7 +663,7 @@ const createEnvironment = async () => {
   creatingEnvironment.value = true;
   try {
     const created = normalizeEnvironment(
-      await createSystemEnvironment(adminToken.value, {
+      await createSystemEnvironment({
         code,
         name: newEnvironment.name.trim(),
         enabled: newEnvironment.enabled,
@@ -643,13 +686,14 @@ const createEnvironment = async () => {
 };
 
 const saveEnvironment = async (environment: EnvironmentEditor) => {
+  if (!canWriteSettings.value) return;
   if (savingEnvironmentCodes.has(environment.code)) return;
   if (!validateEnvironmentEditor(environment)) return;
 
   savingEnvironmentCodes.add(environment.code);
   try {
     const updated = normalizeEnvironment(
-      await updateSystemEnvironment(adminToken.value, environment.code, {
+      await updateSystemEnvironment(environment.code, {
         name: environment.name.trim(),
         sort_order: environment.sort_order,
       })
@@ -669,6 +713,7 @@ const toggleEnvironment = async (
   environment: EnvironmentEditor,
   rawEnabled: string | number | boolean
 ) => {
+  if (!canWriteSettings.value) return;
   const enabled = Boolean(rawEnabled);
   if (enabled === environment.enabled || savingEnvironmentCodes.has(environment.code)) return;
 
@@ -690,7 +735,7 @@ const toggleEnvironment = async (
 
   savingEnvironmentCodes.add(environment.code);
   try {
-    const updated = await updateSystemEnvironment(adminToken.value, environment.code, { enabled });
+    const updated = await updateSystemEnvironment(environment.code, { enabled });
     environment.enabled = updated.enabled;
     await refreshPublicEnvironmentCatalog();
     ElMessage.success(`环境 ${environment.code} 已${enabled ? '启用' : '停用'}`);
@@ -711,6 +756,20 @@ const statusTagType = (enabled: boolean, connected: boolean) => {
   return connected ? 'success' : 'danger';
 };
 
+const isLoopbackHostname = (hostname: string) => {
+  const normalized = hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '');
+  if (normalized === 'localhost' || normalized === '::1') return true;
+  const octets = normalized.split('.');
+  return (
+    octets.length === 4 &&
+    octets[0] === '127' &&
+    octets.every(octet => /^\d{1,3}$/.test(octet) && Number(octet) <= 255)
+  );
+};
+
 const validateJenkins = () => {
   if (
     !Number.isInteger(jenkinsForm.timeout_seconds) ||
@@ -727,11 +786,21 @@ const validateJenkins = () => {
   if (jenkinsForm.address.trim()) {
     try {
       const address = new URL(jenkinsForm.address.trim());
-      if (!['http:', 'https:'].includes(address.protocol) || address.username || address.password) {
+      if (
+        !['http:', 'https:'].includes(address.protocol) ||
+        address.username ||
+        address.password ||
+        address.search ||
+        address.hash
+      ) {
         throw new Error('invalid Jenkins address');
       }
+      if (address.protocol === 'http:' && !isLoopbackHostname(address.hostname)) {
+        ElMessage.warning('非本机 Jenkins 服务地址必须使用 HTTPS');
+        return false;
+      }
     } catch {
-      ElMessage.warning('Jenkins 服务地址必须是有效的 HTTP/HTTPS 地址，且不能包含凭据');
+      ElMessage.warning('Jenkins 服务地址必须是有效地址，且不能包含凭据、查询参数或片段');
       return false;
     }
   }
@@ -741,6 +810,14 @@ const validateJenkins = () => {
   }
   if (jenkinsForm.enabled && !jenkinsStatus.token_configured && !jenkinsForm.token.trim()) {
     ElMessage.warning('启用 Jenkins 前请填写 API Token');
+    return false;
+  }
+  if (
+    jenkinsForm.enabled &&
+    jenkinsStatus.credential_reentry_required &&
+    !jenkinsForm.token.trim()
+  ) {
+    ElMessage.warning('旧版 Jenkins Token 无法安全迁移，启用前必须重新输入');
     return false;
   }
   const identityChanged =
@@ -758,6 +835,7 @@ const validateJenkins = () => {
 };
 
 const saveJenkins = async () => {
+  if (!canWriteSettings.value) return;
   if (loading.value || savingJenkins.value || savingKubernetes.value) return;
   if (!validateJenkins()) return;
 
@@ -771,7 +849,7 @@ const saveJenkins = async () => {
 
   savingJenkins.value = true;
   try {
-    const settings = await updateJenkinsIntegration(adminToken.value, payload);
+    const settings = await updateJenkinsIntegration(payload);
     applyJenkinsSettings(settings);
     ElMessage.success('Jenkins 配置已保存');
   } catch (error) {
@@ -787,6 +865,7 @@ const isEnvironmentUsed = (environment: KubernetesEnvironment, currentKey: numbe
   );
 
 const addCluster = () => {
+  if (!canWriteSettings.value) return;
   const environment = environmentOptions.value.find(
     option => !kubernetesForm.clusters.some(cluster => cluster.environment === option.value)
   )?.value;
@@ -798,11 +877,13 @@ const addCluster = () => {
       name: '',
       description: '',
       kubeconfig_configured: false,
+      credential_reentry_required: false,
     })
   );
 };
 
 const removeCluster = async (index: number) => {
+  if (!canWriteSettings.value) return;
   const cluster = kubernetesForm.clusters[index];
   if (!cluster) return;
 
@@ -850,7 +931,11 @@ const validateKubernetes = () => {
       ElMessage.warning(`请填写 ${cluster.environment} 环境的集群名称`);
       return false;
     }
-    if (!cluster.kubeconfig_configured && !cluster.kubeconfig.trim()) {
+    if (
+      kubernetesForm.enabled &&
+      (cluster.credential_reentry_required || !cluster.kubeconfig_configured) &&
+      !cluster.kubeconfig.trim()
+    ) {
       ElMessage.warning(`请填写 ${cluster.environment} 环境的 Kubeconfig`);
       return false;
     }
@@ -864,6 +949,7 @@ const validateKubernetes = () => {
 };
 
 const saveKubernetes = async () => {
+  if (!canWriteSettings.value) return;
   if (loading.value || savingJenkins.value || savingKubernetes.value) return;
   if (!validateKubernetes()) return;
 
@@ -879,7 +965,7 @@ const saveKubernetes = async () => {
 
   savingKubernetes.value = true;
   try {
-    const settings = await updateKubernetesIntegration(adminToken.value, {
+    const settings = await updateKubernetesIntegration({
       enabled: kubernetesForm.enabled,
       timeout_seconds: kubernetesForm.timeout_seconds,
       clusters,
@@ -894,15 +980,15 @@ const saveKubernetes = async () => {
 };
 
 onBeforeUnmount(() => {
-  adminToken.value = '';
   jenkinsForm.token = '';
   kubernetesForm.clusters.forEach(cluster => {
     cluster.kubeconfig = '';
   });
 });
 
-onMounted(() => {
-  loadEnvironments().catch(error => ElMessage.error(getSystemApiErrorMessage(error)));
+onMounted(async () => {
+  await loadEnvironments().catch(error => ElMessage.error(getSystemApiErrorMessage(error)));
+  await loadSettings();
 });
 </script>
 
@@ -943,14 +1029,6 @@ onMounted(() => {
   margin: 6px 0 0;
   color: #909399;
   font-size: 14px;
-}
-
-.token-row {
-  display: grid;
-  grid-template-columns: minmax(280px, 620px) auto;
-  gap: 12px;
-  margin-top: 18px;
-  align-items: center;
 }
 
 .integration-header,
@@ -1058,15 +1136,10 @@ onMounted(() => {
 }
 
 @media (max-width: 760px) {
-  .token-row,
   .form-grid,
   .cluster-grid,
   .environment-create-form {
     grid-template-columns: 1fr;
-  }
-
-  .token-row :deep(.el-button) {
-    width: 100%;
   }
 
   .integration-header,
