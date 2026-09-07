@@ -10,7 +10,7 @@ x-ares-backend: &ares-backend
 
 services:
   auth-secrets:
-    image: alpine:3.23.5
+    image: alpine:3.24.1
     restart: "no"
     init: true
     entrypoint: ["/bin/sh", "/opt/ares/init-auth-secrets.sh"]
