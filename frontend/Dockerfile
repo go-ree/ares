@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY . .
 RUN npm run type-check && npm run build:prod
 
-FROM nginxinc/nginx-unprivileged:1.30.3-alpine3.23
+FROM nginxinc/nginx-unprivileged:1.31.2-alpine3.23
 
 USER root
 RUN apk upgrade --no-cache
