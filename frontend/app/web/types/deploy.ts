@@ -20,6 +20,9 @@ export interface DeployingService {
   environment: string;
   status: string;
   progress: number;
+  progressIndeterminate?: boolean;
+  settledSteps?: number;
+  totalSteps?: number;
   startTime: string;
   operator: string;
   message?: string;
@@ -35,47 +38,9 @@ export interface ServiceInfo {
   description?: string;
 }
 
-// 选中的服务接口
-export interface SelectedService {
-  serviceName: string;
-  branch: string;
-  branchSuffix?: string;
-  status: string;
-  lastUpdateTime?: string;
-  taskId?: number;
-}
-
-// 发布表单数据
-export interface DeployForm {
-  serviceName: string;
-  environment: string;
-  version: string;
-}
-
 // 日志筛选条件
 export interface LogFilter {
   serviceName: string;
   environment: string;
-  dateRange: any[];
+  dateRange: Date[];
 }
-
-// 环境类型
-export type Environment = string;
-
-// 发布状态类型
-export type DeployStatus =
-  | 'queued'
-  | 'running'
-  | 'succeeded'
-  | 'failed'
-  | 'succeeded_with_warnings'
-  | 'init'
-  | 'packaging'
-  | 'packaged'
-  | 'package_failed'
-  | 'deploying'
-  | 'deployed'
-  | 'deploy_failed'
-  | 'cancelled'
-  | 'timeout'
-  | 'unknown';

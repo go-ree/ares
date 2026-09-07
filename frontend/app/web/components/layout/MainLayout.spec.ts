@@ -73,7 +73,7 @@ describe('MainLayout permissions', () => {
     wrapper.unmount();
   });
 
-  it('requires every permission used by the batch deploy route', () => {
+  it('keeps batch publishing in the single release composer navigation', () => {
     context.permissions.clear();
     context.permissions.add(PERMISSIONS.RELEASES_CREATE);
     const withoutApplicationRead = mount(MainLayout, {
@@ -86,7 +86,7 @@ describe('MainLayout permissions', () => {
     const withBothPermissions = mount(MainLayout, {
       global: { plugins: [ElementPlus], stubs: { RouterView: true } },
     });
-    expect(withBothPermissions.text()).toContain('一键批量发布');
+    expect(withBothPermissions.text()).not.toContain('一键批量发布');
     withBothPermissions.unmount();
   });
 

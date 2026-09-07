@@ -7,7 +7,12 @@
     <el-card>
       <el-tabs v-model="activeTab" type="border-card">
         <el-tab-pane label="发布" name="tool">
-          <DeployTool v-if="canCreateRelease" :is-active="activeTab === 'tool'" />
+          <DeployTool
+            v-if="canCreateRelease"
+            :is-active="activeTab === 'tool'"
+            :can-view-details="canReadTaskDetails"
+            @view-task="handleViewTask"
+          />
           <DeployingList
             ref="deployingListRef"
             :is-active="activeTab === 'tool'"
@@ -61,6 +66,26 @@ const handleViewLog = (service: DeployingService) => {
   if (!canReadTaskDetails.value) return;
   currentLogData.value = service;
   logDetailVisible.value = true;
+};
+
+const handleViewTask = (task: {
+  taskId: number;
+  appName: string;
+  ref: string;
+  environment: string;
+}) => {
+  handleViewLog({
+    id: task.taskId,
+    serviceName: task.appName,
+    branch: task.ref,
+    environment: task.environment,
+    status: '已创建',
+    progress: 0,
+    progressIndeterminate: true,
+    startTime: new Date().toLocaleString('zh-CN'),
+    operator: authStore.user?.display_name || authStore.user?.username || '',
+    taskId: task.taskId,
+  });
 };
 
 // 查看日志详情（从日志查询列表）

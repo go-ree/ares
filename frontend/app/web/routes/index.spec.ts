@@ -98,4 +98,13 @@ describe('router session and permission guards', () => {
     await router.push('/system/users');
     expect(router.currentRoute.value.name).toBe('system-users');
   });
+
+  it('redirects the retired batch page to the single release composer', async () => {
+    authenticate([PERMISSIONS.RELEASES_READ, PERMISSIONS.RELEASES_CREATE]);
+
+    await router.push('/operation/batch-deploy');
+
+    expect(router.currentRoute.value.name).toBe('publish-deploy');
+    expect(router.currentRoute.value.path).toBe('/publish/deploy');
+  });
 });

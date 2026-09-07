@@ -41,9 +41,16 @@
           <template #default="{ row }">
             <el-progress
               :percentage="row.progress"
+              :indeterminate="row.progressIndeterminate"
+              :duration="2"
               :status="getProgressStatus(row.status)"
               :stroke-width="15"
-            />
+            >
+              <template #default>
+                <span v-if="row.totalSteps > 0">{{ row.settledSteps }}/{{ row.totalSteps }}</span>
+                <span v-else>处理中</span>
+              </template>
+            </el-progress>
           </template>
         </el-table-column>
         <el-table-column prop="startTime" label="开始时间" width="160" />

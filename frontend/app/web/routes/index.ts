@@ -89,10 +89,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'operation/batch-deploy',
         name: 'operation-batch-deploy',
-        component: () => import('../views/operation/BatchDeploy.vue'),
-        meta: {
-          requiredPermissions: [PERMISSIONS.APPLICATIONS_READ, PERMISSIONS.RELEASES_CREATE],
-        },
+        redirect: '/publish/deploy',
       },
       {
         path: 'operation/monitor',
