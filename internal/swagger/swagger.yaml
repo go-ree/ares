@@ -395,6 +395,8 @@ definitions:
     type: object
   entity.TaskRecord:
     properties:
+      app_config_id:
+        type: integer
       app_name:
         type: string
       applet_images:
@@ -675,6 +677,78 @@ definitions:
       status:
         type: string
     type: object
+  publish.ActiveTaskView:
+    properties:
+      app_config_id:
+        type: integer
+      app_name:
+        type: string
+      applet_images:
+        description: 新增：任务图片（仅对外返回）
+        items:
+          $ref: '#/definitions/entity.AppletImage'
+        type: array
+      auto_deploy:
+        type: integer
+      branch:
+        type: string
+      cd_build_id:
+        type: integer
+      cd_job_name:
+        type: string
+      ci_build_id:
+        type: integer
+      ci_job_name:
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      deleted_at:
+        format: date-time
+        type: string
+      engine_version:
+        type: integer
+      env:
+        type: string
+      message:
+        type: string
+      products:
+        type: string
+      publisher:
+        type: string
+      publisher_user_id:
+        type: integer
+      rundeck_app_name:
+        type: string
+      status:
+        type: string
+      step_summary:
+        $ref: '#/definitions/publish.TaskStepSummary'
+      steps:
+        items:
+          $ref: '#/definitions/entity.TaskStepRecord'
+        type: array
+      task_id:
+        type: integer
+      updated_at:
+        format: date-time
+        type: string
+      workflow_version_id:
+        type: integer
+    type: object
+  publish.BatchReleasePreflight:
+    properties:
+      failure_count:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/publish.ReleasePreflight'
+        type: array
+      ready_count:
+        type: integer
+      total_count:
+        type: integer
+    type: object
   publish.CreateBatchPublishRequest:
     properties:
       batch_publish:
@@ -697,6 +771,13 @@ definitions:
       total_count:
         description: 总体数量
         type: integer
+    type: object
+  publish.CreateBatchReleaseRequest:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/publish.ReleaseCommand'
+        type: array
     type: object
   publish.CreatePublishRequest:
     properties:
@@ -724,8 +805,21 @@ definitions:
         type: integer
       success:
         type: boolean
+      task_id:
+        type: integer
       task_record:
-        $ref: '#/definitions/entity.TaskRecord'
+        $ref: '#/definitions/publish.TaskRecordView'
+    type: object
+  publish.CreateReleaseRequest:
+    properties:
+      expected_workflow_version_id:
+        example: ""
+        format: int64
+        type: string
+      inputs:
+        type: object
+      ref:
+        type: string
     type: object
   publish.PublishQuery:
     properties:
@@ -780,8 +874,147 @@ definitions:
         description: 总页数
         type: integer
     type: object
+  publish.ReleaseCommand:
+    properties:
+      config_id:
+        type: integer
+      expected_workflow_version_id:
+        example: ""
+        format: int64
+        type: string
+      inputs:
+        type: object
+      ref:
+        type: string
+    type: object
+  publish.ReleasePreflight:
+    properties:
+      app_id:
+        type: integer
+      app_name:
+        type: string
+      app_name_cn:
+        type: string
+      config_id:
+        type: integer
+      env:
+        type: string
+      error_code:
+        type: string
+      ready:
+        type: boolean
+      request_index:
+        type: integer
+      steps:
+        items:
+          $ref: '#/definitions/publish.ReleaseStepPreflight'
+        type: array
+      workflow_id:
+        example: ""
+        format: int64
+        type: string
+      workflow_revision:
+        type: integer
+      workflow_version:
+        type: integer
+      workflow_version_id:
+        example: ""
+        format: int64
+        type: string
+    type: object
+  publish.ReleaseReceipt:
+    properties:
+      failure_count:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/publish.ReleaseReceiptItem'
+        type: array
+      record_id:
+        example: ""
+        format: int64
+        type: string
+      success_count:
+        type: integer
+      total_count:
+        type: integer
+    type: object
+  publish.ReleaseReceiptItem:
+    properties:
+      config_id:
+        type: integer
+      error_code:
+        type: string
+      request_index:
+        type: integer
+      success:
+        type: boolean
+      task_id:
+        type: integer
+      workflow_version_id:
+        example: ""
+        format: int64
+        type: string
+    type: object
+  publish.ReleaseStepPreflight:
+    properties:
+      available:
+        type: boolean
+      capabilities:
+        $ref: '#/definitions/workflow.Capabilities'
+      error_code:
+        type: string
+      key:
+        type: string
+      name:
+        type: string
+      uses:
+        type: string
+    type: object
+  publish.ReleaseTarget:
+    properties:
+      app_id:
+        type: integer
+      app_name:
+        type: string
+      app_name_cn:
+        type: string
+      available:
+        type: boolean
+      config_id:
+        type: integer
+      env:
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/publish.ReleaseStepPreflight'
+        type: array
+      unavailable_code:
+        type: string
+      workflow_version_id:
+        example: ""
+        format: int64
+        type: string
+    type: object
+  publish.ReleaseTargetPage:
+    properties:
+      page_num:
+        type: integer
+      page_size:
+        type: integer
+      targets:
+        items:
+          $ref: '#/definitions/publish.ReleaseTarget'
+        type: array
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
   publish.TaskRecordView:
     properties:
+      app_config_id:
+        type: integer
       app_name:
         type: string
       applet_images:
@@ -833,6 +1066,25 @@ definitions:
         format: date-time
         type: string
       workflow_version_id:
+        type: integer
+    type: object
+  publish.TaskStepSummary:
+    properties:
+      cancelled:
+        type: integer
+      failed:
+        type: integer
+      pending:
+        type: integer
+      running:
+        type: integer
+      settled:
+        type: integer
+      skipped:
+        type: integer
+      succeeded:
+        type: integer
+      total:
         type: integer
     type: object
   publish.UpsertTaskAppletImagesRequest:
@@ -1165,6 +1417,15 @@ paths:
                 code:
                   type: integer
               type: object
+        "404":
+          description: 配置不存在
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
         "500":
           description: 内部错误
           schema:
@@ -1209,6 +1470,15 @@ paths:
                 code:
                   type: integer
               type: object
+        "404":
+          description: 配置不存在
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
         "500":
           description: 内部错误
           schema:
@@ -1246,6 +1516,15 @@ paths:
               type: object
         "400":
           description: 请求错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "404":
+          description: 配置不存在
           schema:
             allOf:
             - $ref: '#/definitions/util.ResponseTemplate'
@@ -1304,6 +1583,15 @@ paths:
                 code:
                   type: integer
               type: object
+        "404":
+          description: 配置或域名记录不存在
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
         "500":
           description: 内部错误
           schema:
@@ -1316,6 +1604,253 @@ paths:
       summary: 修改单条多域名配置（PATCH：只更新传入字段）
       tags:
       - AppConfig
+  /api/v1/app-configs/{config_id}/releases:
+    post:
+      consumes:
+      - application/json
+      description: 原子写入发布回执、任务与步骤快照；相同主体、操作、key 和意图只重放已提交结果
+      parameters:
+      - description: AppConfig ID
+        in: path
+        name: config_id
+        required: true
+        type: integer
+      - description: 16～128 字节的 Ares 幂等 token
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: 当前会话的 CSRF token
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: 发布意图
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/publish.CreateReleaseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已接纳或重放
+          headers:
+            Idempotency-Replayed:
+              description: 重放时为 true，首次创建不返回
+              type: string
+            Location:
+              description: 单发成功时的任务详情路径
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/publish.ReleaseReceipt'
+              type: object
+        "400":
+          description: 请求或 Idempotency-Key 无效
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "401":
+          description: 未认证
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "403":
+          description: 缺少发布权限或 CSRF 校验失败
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "404":
+          description: AppConfig 不存在
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "409":
+          description: 版本变化、环境停用、key 冲突或请求处理中
+          headers:
+            Retry-After:
+              description: 相同请求仍在处理时为 1 秒
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "413":
+          description: 请求、inputs 或步骤快照超限
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "415":
+          description: Content-Type 不是 application/json
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "422":
+          description: 工作流未配置、无效或执行器不可用
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "503":
+          description: 提交结果暂时无法确认
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 幂等创建单个 AppConfig 发布任务
+      tags:
+      - Publish
+  /api/v1/app-configs/{config_id}/releases/preflight:
+    post:
+      consumes:
+      - application/json
+      description: 只读校验目标、环境、工作流及执行器；业务不可发布仍以 HTTP 200 和 ready=false 返回
+      parameters:
+      - description: AppConfig ID
+        in: path
+        name: config_id
+        required: true
+        type: integer
+      - description: 当前会话的 CSRF token
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: 发布意图
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/publish.CreateReleaseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 预检完成
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/publish.ReleasePreflight'
+              type: object
+        "400":
+          description: 请求无效
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "401":
+          description: 未认证
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "403":
+          description: 缺少发布权限或 CSRF 校验失败
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "404":
+          description: AppConfig 不存在
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "413":
+          description: 请求或 inputs 超限
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "415":
+          description: Content-Type 不是 application/json
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 预检单个 AppConfig 发布
+      tags:
+      - Publish
   /api/v1/app-configs/{config_id}/workflow:
     get:
       parameters:
@@ -2180,16 +2715,44 @@ paths:
       - Compatible
   /api/v1/deploy/publish:
     post:
+      consumes:
+      - application/json
+      deprecated: true
+      description: 已弃用的 app_name+env 兼容入口；成功时返回任务详情，若提交后详情暂时不可读则至少返回已持久化的 task_id
       parameters:
+      - description: 可选；提供时必须是 16～128 字节的 Ares 幂等 token，缺失时保持旧客户端非幂等语义
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: 当前会话的 CSRF token
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
       - description: 发布请求参数
         in: body
         name: request
         required: true
         schema:
           $ref: '#/definitions/publish.CreatePublishRequest'
+      produces:
+      - application/json
       responses:
         "200":
-          description: 成功
+          description: 成功；详情暂时不可读时 result 仅保证 task_id
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Idempotency-Replayed:
+              description: 带 key 的重放时为 true
+              type: string
+            Location:
+              description: 任务详情路径
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
           schema:
             allOf:
             - $ref: '#/definitions/util.ResponseTemplate'
@@ -2197,10 +2760,132 @@ paths:
                 code:
                   type: integer
                 result:
-                  $ref: '#/definitions/entity.TaskRecord'
+                  $ref: '#/definitions/publish.TaskRecordView'
               type: object
         "400":
-          description: 请求错误
+          description: 请求或 Idempotency-Key 无效
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "401":
+          description: 未认证
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "403":
+          description: 缺少发布权限或 CSRF 校验失败
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "404":
+          description: 解析后的 AppConfig 已不存在
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "409":
+          description: 环境停用、key 冲突、版本变化或请求处理中
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Retry-After:
+              description: 相同请求仍在处理时为 1 秒
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "413":
+          description: 请求、inputs 或步骤快照超限
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "415":
+          description: Content-Type 不是 application/json
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "422":
+          description: 目标无法唯一解析、工作流未配置/无效或执行器不可用
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
           schema:
             allOf:
             - $ref: '#/definitions/util.ResponseTemplate'
@@ -2210,6 +2895,29 @@ paths:
               type: object
         "500":
           description: 内部错误
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "503":
+          description: 提交结果暂时无法确认
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
           schema:
             allOf:
             - $ref: '#/definitions/util.ResponseTemplate'
@@ -2222,16 +2930,44 @@ paths:
       - Publish
   /api/v1/deploy/publish/batch:
     post:
+      consumes:
+      - application/json
+      deprecated: true
+      description: 已弃用的 app_name+env 兼容入口；按请求顺序返回成功任务与稳定的逐项失败代码
       parameters:
+      - description: 可选；提供时必须是 16～128 字节的 Ares 幂等 token，缺失时保持旧客户端非幂等语义
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: 当前会话的 CSRF token
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
       - description: 发布请求参数
         in: body
         name: request
         required: true
         schema:
           $ref: '#/definitions/publish.CreateBatchPublishRequest'
+      produces:
+      - application/json
       responses:
         "200":
           description: 成功
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Idempotency-Replayed:
+              description: 带 key 的重放时为 true
+              type: string
+            Location:
+              description: 单条成功批次的任务详情路径
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
           schema:
             allOf:
             - $ref: '#/definitions/util.ResponseTemplate'
@@ -2242,7 +2978,113 @@ paths:
                   $ref: '#/definitions/publish.CreateBatchPublishResponse'
               type: object
         "400":
-          description: 请求错误
+          description: 请求、重复目标或 Idempotency-Key 无效
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "401":
+          description: 未认证
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "403":
+          description: 缺少发布权限或 CSRF 校验失败
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "409":
+          description: key 冲突或相同请求仍在处理
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Retry-After:
+              description: 相同请求仍在处理时为 1 秒
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "413":
+          description: 请求、inputs 或步骤快照超限
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "415":
+          description: Content-Type 不是 application/json
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "422":
+          description: 目标无法唯一解析
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
           schema:
             allOf:
             - $ref: '#/definitions/util.ResponseTemplate'
@@ -2252,6 +3094,29 @@ paths:
               type: object
         "500":
           description: 内部错误
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "503":
+          description: 提交结果暂时无法确认
+          headers:
+            Deprecation:
+              description: 固定为 true
+              type: string
+            Warning:
+              description: 299 弃用警告
+              type: string
           schema:
             allOf:
             - $ref: '#/definitions/util.ResponseTemplate'
@@ -2431,7 +3296,7 @@ paths:
                   type: integer
                 result:
                   items:
-                    $ref: '#/definitions/entity.TaskRecord'
+                    $ref: '#/definitions/publish.ActiveTaskView'
                   type: array
               type: object
         "400":
@@ -2736,6 +3601,301 @@ paths:
       summary: 获取流水线步骤类型目录
       tags:
       - Pipeline
+  /api/v1/releases/batch:
+    post:
+      consumes:
+      - application/json
+      description: 在同一事务中按原请求顺序提交完整回执及所有可发布任务；业务失败以 receipt item 返回
+      parameters:
+      - description: 16～128 字节的 Ares 幂等 token
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: 当前会话的 CSRF token
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: 有序批量发布意图
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/publish.CreateBatchReleaseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已接纳或重放
+          headers:
+            Idempotency-Replayed:
+              description: 重放时为 true，首次创建不返回
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/publish.ReleaseReceipt'
+              type: object
+        "400":
+          description: 请求、条目数、重复目标或 Idempotency-Key 无效
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "401":
+          description: 未认证
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "403":
+          description: 缺少发布权限或 CSRF 校验失败
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "409":
+          description: key 冲突或相同请求仍在处理中
+          headers:
+            Retry-After:
+              description: 相同请求仍在处理时为 1 秒
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "413":
+          description: 请求、inputs 或步骤快照超限
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "415":
+          description: Content-Type 不是 application/json
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "503":
+          description: 提交结果暂时无法确认
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 幂等创建一组 AppConfig 发布任务
+      tags:
+      - Publish
+  /api/v1/releases/batch/preflight:
+    post:
+      consumes:
+      - application/json
+      description: 按原请求顺序逐项返回资格结果；预检不创建任务，也不消费 Idempotency-Key
+      parameters:
+      - description: 当前会话的 CSRF token
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: 有序批量发布意图
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/publish.CreateBatchReleaseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 预检完成
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/publish.BatchReleasePreflight'
+              type: object
+        "400":
+          description: 请求、条目数或目标重复无效
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "401":
+          description: 未认证
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "403":
+          description: 缺少发布权限或 CSRF 校验失败
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "413":
+          description: 请求或 inputs 超限
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "415":
+          description: Content-Type 不是 application/json
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 预检一组 AppConfig 发布
+      tags:
+      - Publish
+  /api/v1/releases/targets:
+    get:
+      description: 分页返回环境下的应用及其 AppConfig 发布可用性；available 仅供选择，创建前仍须预检
+      parameters:
+      - description: 环境代码
+        in: query
+        name: env
+        required: true
+        type: string
+      - description: 应用名称或中文名称关键字（最长 100 个字符）
+        in: query
+        name: q
+        type: string
+      - default: 1
+        description: 页码
+        in: query
+        minimum: 1
+        name: page_num
+        type: integer
+      - default: 20
+        description: 每页条数
+        in: query
+        maximum: 100
+        minimum: 1
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  $ref: '#/definitions/publish.ReleaseTargetPage'
+              type: object
+        "400":
+          description: 查询参数无效
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "401":
+          description: 未认证
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "403":
+          description: 缺少发布权限
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "404":
+          description: 环境不存在
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 查询环境下的发布目标
+      tags:
+      - Publish
   /api/v1/status/nodes:
     get:
       responses:

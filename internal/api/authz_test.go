@@ -387,6 +387,157 @@ func TestActualRouteRoleMatrix(t *testing.T) {
 	}
 }
 
+func TestCanonicalReleaseRouteRoleMatrix(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service, _, sessions := newAuthBoundary(t)
+	router := gin.New()
+	RouterWithRuntime(router, Runtime{Auth: service})
+
+	tests := []struct {
+		name           string
+		method         string
+		path           string
+		body           string
+		idempotencyKey bool
+	}{
+		{
+			name: "release targets", method: http.MethodGet,
+			path: "/api/v1/releases/targets?env=qa-cn&page_num=1&page_size=20",
+		},
+		{
+			name: "single release preflight", method: http.MethodPost,
+			path: "/api/v1/app-configs/20001/releases/preflight", body: `{"ref":"main","inputs":{}}`,
+		},
+		{
+			name: "single release create", method: http.MethodPost,
+			path: "/api/v1/app-configs/20001/releases", body: `{"ref":"main","inputs":{}}`, idempotencyKey: true,
+		},
+		{
+			name: "batch release preflight", method: http.MethodPost,
+			path: "/api/v1/releases/batch/preflight", body: `{"items":[{"config_id":20001,"ref":"main","inputs":{}}]}`,
+		},
+		{
+			name: "batch release create", method: http.MethodPost,
+			path: "/api/v1/releases/batch", body: `{"items":[{"config_id":20001,"ref":"main","inputs":{}}]}`, idempotencyKey: true,
+		},
+	}
+
+	for _, test := range tests {
+		for _, role := range []auth.Role{auth.RoleViewer, auth.RoleDeveloper, auth.RoleReleaser, auth.RoleAdmin} {
+			t.Run(test.name+"/"+string(role), func(t *testing.T) {
+				recorder := httptest.NewRecorder()
+				request := authenticatedRequest(t, service, sessions[role], test.method, test.path, test.body)
+				if test.idempotencyKey {
+					request.Header.Set("Idempotency-Key", "w05-route-matrix-0001")
+				}
+				router.ServeHTTP(recorder, request)
+
+				if role == auth.RoleViewer || role == auth.RoleDeveloper {
+					if recorder.Code != http.StatusForbidden {
+						t.Fatalf("%s %s as %s returned %d, want 403: %s",
+							test.method, test.path, role, recorder.Code, recorder.Body.String())
+					}
+					return
+				}
+				// There is deliberately no database engine in this boundary test. A
+				// non-403 response proves releaser/admin reached the canonical handler.
+				if recorder.Code == http.StatusForbidden || recorder.Code == http.StatusUnauthorized || recorder.Code == http.StatusNotFound {
+					t.Fatalf("%s %s as %s did not enter the handler: %d %s",
+						test.method, test.path, role, recorder.Code, recorder.Body.String())
+				}
+			})
+		}
+	}
+}
+
+func TestCanonicalReleasePostsRequireCSRF(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service, _, sessions := newAuthBoundary(t)
+	router := gin.New()
+	RouterWithRuntime(router, Runtime{Auth: service})
+
+	tests := []struct {
+		name           string
+		path           string
+		body           string
+		idempotencyKey bool
+	}{
+		{name: "single preflight", path: "/api/v1/app-configs/20001/releases/preflight", body: `{"ref":"main","inputs":{}}`},
+		{name: "single create", path: "/api/v1/app-configs/20001/releases", body: `{"ref":"main","inputs":{}}`, idempotencyKey: true},
+		{name: "batch preflight", path: "/api/v1/releases/batch/preflight", body: `{"items":[{"config_id":20001,"ref":"main","inputs":{}}]}`},
+		{name: "batch create", path: "/api/v1/releases/batch", body: `{"items":[{"config_id":20001,"ref":"main","inputs":{}}]}`, idempotencyKey: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.body))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Origin", authBoundaryOrigin)
+			request.AddCookie(&http.Cookie{Name: service.SessionCookieName(), Value: sessions[auth.RoleReleaser].token})
+			if test.idempotencyKey {
+				request.Header.Set("Idempotency-Key", "w05-csrf-boundary-0001")
+			}
+			router.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusForbidden {
+				t.Fatalf("POST %s without CSRF token returned %d, want 403: %s",
+					test.path, recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestLegacyReleaseDeprecationHeadersCoverAuthorizationFailures(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service, _, sessions := newAuthBoundary(t)
+	router := gin.New()
+	RouterWithRuntime(router, Runtime{Auth: service})
+
+	for _, path := range []string{"/api/v1/deploy/publish", "/api/v1/deploy/publish/batch"} {
+		for _, test := range []struct {
+			name       string
+			request    func() *http.Request
+			wantStatus int
+		}{
+			{
+				name: "unauthenticated",
+				request: func() *http.Request {
+					request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+					request.Header.Set("Content-Type", "application/json")
+					return request
+				},
+				wantStatus: http.StatusUnauthorized,
+			},
+			{
+				name: "csrf",
+				request: func() *http.Request {
+					request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+					request.Header.Set("Content-Type", "application/json")
+					request.Header.Set("Origin", authBoundaryOrigin)
+					request.AddCookie(&http.Cookie{Name: service.SessionCookieName(), Value: sessions[auth.RoleReleaser].token})
+					return request
+				},
+				wantStatus: http.StatusForbidden,
+			},
+		} {
+			t.Run(path+"/"+test.name, func(t *testing.T) {
+				recorder := httptest.NewRecorder()
+				router.ServeHTTP(recorder, test.request())
+				if recorder.Code != test.wantStatus {
+					t.Fatalf("status/body = %d %s", recorder.Code, recorder.Body.String())
+				}
+				if recorder.Header().Get("Deprecation") != "true" ||
+					!strings.HasPrefix(recorder.Header().Get("Warning"), "299 ares ") {
+					t.Fatalf("missing deprecation headers: %#v", recorder.Header())
+				}
+				if recorder.Header().Get("Link") != "" {
+					t.Fatalf("deprecation Link must not reference an undeployed repository path: %q", recorder.Header().Get("Link"))
+				}
+			})
+		}
+	}
+}
+
 func TestProtectedRouteRequiresSessionAndCSRFOrigin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service, _, sessions := newAuthBoundary(t)

@@ -987,6 +987,8 @@ GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`auth_sessions\` TO '${MY
 GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`auth_oidc_flows\` TO '${MYSQL_RUNTIME_USER}'@'%';
 GRANT UPDATE ON \`${MYSQL_DATABASE}\`.\`auth_bootstrap_state\` TO '${MYSQL_RUNTIME_USER}'@'%';
 GRANT INSERT ON \`${MYSQL_DATABASE}\`.\`audit_events\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT ON \`${MYSQL_DATABASE}\`.\`release_idempotency_records\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT ON \`${MYSQL_DATABASE}\`.\`release_idempotency_items\` TO '${MYSQL_RUNTIME_USER}'@'%';
 SQL
 fi
 

@@ -352,6 +352,24 @@
                             ]
                         }
                     },
+                    "404": {
+                        "description": "配置不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
                     "500": {
                         "description": "内部错误",
                         "schema": {
@@ -419,6 +437,24 @@
                     },
                     "400": {
                         "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "配置不存在",
                         "schema": {
                             "allOf": [
                                 {
@@ -515,6 +551,24 @@
                             ]
                         }
                     },
+                    "404": {
+                        "description": "配置不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
                     "500": {
                         "description": "内部错误",
                         "schema": {
@@ -589,6 +643,479 @@
                     },
                     "400": {
                         "description": "请求错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "配置或域名记录不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/app-configs/{config_id}/releases": {
+            "post": {
+                "description": "原子写入发布回执、任务与步骤快照；相同主体、操作、key 和意图只重放已提交结果",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Publish"
+                ],
+                "summary": "幂等创建单个 AppConfig 发布任务",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "AppConfig ID",
+                        "name": "config_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "16～128 字节的 Ares 幂等 token",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "当前会话的 CSRF token",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "发布意图",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/publish.CreateReleaseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已接纳或重放",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/publish.ReleaseReceipt"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Idempotency-Replayed": {
+                                "type": "string",
+                                "description": "重放时为 true，首次创建不返回"
+                            },
+                            "Location": {
+                                "type": "string",
+                                "description": "单发成功时的任务详情路径"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求或 Idempotency-Key 无效",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少发布权限或 CSRF 校验失败",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "AppConfig 不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "版本变化、环境停用、key 冲突或请求处理中",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "string",
+                                "description": "相同请求仍在处理时为 1 秒"
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "请求、inputs 或步骤快照超限",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "415": {
+                        "description": "Content-Type 不是 application/json",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "工作流未配置、无效或执行器不可用",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "503": {
+                        "description": "提交结果暂时无法确认",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/app-configs/{config_id}/releases/preflight": {
+            "post": {
+                "description": "只读校验目标、环境、工作流及执行器；业务不可发布仍以 HTTP 200 和 ready=false 返回",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Publish"
+                ],
+                "summary": "预检单个 AppConfig 发布",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "AppConfig ID",
+                        "name": "config_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "当前会话的 CSRF token",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "发布意图",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/publish.CreateReleaseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "预检完成",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/publish.ReleasePreflight"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少发布权限或 CSRF 校验失败",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "AppConfig 不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "413": {
+                        "description": "请求或 inputs 超限",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "415": {
+                        "description": "Content-Type 不是 application/json",
                         "schema": {
                             "allOf": [
                                 {
@@ -2169,11 +2696,32 @@
         },
         "/api/v1/deploy/publish": {
             "post": {
+                "description": "已弃用的 app_name+env 兼容入口；成功时返回任务详情，若提交后详情暂时不可读则至少返回已持久化的 task_id",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
                 "tags": [
                     "Publish"
                 ],
                 "summary": "单应用进行发布动作",
+                "deprecated": true,
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "可选；提供时必须是 16～128 字节的 Ares 幂等 token，缺失时保持旧客户端非幂等语义",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "当前会话的 CSRF token",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
                     {
                         "description": "发布请求参数",
                         "name": "request",
@@ -2186,7 +2734,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "成功",
+                        "description": "成功；详情暂时不可读时 result 仅保证 task_id",
                         "schema": {
                             "allOf": [
                                 {
@@ -2199,15 +2747,33 @@
                                             "type": "integer"
                                         },
                                         "result": {
-                                            "$ref": "#/definitions/entity.TaskRecord"
+                                            "$ref": "#/definitions/publish.TaskRecordView"
                                         }
                                     }
                                 }
                             ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Idempotency-Replayed": {
+                                "type": "string",
+                                "description": "带 key 的重放时为 true"
+                            },
+                            "Location": {
+                                "type": "string",
+                                "description": "任务详情路径"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
                         }
                     },
                     "400": {
-                        "description": "请求错误",
+                        "description": "请求或 Idempotency-Key 无效",
                         "schema": {
                             "allOf": [
                                 {
@@ -2222,6 +2788,216 @@
                                     }
                                 }
                             ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "缺少发布权限或 CSRF 校验失败",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "解析后的 AppConfig 已不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "环境停用、key 冲突、版本变化或请求处理中",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Retry-After": {
+                                "type": "string",
+                                "description": "相同请求仍在处理时为 1 秒"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "请求、inputs 或步骤快照超限",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Content-Type 不是 application/json",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "目标无法唯一解析、工作流未配置/无效或执行器不可用",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
                         }
                     },
                     "500": {
@@ -2240,6 +3016,44 @@
                                     }
                                 }
                             ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "提交结果暂时无法确认",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
                         }
                     }
                 }
@@ -2247,11 +3061,32 @@
         },
         "/api/v1/deploy/publish/batch": {
             "post": {
+                "description": "已弃用的 app_name+env 兼容入口；按请求顺序返回成功任务与稳定的逐项失败代码",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
                 "tags": [
                     "Publish"
                 ],
                 "summary": "应用进行批量发布动作",
+                "deprecated": true,
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "可选；提供时必须是 16～128 字节的 Ares 幂等 token，缺失时保持旧客户端非幂等语义",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "当前会话的 CSRF token",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
                     {
                         "description": "发布请求参数",
                         "name": "request",
@@ -2282,10 +3117,28 @@
                                     }
                                 }
                             ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Idempotency-Replayed": {
+                                "type": "string",
+                                "description": "带 key 的重放时为 true"
+                            },
+                            "Location": {
+                                "type": "string",
+                                "description": "单条成功批次的任务详情路径"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
                         }
                     },
                     "400": {
-                        "description": "请求错误",
+                        "description": "请求、重复目标或 Idempotency-Key 无效",
                         "schema": {
                             "allOf": [
                                 {
@@ -2300,6 +3153,188 @@
                                     }
                                 }
                             ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "缺少发布权限或 CSRF 校验失败",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "key 冲突或相同请求仍在处理",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Retry-After": {
+                                "type": "string",
+                                "description": "相同请求仍在处理时为 1 秒"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "请求、inputs 或步骤快照超限",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Content-Type 不是 application/json",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "目标无法唯一解析",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
                         }
                     },
                     "500": {
@@ -2318,6 +3353,44 @@
                                     }
                                 }
                             ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "提交结果暂时无法确认",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "固定为 true"
+                            },
+                            "Warning": {
+                                "type": "string",
+                                "description": "299 弃用警告"
+                            }
                         }
                     }
                 }
@@ -2628,7 +3701,7 @@
                                         "result": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/entity.TaskRecord"
+                                                "$ref": "#/definitions/publish.ActiveTaskView"
                                             }
                                         }
                                     }
@@ -3167,6 +4240,546 @@
                                             "items": {
                                                 "$ref": "#/definitions/workflow.Descriptor"
                                             }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/releases/batch": {
+            "post": {
+                "description": "在同一事务中按原请求顺序提交完整回执及所有可发布任务；业务失败以 receipt item 返回",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Publish"
+                ],
+                "summary": "幂等创建一组 AppConfig 发布任务",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "16～128 字节的 Ares 幂等 token",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "当前会话的 CSRF token",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "有序批量发布意图",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/publish.CreateBatchReleaseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已接纳或重放",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/publish.ReleaseReceipt"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Idempotency-Replayed": {
+                                "type": "string",
+                                "description": "重放时为 true，首次创建不返回"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求、条目数、重复目标或 Idempotency-Key 无效",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少发布权限或 CSRF 校验失败",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "key 冲突或相同请求仍在处理中",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "string",
+                                "description": "相同请求仍在处理时为 1 秒"
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "请求、inputs 或步骤快照超限",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "415": {
+                        "description": "Content-Type 不是 application/json",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "503": {
+                        "description": "提交结果暂时无法确认",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/releases/batch/preflight": {
+            "post": {
+                "description": "按原请求顺序逐项返回资格结果；预检不创建任务，也不消费 Idempotency-Key",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Publish"
+                ],
+                "summary": "预检一组 AppConfig 发布",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "当前会话的 CSRF token",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "有序批量发布意图",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/publish.CreateBatchReleaseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "预检完成",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/publish.BatchReleasePreflight"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "请求、条目数或目标重复无效",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少发布权限或 CSRF 校验失败",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "413": {
+                        "description": "请求或 inputs 超限",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "415": {
+                        "description": "Content-Type 不是 application/json",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/releases/targets": {
+            "get": {
+                "description": "分页返回环境下的应用及其 AppConfig 发布可用性；available 仅供选择，创建前仍须预检",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Publish"
+                ],
+                "summary": "查询环境下的发布目标",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "环境代码",
+                        "name": "env",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "应用名称或中文名称关键字（最长 100 个字符）",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page_num",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页条数",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "$ref": "#/definitions/publish.ReleaseTargetPage"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "查询参数无效",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少发布权限",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "环境不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
                                         }
                                     }
                                 }
@@ -4494,6 +6107,9 @@
         "entity.TaskRecord": {
             "type": "object",
             "properties": {
+                "app_config_id": {
+                    "type": "integer"
+                },
                 "app_name": {
                     "type": "string"
                 },
@@ -4919,6 +6535,113 @@
                 }
             }
         },
+        "publish.ActiveTaskView": {
+            "type": "object",
+            "properties": {
+                "app_config_id": {
+                    "type": "integer"
+                },
+                "app_name": {
+                    "type": "string"
+                },
+                "applet_images": {
+                    "description": "新增：任务图片（仅对外返回）",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.AppletImage"
+                    }
+                },
+                "auto_deploy": {
+                    "type": "integer"
+                },
+                "branch": {
+                    "type": "string"
+                },
+                "cd_build_id": {
+                    "type": "integer"
+                },
+                "cd_job_name": {
+                    "type": "string"
+                },
+                "ci_build_id": {
+                    "type": "integer"
+                },
+                "ci_job_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "deleted_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "engine_version": {
+                    "type": "integer"
+                },
+                "env": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "products": {
+                    "type": "string"
+                },
+                "publisher": {
+                    "type": "string"
+                },
+                "publisher_user_id": {
+                    "type": "integer"
+                },
+                "rundeck_app_name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "step_summary": {
+                    "$ref": "#/definitions/publish.TaskStepSummary"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.TaskStepRecord"
+                    }
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "workflow_version_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "publish.BatchReleasePreflight": {
+            "type": "object",
+            "properties": {
+                "failure_count": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/publish.ReleasePreflight"
+                    }
+                },
+                "ready_count": {
+                    "type": "integer"
+                },
+                "total_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "publish.CreateBatchPublishRequest": {
             "type": "object",
             "properties": {
@@ -4950,6 +6673,17 @@
                 "total_count": {
                     "description": "总体数量",
                     "type": "integer"
+                }
+            }
+        },
+        "publish.CreateBatchReleaseRequest": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/publish.ReleaseCommand"
+                    }
                 }
             }
         },
@@ -4992,8 +6726,27 @@
                 "success": {
                     "type": "boolean"
                 },
+                "task_id": {
+                    "type": "integer"
+                },
                 "task_record": {
-                    "$ref": "#/definitions/entity.TaskRecord"
+                    "$ref": "#/definitions/publish.TaskRecordView"
+                }
+            }
+        },
+        "publish.CreateReleaseRequest": {
+            "type": "object",
+            "properties": {
+                "expected_workflow_version_id": {
+                    "type": "string",
+                    "format": "int64",
+                    "example": ""
+                },
+                "inputs": {
+                    "type": "object"
+                },
+                "ref": {
+                    "type": "string"
                 }
             }
         },
@@ -5070,9 +6823,215 @@
                 }
             }
         },
+        "publish.ReleaseCommand": {
+            "type": "object",
+            "properties": {
+                "config_id": {
+                    "type": "integer"
+                },
+                "expected_workflow_version_id": {
+                    "type": "string",
+                    "format": "int64",
+                    "example": ""
+                },
+                "inputs": {
+                    "type": "object"
+                },
+                "ref": {
+                    "type": "string"
+                }
+            }
+        },
+        "publish.ReleasePreflight": {
+            "type": "object",
+            "properties": {
+                "app_id": {
+                    "type": "integer"
+                },
+                "app_name": {
+                    "type": "string"
+                },
+                "app_name_cn": {
+                    "type": "string"
+                },
+                "config_id": {
+                    "type": "integer"
+                },
+                "env": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "ready": {
+                    "type": "boolean"
+                },
+                "request_index": {
+                    "type": "integer"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/publish.ReleaseStepPreflight"
+                    }
+                },
+                "workflow_id": {
+                    "type": "string",
+                    "format": "int64",
+                    "example": ""
+                },
+                "workflow_revision": {
+                    "type": "integer"
+                },
+                "workflow_version": {
+                    "type": "integer"
+                },
+                "workflow_version_id": {
+                    "type": "string",
+                    "format": "int64",
+                    "example": ""
+                }
+            }
+        },
+        "publish.ReleaseReceipt": {
+            "type": "object",
+            "properties": {
+                "failure_count": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/publish.ReleaseReceiptItem"
+                    }
+                },
+                "record_id": {
+                    "type": "string",
+                    "format": "int64",
+                    "example": ""
+                },
+                "success_count": {
+                    "type": "integer"
+                },
+                "total_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "publish.ReleaseReceiptItem": {
+            "type": "object",
+            "properties": {
+                "config_id": {
+                    "type": "integer"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "request_index": {
+                    "type": "integer"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "workflow_version_id": {
+                    "type": "string",
+                    "format": "int64",
+                    "example": ""
+                }
+            }
+        },
+        "publish.ReleaseStepPreflight": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "capabilities": {
+                    "$ref": "#/definitions/workflow.Capabilities"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "uses": {
+                    "type": "string"
+                }
+            }
+        },
+        "publish.ReleaseTarget": {
+            "type": "object",
+            "properties": {
+                "app_id": {
+                    "type": "integer"
+                },
+                "app_name": {
+                    "type": "string"
+                },
+                "app_name_cn": {
+                    "type": "string"
+                },
+                "available": {
+                    "type": "boolean"
+                },
+                "config_id": {
+                    "type": "integer"
+                },
+                "env": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/publish.ReleaseStepPreflight"
+                    }
+                },
+                "unavailable_code": {
+                    "type": "string"
+                },
+                "workflow_version_id": {
+                    "type": "string",
+                    "format": "int64",
+                    "example": ""
+                }
+            }
+        },
+        "publish.ReleaseTargetPage": {
+            "type": "object",
+            "properties": {
+                "page_num": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/publish.ReleaseTarget"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
         "publish.TaskRecordView": {
             "type": "object",
             "properties": {
+                "app_config_id": {
+                    "type": "integer"
+                },
                 "app_name": {
                     "type": "string"
                 },
@@ -5147,6 +7106,35 @@
                     "format": "date-time"
                 },
                 "workflow_version_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "publish.TaskStepSummary": {
+            "type": "object",
+            "properties": {
+                "cancelled": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "pending": {
+                    "type": "integer"
+                },
+                "running": {
+                    "type": "integer"
+                },
+                "settled": {
+                    "type": "integer"
+                },
+                "skipped": {
+                    "type": "integer"
+                },
+                "succeeded": {
+                    "type": "integer"
+                },
+                "total": {
                     "type": "integer"
                 }
             }

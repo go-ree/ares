@@ -66,6 +66,18 @@ func RouterWithRuntime(r gin.IRouter, runtime Runtime) {
 		Permission: auth.PermissionLogsRead, Action: "task.step-log.read", ResourceType: "task-step-log",
 		ResourceParams: []string{"task_id", "step_key"}, SensitiveRead: true, SSE: true,
 	}), workflowController.StreamTaskStepLogs)
+	releases := apiRouter.Group("/releases")
+	{
+		releases.GET("/targets", runtime.require(routePolicy{
+			Permission: auth.PermissionReleasesCreate, Action: "release.targets.read", ResourceType: "release",
+		}), publishController.ListReleaseTargets)
+		releases.POST("/batch/preflight", runtime.require(routePolicy{
+			Permission: auth.PermissionReleasesCreate, Action: "release.batch.preflight", ResourceType: "release",
+		}), publishController.PreflightBatchRelease)
+		releases.POST("/batch", runtime.require(routePolicy{
+			Permission: auth.PermissionReleasesCreate, Action: "release.batch.create", ResourceType: "release",
+		}), publishController.CreateBatchRelease)
+	}
 
 	status := apiRouter.Group("/status")
 	status.GET("/nodes", runtime.require(routePolicy{
@@ -74,10 +86,10 @@ func RouterWithRuntime(r gin.IRouter, runtime Runtime) {
 
 	deploy := apiRouter.Group("/deploy")
 	{
-		deploy.POST("/publish", runtime.require(routePolicy{
+		deploy.POST("/publish", controller.LegacyReleaseDeprecationHeaders, runtime.require(routePolicy{
 			Permission: auth.PermissionReleasesCreate, Action: "release.create", ResourceType: "release",
 		}), publishController.CreateBuildTask)
-		deploy.POST("/publish/batch", runtime.require(routePolicy{
+		deploy.POST("/publish/batch", controller.LegacyReleaseDeprecationHeaders, runtime.require(routePolicy{
 			Permission: auth.PermissionReleasesCreate, Action: "release.batch.create", ResourceType: "release",
 		}), publishController.CreateBatchBuildTask)
 		deploy.POST("/publish/query", runtime.require(routePolicy{
@@ -121,6 +133,8 @@ func RouterWithRuntime(r gin.IRouter, runtime Runtime) {
 	{
 		appConfigs.GET("/:config_id", runtime.require(routePolicy{Permission: auth.PermissionAppConfigsRead, Action: "app-config.read", ResourceType: "app-config", ResourceParam: "config_id"}), appConfigsController.GetAppConfigByID)
 		appConfigs.PATCH("/:config_id", runtime.require(routePolicy{Permission: auth.PermissionAppConfigsWrite, Action: "app-config.update", ResourceType: "app-config", ResourceParam: "config_id"}), appConfigsController.PatchAppConfigByID)
+		appConfigs.POST("/:config_id/releases/preflight", runtime.require(routePolicy{Permission: auth.PermissionReleasesCreate, Action: "release.preflight", ResourceType: "app-config", ResourceParam: "config_id"}), publishController.PreflightRelease)
+		appConfigs.POST("/:config_id/releases", runtime.require(routePolicy{Permission: auth.PermissionReleasesCreate, Action: "release.create", ResourceType: "app-config", ResourceParam: "config_id"}), publishController.CreateRelease)
 		appConfigs.GET("/:config_id/workflow", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsRead, Action: "workflow.read", ResourceType: "app-config", ResourceParam: "config_id"}), workflowController.GetAppConfigWorkflow)
 		appConfigs.PUT("/:config_id/workflow", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsWrite, Action: "workflow.update", ResourceType: "app-config", ResourceParam: "config_id", AllowLegacy: true}), workflowController.PutAppConfigWorkflow)
 		appConfigs.GET("/:config_id/domains", runtime.require(routePolicy{Permission: auth.PermissionDomainsRead, Action: "domain.list", ResourceType: "app-config", ResourceParam: "config_id"}), appConfigsController.ListDomainsByConfigID)

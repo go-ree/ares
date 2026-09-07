@@ -71,12 +71,13 @@ type CreateBatchPublishRequest struct {
 
 // CreatePublishResult 表示单次应用发布动作的结果
 type CreatePublishResult struct {
-	RequestIndex int                `json:"request_index"`
-	AppName      string             `json:"app_name"`
-	Env          string             `json:"env"`
-	TaskRecord   *entity.TaskRecord `json:"task_record"`
-	Error        string             `json:"error"`
-	Success      bool               `json:"success"`
+	RequestIndex int             `json:"request_index"`
+	AppName      string          `json:"app_name"`
+	Env          string          `json:"env"`
+	TaskID       *int            `json:"task_id,omitempty"`
+	TaskRecord   *TaskRecordView `json:"task_record,omitempty"`
+	Error        string          `json:"error"`
+	Success      bool            `json:"success"`
 }
 
 // CreateBatchPublishResponse 表示批量应用发布动作的结果
@@ -316,7 +317,10 @@ func (pm *PublishManager) CreateBatchPublish(ctx context.Context, req *CreateBat
 					AppName:      item.req.AppName,
 					Env:          item.req.Env,
 					Success:      err == nil,
-					TaskRecord:   publish,
+					TaskRecord: &TaskRecordView{
+						TaskRecord: *publish,
+						Steps:      release.Shared().Coordinator.TaskStepViews(publish.Steps),
+					},
 				}
 				if err != nil {
 					if publicError, safe := ClientErrorMessage(err); safe {
@@ -355,9 +359,23 @@ func (pm *PublishManager) CreateBatchPublish(ctx context.Context, req *CreateBat
 // ComposePublishData 构建发布数据
 // 这里主要是拼接各种发布参数信息
 func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Apps, appConfig *entity.AppConfigs, envConfig *entity.EnvConfigs) (map[string]string, *entity.TaskRecord, error) {
+	var rows []entity.AppConfigDomain
+	if appConfig.ConfigID > 0 {
+		var err error
+		rows, err = fetchAppConfigDomains(appConfig.ConfigID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("查询多域名配置失败：%s", err)
+		}
+	}
+	return composePublishData(req, app, appConfig, envConfig, rows, time.Now())
+}
+
+// composePublishData is side-effect free. Canonical release admission calls it
+// with the domain rows read inside the same transaction as the task snapshot.
+func composePublishData(req *PublishRequest, app *entity.Apps, appConfig *entity.AppConfigs, envConfig *entity.EnvConfigs, rows []entity.AppConfigDomain, now time.Time) (map[string]string, *entity.TaskRecord, error) {
 	releaseInputs := make(map[string]string)
 	// 输出当前时间的时间戳，精确到毫秒
-	milliseconds := time.Now().UnixMilli()
+	milliseconds := now.UnixMilli()
 
 	// Registry 配置是旧 Jenkins 参数合同的一部分，但不再是环境目录
 	// 的必填项。没有配置 Registry 时，其他类型步骤仍可正常运行。
@@ -394,10 +412,6 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 
 	// 多域名支持：优先读取 app_config_domains，存在则额外下发 domains（JSON 字符串）+ domains_list（聚合结构）
 	if appConfig.ConfigID > 0 {
-		rows, err := fetchAppConfigDomains(appConfig.ConfigID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("查询多域名配置失败：%s", err)
-		}
 		// 从 app_config_domains 读取并聚合为 domains_list（同 host 合并 paths）
 		{
 			list := groupDomainsListFromRows(rows)
@@ -472,11 +486,13 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 		return nil, nil, err
 	}
 	publisherUserID := req.PublisherUserID
+	appConfigID := appConfig.ConfigID
 	taskRecord := &entity.TaskRecord{
 		AppName:         app.AppName,
 		RundeckAppName:  app.RundeckAppName, // 现在是指针类型，可以直接赋值
 		Publisher:       req.Publisher,
 		PublisherUserID: &publisherUserID,
+		AppConfigID:     &appConfigID,
 		Branch:          req.Branch,
 		Env:             req.Env,
 		PipelineParam:   json.RawMessage(jsonStr),
@@ -488,7 +504,7 @@ func (pm *PublishManager) ComposePublishData(req *PublishRequest, app *entity.Ap
 	return releaseInputs, taskRecord, nil
 }
 
-func (pm *PublishManager) JobStatus() ([]*entity.TaskRecord, error) {
+func (pm *PublishManager) JobStatus() ([]*ActiveTaskView, error) {
 	var taskRecords []*entity.TaskRecord
 
 	err := db.Engine.
@@ -501,8 +517,56 @@ func (pm *PublishManager) JobStatus() ([]*entity.TaskRecord, error) {
 		return nil, fmt.Errorf("查询任务状态失败：%s", err)
 	}
 
+	views := make([]*ActiveTaskView, 0, len(taskRecords))
+	taskIDs := make([]int, 0, len(taskRecords))
 	for _, record := range taskRecords {
 		normalizeTaskRecordNullableText(record)
+		if record.EngineVersion >= 2 {
+			taskIDs = append(taskIDs, record.TaskId)
+		}
+		views = append(views, &ActiveTaskView{TaskRecord: *record})
+	}
+	if len(taskIDs) > 0 {
+		var steps []entity.TaskStepRecord
+		if err := db.Engine.In("task_id", taskIDs).Find(&steps); err != nil {
+			return nil, fmt.Errorf("查询任务步骤状态失败：%s", err)
+		}
+		summaries := make(map[int]*TaskStepSummary, len(taskIDs))
+		for _, step := range steps {
+			summary := summaries[step.TaskID]
+			if summary == nil {
+				summary = &TaskStepSummary{}
+				summaries[step.TaskID] = summary
+			}
+			summary.Total++
+			switch step.Status {
+			case workflow.StepPending:
+				summary.Pending++
+			case workflow.StepRunning:
+				summary.Running++
+			case workflow.StepSucceeded:
+				summary.Succeeded++
+				summary.Settled++
+			case workflow.StepFailed:
+				summary.Failed++
+				summary.Settled++
+			case workflow.StepCancelled:
+				summary.Cancelled++
+				summary.Settled++
+			case workflow.StepSkipped:
+				summary.Skipped++
+				summary.Settled++
+			}
+		}
+		for _, view := range views {
+			if view.EngineVersion >= 2 {
+				summary := summaries[view.TaskId]
+				if summary == nil {
+					summary = &TaskStepSummary{}
+				}
+				view.StepSummary = summary
+			}
+		}
 	}
 
 	// 添加日志记录
@@ -510,7 +574,7 @@ func (pm *PublishManager) JobStatus() ([]*entity.TaskRecord, error) {
 		"count", len(taskRecords),
 		"statuses", []string{entity.StatusInit, entity.StatusPackaging, entity.StatusDeploying, workflow.TaskQueued, workflow.TaskRunning})
 
-	return taskRecords, nil
+	return views, nil
 }
 
 // GetTaskRecordDetails 获取任务详情
@@ -546,4 +610,65 @@ func (pm *PublishManager) GetTaskRecordDetails(taskID int) (*TaskRecordView, err
 
 	slog.Info("查询任务详情成功", "task_id", taskID)
 	return &TaskRecordView{TaskRecord: taskRecord, Steps: steps}, nil
+}
+
+// GetTaskRecordDetailsByIDs loads the public projection for a just-created
+// batch with a bounded number of queries. It intentionally omits image lookup:
+// a newly admitted task cannot have task images yet, and callers initialize the
+// compatibility field to an empty array.
+func (pm *PublishManager) GetTaskRecordDetailsByIDs(ctx context.Context, taskIDs []int) (map[int]*TaskRecordView, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if len(taskIDs) == 0 {
+		return map[int]*TaskRecordView{}, nil
+	}
+	if len(taskIDs) > 100 {
+		return nil, fmt.Errorf("任务详情批量不能超过 100 项")
+	}
+	unique := make([]int, 0, len(taskIDs))
+	seen := make(map[int]struct{}, len(taskIDs))
+	for _, taskID := range taskIDs {
+		if taskID <= 0 {
+			return nil, fmt.Errorf("任务 ID 无效")
+		}
+		if _, exists := seen[taskID]; exists {
+			continue
+		}
+		seen[taskID] = struct{}{}
+		unique = append(unique, taskID)
+	}
+
+	var records []entity.TaskRecord
+	if err := db.Engine.Context(ctx).In("task_id", unique).
+		Where("deleted_at IS NULL").Find(&records); err != nil {
+		return nil, fmt.Errorf("批量查询任务详情: %w", err)
+	}
+	views := make(map[int]*TaskRecordView, len(records))
+	v2TaskIDs := make([]int, 0, len(records))
+	for index := range records {
+		record := records[index]
+		normalizeTaskRecordNullableText(&record)
+		record.AppletImages = make([]entity.AppletImage, 0)
+		views[record.TaskId] = &TaskRecordView{TaskRecord: record, Steps: make([]workflow.TaskStepView, 0)}
+		if record.EngineVersion >= 2 {
+			v2TaskIDs = append(v2TaskIDs, record.TaskId)
+		}
+	}
+	if len(v2TaskIDs) == 0 {
+		return views, nil
+	}
+	var stepRecords []entity.TaskStepRecord
+	if err := db.Engine.Context(ctx).In("task_id", v2TaskIDs).
+		Asc("task_id", "position").Find(&stepRecords); err != nil {
+		return nil, fmt.Errorf("批量查询任务步骤: %w", err)
+	}
+	grouped := make(map[int][]entity.TaskStepRecord, len(v2TaskIDs))
+	for _, step := range stepRecords {
+		grouped[step.TaskID] = append(grouped[step.TaskID], step)
+	}
+	for _, taskID := range v2TaskIDs {
+		views[taskID].Steps = release.Shared().Coordinator.TaskStepViews(grouped[taskID])
+	}
+	return views, nil
 }

@@ -74,3 +74,15 @@ func TestWriteAppConfigErrorMapsDomainErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteAppDomainErrorMapsMissingParentConfig(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+
+	writeAppDomainError(context, "操作失败", app.NewAppConfigNotFoundErrorByID(42))
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusNotFound, recorder.Body.String())
+	}
+}

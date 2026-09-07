@@ -2,20 +2,22 @@ package entity
 
 // TableNames 定义所有表名常量
 const (
-	TableApps                = "apps"
-	TableAppConfigs          = "app_configs"
-	TableAppConfigDomains    = "app_config_domains"
-	TableTaskRecord          = "task_record"
-	TableTaskRecordImages    = "task_record_images"
-	TablePipelines           = "pipelines"
-	TablePipelineJobs        = "pipelines_job_combination"
-	TableEnvConfigs          = "env_configs"
-	TableDevLanguageRules    = "dev_language_rules"
-	TableIntegrationSettings = "integration_settings"
-	TableReleaseWorkflows    = "release_workflows"
-	TableWorkflowVersions    = "release_workflow_versions"
-	TableAppConfigWorkflows  = "app_config_workflows"
-	TableTaskStepRecords     = "task_step_records"
+	TableApps                      = "apps"
+	TableAppConfigs                = "app_configs"
+	TableAppConfigDomains          = "app_config_domains"
+	TableTaskRecord                = "task_record"
+	TableTaskRecordImages          = "task_record_images"
+	TablePipelines                 = "pipelines"
+	TablePipelineJobs              = "pipelines_job_combination"
+	TableEnvConfigs                = "env_configs"
+	TableDevLanguageRules          = "dev_language_rules"
+	TableIntegrationSettings       = "integration_settings"
+	TableReleaseWorkflows          = "release_workflows"
+	TableWorkflowVersions          = "release_workflow_versions"
+	TableAppConfigWorkflows        = "app_config_workflows"
+	TableTaskStepRecords           = "task_step_records"
+	TableReleaseIdempotencyRecords = "release_idempotency_records"
+	TableReleaseIdempotencyItems   = "release_idempotency_items"
 )
 
 func (a *Apps) TableName() string {
@@ -56,4 +58,12 @@ func (b *AppConfigWorkflow) TableName() string {
 
 func (s *TaskStepRecord) TableName() string {
 	return TableTaskStepRecords
+}
+
+func (r *ReleaseIdempotencyRecord) TableName() string {
+	return TableReleaseIdempotencyRecords
+}
+
+func (i *ReleaseIdempotencyItem) TableName() string {
+	return TableReleaseIdempotencyItems
 }

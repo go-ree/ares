@@ -179,6 +179,7 @@ var (
 	epoch2SemanticSchemaManifest semanticSchemaManifest
 	epoch3SemanticSchemaManifest semanticSchemaManifest
 	epoch5SemanticSchemaManifest semanticSchemaManifest
+	epoch6SemanticSchemaManifest semanticSchemaManifest
 )
 
 const (
@@ -198,6 +199,7 @@ var epochDataContractCatalog = map[uint64][]string{
 	3: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID},
 	4: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID},
 	5: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID},
+	6: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID, idempotentReleaseDataContractID},
 }
 
 func epochDataContractIDs(epoch uint64) []string {
@@ -225,6 +227,10 @@ func (s *migrationSession) verifyEpochDataContracts(epoch uint64) error {
 			}
 		case authBootstrapSingletonDataContractID:
 			if err := s.verifyAuthBootstrapRows(false); err != nil {
+				return err
+			}
+		case idempotentReleaseDataContractID:
+			if err := s.verifyIdempotentReleaseRows(); err != nil {
 				return err
 			}
 		default:
@@ -255,6 +261,7 @@ func init() {
 	}
 	initializeHistoricalEpochManifests()
 	initializeEpoch5SemanticSchemaManifest()
+	initializeEpoch6SemanticSchemaManifest()
 }
 
 func publishedTableCollation(tableName string) string {

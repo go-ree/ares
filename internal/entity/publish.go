@@ -15,6 +15,7 @@ type TaskRecord struct {
 	Env             string  `xorm:"VARCHAR(255) not null 'env'" json:"env"`
 	Publisher       string  `xorm:"VARCHAR(255) not null 'publisher'" json:"publisher"`
 	PublisherUserID *int64  `xorm:"BIGINT null 'publisher_user_id'" json:"publisher_user_id,omitempty"`
+	AppConfigID     *int    `xorm:"INT null index(idx_task_app_config) 'app_config_id'" json:"app_config_id,omitempty"`
 	CiBuildId       int64   `xorm:"int(11) DEFAULT 0 'ci_build_id'" json:"ci_build_id"`
 	CdBuildId       int64   `xorm:"int(11) DEFAULT 0 'cd_build_id'" json:"cd_build_id"`
 	// PipelineParam is an internal execution snapshot. It may contain deployment
