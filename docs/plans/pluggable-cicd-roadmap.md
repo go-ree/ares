@@ -1,6 +1,6 @@
 # 可插拔 CI/CD 实施路线
 
-> 状态：PR #4 已交付阶段 A～C 与阶段 D 主链路。阶段 D 的通用步骤日志和阶段 E 后续工作统一在 [开源化与生产能力开发计划](open-source-production-roadmap.md) 中跟踪。
+> 状态：PR #4 已交付阶段 A～C 与阶段 D 主链路；W03 已完成阶段 D 通用步骤日志的实现与本地验收，[PR #34](https://github.com/go-ree/ares/pull/34) 待维护者验收。阶段 E 后续工作统一在 [开源化与生产能力开发计划](open-source-production-roadmap.md) 中跟踪。
 
 本文是 [可插拔 CI/CD 与动态环境架构](../architecture/pluggable-cicd.md) 的实施计划。每一阶段都要求可独立验证、可升级并支持前向修复；数据库迁移后的旧镜像降级不等于安全回退，旧数据删除不属于当前阶段。
 
@@ -61,13 +61,13 @@
 - [x] 把旧两 Job 组合幂等导入为流程版本并绑定 AppConfig。
 - [x] 新任务进入 v2；旧轮询器只续跑带可验证实例绑定的 v1 任务，历史未绑定在途任务 fail-closed。
 - [x] 旧 CI/CD 字段只作为兼容投影。
-- [ ] 日志改为通过任务步骤读取，限制任意 Job 访问。
+- [x] 日志改为通过任务步骤读取，限制任意 Job 访问（W03 [PR #34](https://github.com/go-ree/ares/pull/34) 已完成本地验收，待合并）。
 
 验收：包含 Jenkins 步骤的任务行为与旧发布一致；关闭 Jenkins 后仅该类流程不可运行，Ares 其余功能和 Noop 流程正常。
 
 ### 阶段 E：可靠性与扩展生态
 
-- [ ] 移除运行时 Xorm 结构同步，空库 bootstrap 与存量结构变化统一使用版本化迁移（W04 实现已落地，guarded migrator、旧 volume 升级和最终门禁仍在验收，继续保持未勾选）。
+- [x] 移除运行时 Xorm 结构同步，空库 bootstrap 与存量结构变化统一使用版本化迁移（W04 已由 PR #22 合并完成）。
 - [ ] 增加 attempt、有限重试、退避、超时和取消。
 - [ ] 为多副本 Worker 增加 `next_poll_at`、owner/lease 和公平到期扫描。
 - [ ] 发布 API 支持 `Idempotency-Key`。
@@ -78,7 +78,7 @@
 
 ## 3. PR #4 已交付范围
 
-2026-09-04 进度同步：W04 已把 epoch 1～4 拆为独立完整 schema/data 契约，运行时只读检查不再执行结构 DDL；未删除 AppConfig 必须对应未删除环境目录项。Compose 使用特权账号门禁、默认锁定的 migrator、管理员守护的唯一迁移会话和无 DDL runtime 账号；发现旧版/未知 schema grantee 时会在任何写入前拒绝，必须由 DBA 先撤权再升级。独立进程并发、真实 CLI 和账号日志/权限自动化已经补入，guarded Compose 全链路、最终门禁、中文 PR 与 GitHub CI 仍在进行，完成前本项保持未勾选。详细证据以[开源化与生产能力开发计划](open-source-production-roadmap.md) W04 记录为准。
+2026-09-07 进度同步：W04 已由 [PR #22](https://github.com/go-ree/ares/pull/22) 合并完成。epoch 1～4 使用独立完整 schema/data 契约，运行时只读检查不再执行结构 DDL；Compose 使用特权账号门禁、默认锁定的 migrator、管理员守护的唯一迁移会话和无 DDL runtime 账号。完整实现与验收证据以[开源化与生产能力开发计划](open-source-production-roadmap.md) W04 记录为准。
 
 PR #4 以形成可运行的第一条纵向闭环为目标，已经交付：
 
@@ -89,7 +89,7 @@ PR #4 以形成可运行的第一条纵向闭环为目标，已经交付：
 5. 前端提供动态环境选择与基础步骤编辑能力。
 6. 补齐单元测试、前端构建和 Docker Compose 空库验证。
 
-可靠重试、取消、完整通用日志和更多第三方执行器进入 [后续开发计划](open-source-production-roadmap.md)，不以不完整实现扩大首版风险。
+可靠重试、取消和更多第三方执行器进入 [后续开发计划](open-source-production-roadmap.md)，不以不完整实现扩大首版风险；通用步骤日志已由 W03 [PR #34](https://github.com/go-ree/ares/pull/34) 完成实现与本地验收，待合并进入主线。
 
 ## 4. 数据迁移与发布步骤
 

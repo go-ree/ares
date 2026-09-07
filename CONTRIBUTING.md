@@ -73,11 +73,12 @@ docker compose build
 
 - 修复缺陷时应先增加能复现问题的测试，再实现修复。
 - 新增后端领域逻辑、迁移、鉴权或并发行为时必须包含自动化测试；并发路径应纳入 Race 检查。
-- 前端目前缺少完整单元测试体系。涉及交互的变更除静态检查与构建外，还需在 Compose 环境中进行人工验收并记录结果。
+- 前端身份、路由、权限和日志连接等关键交互已有 Vitest 基线；相关变更必须补充或更新单元/组件测试，并对 Cookie、SSE、Nginx 或重启行为在隔离 Compose 环境进行端到端验收并记录结果。
 - 涉及数据库结构时，需要验证空库升级、历史库升级、重复执行与失败恢复。
 - 数据库结构只能由新增的版本化 migration 改变；禁止在 `serve` 启动路径重新加入 `Sync`/`Sync2` 或其他 DDL，也不能修改已经发布迁移的版本、payload 或 checksum。
 - 每个 schema PR 必须同时更新 migration、schema manifest、固定 checksum 测试、升级/恢复说明和进度文档。真实 MySQL 8.4 验证结果应记录在 PR 中，不能只以 mock 或 SQLite 测试替代。
 - 涉及外部系统时，测试不得依赖真实生产凭据或不可控的公网服务。
+- 涉及步骤日志时，必须遵循 [ADR-0003](docs/architecture/decisions/0003-generic-step-logs.md)；客户端只能按 task/step/cursor 定位，测试必须覆盖权限、来源绑定、cursor 续传、响应上限和连接释放，不得把 external reference 或上游错误暴露给客户端。
 
 ## 文档与兼容性
 

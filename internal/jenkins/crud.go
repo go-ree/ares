@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const maxProgressiveTextResponseBytes = int64(256 * 1024)
@@ -52,6 +53,53 @@ type BuildLogChunk struct {
 	Lines     []string
 	NextStart int64
 	IsPing    bool
+}
+
+// BuildLogPage is one bounded, cursor-addressed progressiveText read. Content
+// is left byte-for-byte unchanged; presentation belongs to callers, while the
+// Jenkins byte offset remains suitable for lossless resume.
+type BuildLogPage struct {
+	Content   string
+	NextStart int64
+	EOF       bool
+}
+
+// ReadBuildLogChunkContext returns at most one bounded Jenkins log chunk. A
+// terminal build is checked with one final progressiveText read so console
+// output flushed alongside the terminal state is not skipped.
+func (s *ClientSnapshot) ReadBuildLogChunkContext(
+	ctx context.Context, jobName string, buildID, start int64,
+) (BuildLogPage, error) {
+	if s == nil || s.runtime == nil {
+		return BuildLogPage{}, errors.New("jenkins not initialized")
+	}
+	if len(splitJobName(jobName)) == 0 || buildID <= 0 || start < 0 {
+		return BuildLogPage{}, errors.New("invalid Jenkins build log request")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	content, next, more, err := getProgressiveText(ctx, s.runtime, jobName, buildID, start)
+	if err != nil {
+		return BuildLogPage{}, err
+	}
+	if content != "" || more {
+		return BuildLogPage{Content: content, NextStart: next}, nil
+	}
+	status, err := s.GetBuildStatusContext(ctx, jobName, buildID)
+	if err != nil {
+		return BuildLogPage{}, err
+	}
+	if status == "RUNNING" {
+		return BuildLogPage{NextStart: next}, nil
+	}
+	finalContent, finalNext, finalMore, err := getProgressiveText(ctx, s.runtime, jobName, buildID, next)
+	if err != nil {
+		return BuildLogPage{}, err
+	}
+	return BuildLogPage{
+		Content: finalContent, NextStart: finalNext, EOF: !finalMore,
+	}, nil
 }
 
 // GetJenkinsNodeStatus	获取jenkins中node的状态信息
@@ -184,13 +232,13 @@ func (s *ClientSnapshot) StreamJenkinsBuildLog(ctx context.Context, req *BuildLo
 	}
 	job, err := clientForContext(runtime, ctx).GetJob(ctx, jobParts[len(jobParts)-1], jobParts[:len(jobParts)-1]...)
 	if err != nil {
-		slog.Error("获取Job失败", "job_name", req.JobName, "build_id", req.BuildId, "error_type", fmt.Sprintf("%T", err))
+		slog.Error("读取 Jenkins 日志失败", "operation", "get_job", "error_type", fmt.Sprintf("%T", err))
 		sendJenkinsStreamError(ctx, errChan, err)
 		return false
 	}
 	build, err := job.GetBuild(ctx, req.BuildId)
 	if err != nil {
-		slog.Error("获取buildId失败", "job_name", req.JobName, "build_id", req.BuildId, "error_type", fmt.Sprintf("%T", err))
+		slog.Error("读取 Jenkins 日志失败", "operation", "get_build", "error_type", fmt.Sprintf("%T", err))
 		sendJenkinsStreamError(ctx, errChan, err)
 		return false
 	}
@@ -472,14 +520,25 @@ func getProgressiveText(ctx context.Context, runtime *Runtime, jobName string, b
 	}
 
 	if int64(len(bodyBytes)) > maxProgressiveTextResponseBytes {
-		if start > math.MaxInt64-maxProgressiveTextResponseBytes {
+		boundedBytes := int(maxProgressiveTextResponseBytes)
+		// Jenkins offsets count bytes, while the public log contract carries
+		// UTF-8 text. Never split a valid multi-byte rune at the response cap;
+		// advance only by the prefix actually returned so the next request
+		// resumes at the rune's first byte without loss or duplication.
+		for boundedBytes > 0 && boundedBytes < len(bodyBytes) && !utf8.RuneStart(bodyBytes[boundedBytes]) {
+			boundedBytes--
+		}
+		if boundedBytes == 0 {
+			return "", start, false, errors.New("jenkins progressiveText has no safe UTF-8 split boundary")
+		}
+		if start > math.MaxInt64-int64(boundedBytes) {
 			return "", start, false, errors.New("jenkins progressiveText offset overflow")
 		}
-		boundedNext := start + maxProgressiveTextResponseBytes
+		boundedNext := start + int64(boundedBytes)
 		if nextStart < boundedNext {
 			return "", start, false, errors.New("jenkins progressiveText returned an inconsistent offset")
 		}
-		return string(bodyBytes[:maxProgressiveTextResponseBytes]), boundedNext, true, nil
+		return string(bodyBytes[:boundedBytes]), boundedNext, true, nil
 	}
 	if int64(len(bodyBytes)) > math.MaxInt64-start || nextStart != start+int64(len(bodyBytes)) {
 		return "", start, false, errors.New("jenkins progressiveText returned an inconsistent offset")
@@ -637,7 +696,7 @@ func (s *ClientSnapshot) QueueBuildTaskContext(ctx context.Context, jobName stri
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		slog.Error("任务构建失败", slog.String("job", jobName), "error_type", fmt.Sprintf("%T", err))
+		slog.Error("触发 Jenkins 任务失败", "operation", "queue_build", "error_type", fmt.Sprintf("%T", err))
 		return 0, "", fmt.Errorf("触发 Jenkins Job %s: %w", jobName, err)
 	}
 	defer response.Body.Close()

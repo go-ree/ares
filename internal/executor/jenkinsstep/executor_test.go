@@ -3,6 +3,7 @@ package jenkinsstep
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -15,6 +16,7 @@ type fakeJenkinsClient struct {
 	start   func(context.Context, string, map[string]string) (int64, string, error)
 	queue   func(context.Context, int64) (jenkins.QueueBuildState, error)
 	status  func(context.Context, string, int64) (string, error)
+	logs    func(context.Context, string, int64, int64) (jenkins.BuildLogPage, error)
 }
 
 func (f *fakeJenkinsClient) Address() string { return f.address }
@@ -27,9 +29,18 @@ func (f *fakeJenkinsClient) GetQueueBuildStateContext(ctx context.Context, id in
 func (f *fakeJenkinsClient) GetBuildStatusContext(ctx context.Context, job string, id int64) (string, error) {
 	return f.status(ctx, job, id)
 }
+func (f *fakeJenkinsClient) ReadBuildLogChunkContext(ctx context.Context, job string, id, cursor int64) (jenkins.BuildLogPage, error) {
+	if f.logs == nil {
+		return jenkins.BuildLogPage{}, errors.New("unexpected log read")
+	}
+	return f.logs(ctx, job, id, cursor)
+}
 
 func TestValidateConfig(t *testing.T) {
 	executor := New()
+	if !executor.Descriptor().Capabilities.Logs {
+		t.Fatal("Jenkins executor must advertise its LogReader capability")
+	}
 	for _, test := range []struct {
 		name    string
 		config  string
@@ -40,6 +51,9 @@ func TestValidateConfig(t *testing.T) {
 		{name: "missing job", config: `{}`, wantErr: true},
 		{name: "unknown integration", config: `{"integration":"other","job":"build"}`, wantErr: true},
 		{name: "unknown field", config: `{"job":"build","token":"secret"}`, wantErr: true},
+		{name: "dot segment", config: `{"job":"folder/../build"}`, wantErr: true},
+		{name: "empty segment", config: `{"job":"folder//build"}`, wantErr: true},
+		{name: "control character", config: `{"job":"folder\n/build"}`, wantErr: true},
 		{name: "plain secret parameter", config: `{"job":"build","parameters":{"api_token":"secret"}}`, wantErr: true},
 		{name: "camel access token parameter", config: `{"job":"build","parameters":{"accessToken":"secret"}}`, wantErr: true},
 		{name: "camel client secret parameter", config: `{"job":"build","parameters":{"clientSecret":"secret"}}`, wantErr: true},
@@ -59,6 +73,78 @@ func TestValidateConfig(t *testing.T) {
 				t.Fatalf("Validate() error = %v, wantErr %v", err, test.wantErr)
 			}
 		})
+	}
+}
+
+func TestReadLogsUsesOnlyOpaqueReferenceAndCursor(t *testing.T) {
+	reads := 0
+	client := &fakeJenkinsClient{
+		address: "https://jenkins.example",
+		logs: func(_ context.Context, job string, buildID, cursor int64) (jenkins.BuildLogPage, error) {
+			reads++
+			if job != "folder/demo" || buildID != 42 || cursor != 17 {
+				t.Fatalf("log request=(%q,%d,%d)", job, buildID, cursor)
+			}
+			return jenkins.BuildLogPage{Content: "next\n", NextStart: 22, EOF: true}, nil
+		},
+	}
+	executor := &Executor{acquire: func() jenkinsClient { return client }}
+	chunk, err := executor.ReadLogs(context.Background(), workflow.LogRequest{
+		TaskID: 7, StepKey: "build", Cursor: "17",
+		ExternalReference: json.RawMessage(`{"integration":"jenkins/default","address":"https://jenkins.example","job":"folder/demo","build_id":42}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reads != 1 || chunk.Content != "next\n" || chunk.Cursor != "22" || !chunk.EOF {
+		t.Fatalf("reads=%d chunk=%#v", reads, chunk)
+	}
+}
+
+func TestReadLogsRejectsUnsafeReferencesBeforeNetwork(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		reference string
+		cursor    string
+		want      error
+	}{
+		{name: "queue only", reference: `{"integration":"jenkins/default","address":"https://jenkins.example","job":"demo","queue_id":9}`, want: workflow.ErrLogsNotReady},
+		{name: "invalid cursor", reference: `{"integration":"jenkins/default","address":"https://jenkins.example","job":"demo","build_id":9}`, cursor: "-1", want: workflow.ErrInvalidLogCursor},
+		{name: "unknown field", reference: `{"integration":"jenkins/default","address":"https://jenkins.example","job":"demo","build_id":9,"token":"hidden"}`, want: workflow.ErrLogSourceMismatch},
+		{name: "wrong integration", reference: `{"integration":"jenkins/other","address":"https://jenkins.example","job":"demo","build_id":9}`, want: workflow.ErrLogSourceMismatch},
+		{name: "invalid address", reference: `{"integration":"jenkins/default","address":"file:///tmp/jenkins","job":"demo","build_id":9}`, want: workflow.ErrLogSourceMismatch},
+		{name: "oversized job", reference: `{"integration":"jenkins/default","address":"https://jenkins.example","job":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","build_id":9}`, want: workflow.ErrLogSourceMismatch},
+		{name: "control in job", reference: `{"integration":"jenkins/default","address":"https://jenkins.example","job":"folder\u000ademo","build_id":9}`, want: workflow.ErrLogSourceMismatch},
+		{name: "empty path segment", reference: `{"integration":"jenkins/default","address":"https://jenkins.example","job":"folder//demo","build_id":9}`, want: workflow.ErrLogSourceMismatch},
+		{name: "dot path segment", reference: `{"integration":"jenkins/default","address":"https://jenkins.example","job":"folder/../demo","build_id":9}`, want: workflow.ErrLogSourceMismatch},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			acquires := 0
+			executor := &Executor{acquire: func() jenkinsClient {
+				acquires++
+				return &fakeJenkinsClient{address: "https://jenkins.example"}
+			}}
+			_, err := executor.ReadLogs(context.Background(), workflow.LogRequest{
+				Cursor: test.cursor, ExternalReference: json.RawMessage(test.reference),
+			})
+			if !errors.Is(err, test.want) || acquires != 0 {
+				t.Fatalf("error=%v want=%v acquires=%d", err, test.want, acquires)
+			}
+		})
+	}
+
+	reads := 0
+	executor := &Executor{acquire: func() jenkinsClient {
+		return &fakeJenkinsClient{address: "https://jenkins-new.example", logs: func(context.Context, string, int64, int64) (jenkins.BuildLogPage, error) {
+			reads++
+			return jenkins.BuildLogPage{}, nil
+		}}
+	}}
+	_, err := executor.ReadLogs(context.Background(), workflow.LogRequest{ExternalReference: json.RawMessage(
+		`{"integration":"jenkins/default","address":"https://jenkins-old.example","job":"demo","build_id":9}`,
+	)})
+	if !errors.Is(err, workflow.ErrLogSourceMismatch) || reads != 0 {
+		t.Fatalf("address mismatch error=%v reads=%d", err, reads)
 	}
 }
 

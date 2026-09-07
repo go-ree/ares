@@ -29,7 +29,7 @@ func RouterWithRuntime(r gin.IRouter, runtime Runtime) {
 	environmentController := controller.NewEnvironmentController()
 	authController := controller.NewAuthController(runtime.Auth)
 	workflowRuntime := release.Shared()
-	workflowController := controller.NewWorkflowController(workflowRuntime.Service, workflowRuntime.Coordinator)
+	workflowController := controller.NewWorkflowController(workflowRuntime.Service, workflowRuntime.Coordinator, workflowRuntime.Logs)
 
 	authenticated := runtime.require(routePolicy{Action: "documentation.read", ResourceType: "documentation"})
 	r.GET("/wiki", authenticated, func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/swagger/index.html") })
@@ -57,10 +57,15 @@ func RouterWithRuntime(r gin.IRouter, runtime Runtime) {
 	apiRouter.GET("/pipeline-step-types", runtime.require(routePolicy{
 		Permission: auth.PermissionWorkflowsRead, Action: "workflow.step-types.read", ResourceType: "workflow",
 	}), workflowController.ListPipelineStepTypes)
-	apiRouter.GET("/job/stream/log", runtime.require(routePolicy{
+	apiRouter.GET("/job/stream/log", controller.LegacyJenkinsLogDeprecationHeaders, runtime.require(routePolicy{
 		Permission: auth.PermissionLogsRead, Action: "release.log.read", ResourceType: "release-log",
-		SensitiveRead: true, SSE: true,
+		ResourceQuery: "task_id", SensitiveRead: true, SSE: true,
 	}), controller.StreamJenkinsBuildLogHandler)
+	tasks := apiRouter.Group("/tasks")
+	tasks.GET("/:task_id/steps/:step_key/logs/stream", runtime.require(routePolicy{
+		Permission: auth.PermissionLogsRead, Action: "task.step-log.read", ResourceType: "task-step-log",
+		ResourceParams: []string{"task_id", "step_key"}, SensitiveRead: true, SSE: true,
+	}), workflowController.StreamTaskStepLogs)
 
 	status := apiRouter.Group("/status")
 	status.GET("/nodes", runtime.require(routePolicy{
@@ -90,9 +95,9 @@ func RouterWithRuntime(r gin.IRouter, runtime Runtime) {
 		deploy.GET("/publish/status", runtime.require(routePolicy{
 			Permission: auth.PermissionReleasesRead, Action: "release.status.read", ResourceType: "release",
 		}), publishController.GetBuildTaskList)
-		deploy.GET("/log/stream", runtime.require(routePolicy{
+		deploy.GET("/log/stream", controller.LegacyJenkinsLogDeprecationHeaders, runtime.require(routePolicy{
 			Permission: auth.PermissionLogsRead, Action: "release.log.read", ResourceType: "release-log",
-			SensitiveRead: true, SSE: true,
+			ResourceQuery: "task_id", SensitiveRead: true, SSE: true,
 		}), controller.StreamJenkinsBuildLogHandler)
 	}
 

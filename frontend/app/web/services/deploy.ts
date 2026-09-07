@@ -86,11 +86,6 @@ export const getTaskDetail = (taskId: number) => {
 export const cancelDeploy = (deployId: number, comment?: string) =>
   api.post<ApiResponse<void>>(`${BASE_URL}/${deployId}/cancel`, { comment });
 
-// 获取发布日志
-export const getDeployLogs = (deployId: number) => {
-  return api.get<ApiResponse<string>>(`${BASE_URL}/${deployId}/logs`);
-};
-
 // 重新发布
 export const redeploy = async (deployId: number, comment?: string) =>
   api.post<ApiResponse<DeployInfo>>(`${BASE_URL}/${deployId}/redeploy`, { comment });
@@ -100,7 +95,26 @@ export const queryPublishLogs = async (params: PublishLogQueryParams) => {
   return api.post<ApiResponse<PublishLogQueryResponse>>(`${BASE_URL}/publish/query`, params);
 };
 
-// 查询单个任务的日志
-export const queryTaskLogs = async (taskId: number, logType: 'ci' | 'cd' = 'ci') => {
-  return api.get<ApiResponse<string>>(`${BASE_URL}/task/${taskId}/logs/${logType}`);
+export type LegacyTaskLogType = 'ci' | 'cd';
+
+// 日志传输不复用 Axios 实例；统一在 service 中构造同源、只读的日志 URL。
+export const taskStepLogStreamUrl = (taskId: number, stepKey: string, cursor?: string) => {
+  const path = `/api/v1/tasks/${taskId}/steps/${encodeURIComponent(stepKey)}/logs/stream`;
+  if (cursor === undefined || cursor === '') return path;
+  const params = new URLSearchParams({ cursor });
+  return `${path}?${params.toString()}`;
+};
+
+/** @deprecated 仅供 engine_version < 2 的历史任务读取旧 Jenkins 日志。 */
+export const legacyTaskLogStreamUrl = (
+  taskId: number,
+  logType: LegacyTaskLogType,
+  cursor?: string
+) => {
+  const params = new URLSearchParams({
+    task_id: String(taskId),
+    log_type: logType,
+  });
+  if (cursor && /^\d+$/.test(cursor)) params.set('start', cursor);
+  return `/api/v1/job/stream/log?${params.toString()}`;
 };

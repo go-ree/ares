@@ -34,6 +34,9 @@ type Executor interface {
 - 所有网络与等待必须尊重 `context.Context`。
 
 可选实现日志和取消接口。没有相应能力时，描述符必须明确返回 `false`，UI 不展示不可用动作。
+Registry 会核对静态能力和接口实现：`capabilities.logs=true` 必须实现 `LogReader`，实现了
+`LogReader` 也必须声明该能力；不一致时启动注册失败。执行器暂时不可用只影响
+`Descriptor.Available`，不能动态改写已经声明的静态能力。
 
 ## 4. 请求与返回约束
 
@@ -64,7 +67,42 @@ type Executor interface {
 - 不要将解析后的 Secret 写入 Result、日志、错误或输出。
 - 模板值只从引擎提供的白名单上下文解析，禁止解释用户提供的脚本或表达式。
 
-## 6. 幂等与故障处理
+## 6. 通用日志能力
+
+W03 的通用日志入口、cursor 与 SSE 事件见[通用任务步骤日志 API](task-step-logs-api.md)和
+[ADR-0003](../architecture/decisions/0003-generic-step-logs.md)。支持日志的执行器实现：
+
+```go
+type LogReader interface {
+    ReadLogs(context.Context, LogRequest) (LogChunk, error)
+}
+```
+
+服务端只会向 `LogRequest` 放入经过鉴权和归属校验的 task ID、step key、数据库步骤快照中的
+opaque external reference，以及经过通用边界校验的 cursor。执行器不得接受客户端补充或覆盖 Job、
+Build ID、地址、运行 ID 或其他日志来源标识。
+
+`ReadLogs` 是一次有界读取，不负责持有浏览器 SSE 连接。通用 API 层负责轮询、心跳、会话复验、
+写入 deadline、连接准入和终止；执行器必须：
+
+1. 在任何外连前严格解码并验证自己的 external reference，拒绝未知字段和不完整引用；
+2. 把引用中的集成实例标识与同一次读取持有的不可变 client snapshot 比较，不能因热更新把历史
+   任务导向另一实例；
+3. 尊重 context 取消与 deadline，不创建脱离请求生命周期的 goroutine；
+4. 限制上游响应和单个 chunk 的字节数，不等待无界正文或把整份日志读入内存；
+5. 返回有效 UTF-8、无 CR/LF/NUL、最多 256 bytes 且符合本执行器语义的下一 cursor；
+   对有可比顺序的 cursor，执行器必须拒绝回退；
+6. 只有能够确认上游日志结束时才返回 `EOF=true`，暂时没有增量不等于 EOF；
+7. 将上游失败映射为稳定分类，不把原始错误、URL、Header、响应正文或 Secret 写入返回值或日志。
+
+cursor 由执行器定义且是其版本化契约。`jenkins.job@v1` 使用 progressiveText 的无符号十进制
+int64 byte offset；其他执行器不能假设 cursor 是数字。改变已发布执行器的 cursor 语义必须发布
+新的 `uses` 版本或提供显式兼容。
+
+不支持日志的执行器保持 `capabilities.logs=false`，并且不实现空壳 LogReader。步骤尚未取得足以
+定位日志的 external reference 属于“日志未就绪”，也不能伪装为成功空日志。
+
+## 7. 幂等与故障处理
 
 Ares 能保证数据库状态转移只被一个 Worker 认领，但无法跨数据库和外部平台提供 exactly-once。执行器应：
 
@@ -75,7 +113,7 @@ Ares 能保证数据库状态转移只被一个 Worker 认领，但无法跨数�
 5. 外部引用必须包含配置实例或版本标识，避免集成设置热更新后查询到另一套系统。
 6. 只有在能够证明尚未产生任何外部副作用时，`Start` 才能包装返回 `workflow.ErrExecutorUnavailable`。引擎收到该错误会释放步骤 claim 并在后续轮询重新调用 `Start`；请求已经发出、结果不明或已经取得外部引用后绝不能使用它，否则会造成重复执行。
 
-## 7. 注册步骤
+## 8. 注册步骤
 
 执行器在应用启动时注册：
 
@@ -87,7 +125,7 @@ if err := registry.Register(jenkinsstep.New(clientProvider)); err != nil { retur
 
 相同 `uses` 重复注册必须使启动失败。执行器不可通过包级隐式 `init()` 注册，以便测试能够显式构造依赖。
 
-## 8. 测试清单
+## 9. 测试清单
 
 每个执行器至少覆盖：
 
@@ -98,12 +136,16 @@ if err := registry.Register(jenkinsstep.New(clientProvider)); err != nil { retur
 - context 取消和超时；
 - external reference 序列化后可恢复；
 - 幂等键透传；
-- 日志/错误不泄漏 Secret；
+- descriptor 日志能力与 LogReader 实现一致；
+- 日志 cursor 首次读取、增量、空增量、EOF、续传、非法值以及执行器可判定的回退值；
+- external reference 或实例不匹配时在外连前失败；
+- 上游及 chunk 字节上限、context 取消后无残留请求或 goroutine；
+- 日志/错误不泄漏 Secret、external reference、URL 或上游正文；
 - 未配置外部集成时 `Available` 和错误信息明确。
 
 可以使用执行器契约测试套件复用上述断言。集成测试不得要求开发者本机一定安装 Jenkins、Kubernetes、Redis 或 RabbitMQ。
 
-## 9. 评审检查
+## 10. 评审检查
 
 - 核心工作流包没有新增平台专用 import 或状态。
 - 步骤可以插入任意位置且不依赖固定前后步骤名称。
@@ -111,3 +153,4 @@ if err := registry.Register(jenkinsstep.New(clientProvider)); err != nil { retur
 - 同一请求重放不会无提示地产生重复破坏性操作。
 - 所有资源有 timeout，所有 goroutine 可退出。
 - 新能力已写入描述符并在前端按能力呈现。
+- 日志只能从服务端步骤快照定位来源，cursor 重放不产生执行副作用。

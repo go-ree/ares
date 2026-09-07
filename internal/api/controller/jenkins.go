@@ -28,14 +28,17 @@ const sseSessionRevalidatorContextKey = "ares.internal.sse-session-revalidator"
 // for a server-authored semantic error frame as well.
 const sseStreamErrorEvent = "stream-error"
 
-var jenkinsSSEAdmission = newConcurrentAdmission(32, 4)
+var logSSEAdmission = newConcurrentAdmission(32, 4)
 
 var (
 	// ErrSSESessionExpired is returned by a request-scoped revalidation hook
 	// when an authenticated SSE session is no longer usable. The handler emits
 	// auth-expired and closes the stream without exposing the underlying reason.
 	ErrSSESessionExpired = errors.New("SSE session expired")
-	errJenkinsStream     = errors.New("Jenkins log stream failed")
+	// ErrSSEPermissionRevoked distinguishes a still-valid session whose route
+	// permission was revoked. It must not be reported as session expiration.
+	ErrSSEPermissionRevoked = errors.New("SSE permission revoked")
+	errJenkinsStream        = errors.New("Jenkins log stream failed")
 )
 
 // SSESessionRevalidator rechecks the already-authenticated browser session.
@@ -51,6 +54,31 @@ func AttachSSESessionRevalidator(c *gin.Context, revalidator SSESessionRevalidat
 		return
 	}
 	c.Set(sseSessionRevalidatorContextKey, revalidator)
+}
+
+func LegacyJenkinsLogDeprecationHeaders(c *gin.Context) {
+	c.Header("Deprecation", "true")
+	c.Header("Warning", `299 - "Legacy Jenkins log endpoint is deprecated; use task step logs"`)
+	c.Next()
+}
+
+func acquireLogSSE(c *gin.Context) (func(), bool) {
+	principal, ok := CurrentPrincipal(c)
+	if !ok || (principal.UserID <= 0 && strings.TrimSpace(principal.Username) == "") {
+		c.JSON(http.StatusUnauthorized, util.ResponseFailure("未登录或会话已失效", "unauthenticated"))
+		return nil, false
+	}
+	principalKey := "user:" + strconv.FormatInt(principal.UserID, 10)
+	if principal.UserID <= 0 {
+		principalKey = "legacy:" + principal.AuthSource + ":" + principal.Username
+	}
+	release, admitted := logSSEAdmission.acquire(principalKey)
+	if !admitted {
+		c.Header("Retry-After", "5")
+		c.JSON(http.StatusTooManyRequests, util.ResponseFailure("日志流连接过多", "stream_capacity_exceeded"))
+		return nil, false
+	}
+	return release, true
 }
 
 // GetJenkinsNodeStatus
@@ -86,28 +114,6 @@ func GetJenkinsNodeStatus(c *gin.Context) {
 // @Failure 502 {object} util.ResponseTemplate{code=int} "调用链异常"
 // @Router	/api/v1/job/stream/log [get]
 func StreamJenkinsBuildLogHandler(c *gin.Context) {
-	principal, ok := CurrentPrincipal(c)
-	if !ok || (principal.UserID <= 0 && strings.TrimSpace(principal.Username) == "") {
-		c.JSON(http.StatusUnauthorized, util.ResponseFailure("未登录或会话已失效", "unauthenticated"))
-		return
-	}
-	principalKey := "user:" + strconv.FormatInt(principal.UserID, 10)
-	if principal.UserID <= 0 {
-		principalKey = "legacy:" + principal.AuthSource + ":" + principal.Username
-	}
-	releaseAdmission, admitted := jenkinsSSEAdmission.acquire(principalKey)
-	if !admitted {
-		c.Header("Retry-After", "5")
-		c.JSON(http.StatusTooManyRequests, util.ResponseFailure("日志流连接过多", "stream capacity exceeded"))
-		return
-	}
-	defer releaseAdmission()
-
-	snapshot := jenkins.Acquire()
-	if snapshot == nil {
-		c.JSON(503, util.ResponseFailure("Jenkins 集成未启用", "jenkins integration is disabled"))
-		return
-	}
 	var request struct {
 		TaskID  int    `form:"task_id" binding:"required,min=1"`
 		LogType string `form:"log_type" binding:"required,oneof=ci cd"`
@@ -127,6 +133,14 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, util.ResponseFailure("参数错误", "Last-Event-ID 无效"))
 		return
 	}
+	if db.Engine == nil {
+		if !jenkins.IsConfigured() {
+			c.JSON(http.StatusServiceUnavailable, util.ResponseFailure("Jenkins 集成未启用", "jenkins integration is disabled"))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, util.ResponseFailure("查询任务失败", "internal error"))
+		return
+	}
 	var task entity.TaskRecord
 	has, err := db.Engine.Context(c.Request.Context()).
 		Where("task_id = ? AND deleted_at IS NULL", request.TaskID).Get(&task)
@@ -139,8 +153,30 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 		return
 	}
 	SetRequestAuditResourceID(c, strconv.Itoa(request.TaskID))
+	if task.EngineVersion != 1 {
+		c.JSON(http.StatusConflict, util.ResponseFailure("旧版日志接口不适用于通用工作流任务", "legacy_task"))
+		return
+	}
+	// This is a local runtime-state check only and deliberately follows the
+	// engine-version boundary so v2 and unknown tasks can never be routed into
+	// the legacy provider path, even while Jenkins is disabled.
+	if !jenkins.IsConfigured() {
+		c.JSON(http.StatusServiceUnavailable, util.ResponseFailure("Jenkins 集成未启用", "jenkins integration is disabled"))
+		return
+	}
 	if present {
 		request.Start = lastEventID
+	}
+	releaseAdmission, admitted := acquireLogSSE(c)
+	if !admitted {
+		return
+	}
+	defer releaseAdmission()
+
+	snapshot := jenkins.Acquire()
+	if snapshot == nil {
+		c.JSON(http.StatusServiceUnavailable, util.ResponseFailure("Jenkins 集成未启用", "jenkins integration is disabled"))
+		return
 	}
 	query, err := taskBuildLogReference(task, request.LogType, request.Start, snapshot.Address())
 	if err != nil {
@@ -273,6 +309,9 @@ func streamJenkinsSSE(
 				if errors.Is(err, ErrSSESessionExpired) {
 					_ = writeSSEJSON(writer, deadlineController, limits.writeTimeout, "auth-expired", nil,
 						map[string]string{"reason": "session_expired"})
+				} else if errors.Is(err, ErrSSEPermissionRevoked) {
+					_ = writeSSEJSON(writer, deadlineController, limits.writeTimeout, sseStreamErrorEvent, nil,
+						map[string]string{"code": "forbidden"})
 				} else {
 					_ = writeSSEJSON(writer, deadlineController, limits.writeTimeout, sseStreamErrorEvent, nil,
 						map[string]string{"code": "session_revalidation_failed"})
@@ -451,6 +490,9 @@ func resetTimer(timer *time.Timer, duration time.Duration) {
 }
 
 func taskBuildLogReference(task entity.TaskRecord, logType string, start int64, currentAddress string) (*jenkins.BuildLogQuery, error) {
+	if task.EngineVersion != 1 {
+		return nil, fmt.Errorf("任务 %d 使用通用工作流日志接口", task.TaskId)
+	}
 	storedAddress := strings.TrimRight(strings.TrimSpace(task.JenkinsAddress), "/")
 	currentAddress = strings.TrimRight(strings.TrimSpace(currentAddress), "/")
 	if storedAddress == "" {

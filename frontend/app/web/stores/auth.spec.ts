@@ -112,6 +112,20 @@ describe('auth store', () => {
     expect(store.csrfToken).toBeNull();
   });
 
+  it('keeps a confirmed identity when a background session probe is forbidden', async () => {
+    vi.mocked(authService.getSession)
+      .mockReturnValueOnce(response(session))
+      .mockRejectedValueOnce(authFailure(403));
+    const store = useAuthStore();
+    await store.ensureSession();
+
+    await expect(store.refreshSession()).resolves.toBe(false);
+    expect(store.status).toBe('authenticated');
+    expect(store.user?.id).toBe('42');
+    expect(store.csrfToken).toBe('csrf-token');
+    expect(store.invalidationReason).toBeNull();
+  });
+
   it('logs in with credentials then trusts the session endpoint for identity', async () => {
     vi.mocked(authService.login).mockReturnValue(response(session));
     vi.mocked(authService.getSession).mockReturnValue(response(session));

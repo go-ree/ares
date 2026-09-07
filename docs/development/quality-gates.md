@@ -86,13 +86,54 @@ W02 身份与授权边界至少需要以下自动化证据：
 - 分页参数只接受范围内 JSON 整数，字符串、浮点、负数、页长超过 200 及 offset 溢出均在查询前拒绝；API 未分类错误、批量子项、执行器不可用原因和结构化日志均不得回显测试凭据、DSN 或上游正文；
 - 工作流规范 JSON 的等价普通/小数/科学计数值产生同一 checksum；数学整数经真实 MySQL JSON 往返后仍保持整数类型，4096 位边界精确，超限指数在展开前失败且不丢精度；运行期 Demo seed 写入的 12 份工作流也必须逐份通过完整性读取和 schema 兼容检查，避免迁移完成后的初始化数据绕过同一规范化边界；
 - 审计事件追加、脱敏和最小数据库权限，用户禁用/改角色后的会话撤销，以及 `through_id` 固定快照上界在并发追加事件时仍能终止分页；
-- OIDC、Jenkins 与 Kubernetes 拒绝不安全 URL 和全部重定向，`Content-Length` 与 chunked/压缩超限响应均在读取硬上限内关闭且不回显正文；Jenkins progressive log 仍可按 256 KiB 游标分段读取；
+- OIDC、Jenkins 与 Kubernetes 拒绝不安全 URL 和全部重定向，`Content-Length` 与 chunked/压缩超限响应均在读取硬上限内关闭且不回显正文；Jenkins progressive log 保持 256 KiB 上游读取硬上限；
 - HTTP Header/Read/Write/Idle 超时，以及 SSE 在不超过 60 秒且不长于 idle timeout 的间隔重新认证、会话失效后关闭并停止前端重连；
 - 后端 `/metrics` 返回 404；公开 Web 同名路径即使命中 SPA fallback 也不包含 Prometheus/运行指标，健康与 readiness 响应不泄露进程、数据库或业务指标；
 - Vite 开发服务只绑定 loopback，静态资源中间件拒绝编码/双重编码路径穿越、反斜杠、NUL、点目录、符号链接与非 GET/HEAD 请求。
 - Git 仓库按钮只为严格 HTTPS 或可安全转换的 SSH clone 地址生成外链；HTTP、脚本/data scheme、凭据、query、fragment、路径歧义和控制字符均保持纯文本且不能触发导航。
 
+W03 通用步骤日志至少需要以下自动化证据：
+
+- canonical `GET /api/v1/tasks/:task_id/steps/:step_key/logs/stream` 只接受一个可选 `cursor`
+  query；未知/重复字段、非法 task/step、超过 256 bytes、非 UTF-8、CR/LF/NUL cursor 均在读取
+ 任务步骤和外连的适当边界失败；
+- `cursor` 与单值 `Last-Event-ID` 可分别续传，同时存在时只有字节级一致才接受；Jenkins cursor
+  另行拒绝负数、非十进制和 int64 溢出；
+- task/step 组合必须命中同一 v2 任务的步骤快照。客户端提交或篡改 Job、Build ID、地址、uses、
+  external reference 均不能改变日志来源；不存在与不归属统一返回 404；
+- Registry 在 descriptor 日志能力与 LogReader 实现不一致时拒绝注册。步骤列表和任务详情的
+  capabilities 由服务端派生、不持久化；未注册执行器失败关闭为 `logs=false`，临时不可用不改写
+  静态能力；
+- Noop 明确返回 `logs_unsupported`，引用尚未得到 Build ID 返回 `logs_not_ready`；地址或实例不
+  匹配返回 `log_source_mismatch`，且 mock 上游证明这些路径没有网络请求；
+- generic 与 legacy 日志共用按主体/进程的连接 admission，并且必须在首次 LogReader/上游请求前
+  取得；容量满返回 429、`Retry-After` 和 `stream_capacity_exceeded`，不能先访问 Jenkins 再拒绝；
+- `log` 事件的 SSE id 与 payload cursor 一致；`ping` 不推进 cursor；`end` 只接受
+  `completed/max_duration/upstream_idle`；`stream-error` 和 `auth-expired` 只返回稳定 allowlist
+  code/reason，不回显上游正文或内部 message；
+- 会话到期/撤销发送 `auth-expired/session_expired` 并停止全部重连；会话仍有效但 `logs.read`
+  被撤销时发送 `stream-error/forbidden` 并只关闭日志流，不把用户全局登出；
+- Jenkins folder Job、空增量、多 chunk、EOF、offset 回退、响应超限、context 取消和写入阻塞都有
+  测试；从最后确认 cursor 重连不重复、不丢失内容；
+- 第一次执行器读取超过普通 HTTP `WriteTimeout` 时仍能返回完整 SSE，慢速首次失败仍保留稳定的
+  建流前 HTTP 状态与错误码；
+- canonical fetch SSE parser 对拆分 UTF-8、CR/LF/CRLF、多行 data、非法编码、异常 EOF、错误正文和
+  最坏 JSON 转义后的最大合法 frame 保持有界；建流 4xx/5xx 按稳定 code 分类，429 尊重
+  `Retry-After`；
+- 关闭详情、切换任务/步骤、路由卸载、最长时长、上游空闲和权限失效后无残留 transport、fetch、
+  EventSource、timer、goroutine 或上游请求，并纳入相关 Go 包 Race Detector 与前端 Vitest；
+- 旧 `/api/v1/job/stream/log` 和 `/api/v1/deploy/log/stream` 的所有响应都有固定
+  `Deprecation`/`Warning`，仅 v1 历史任务可读；v2 任务必须使用 canonical 接口；
+- 日志内容按纯文本、单步骤与全详情双重有界 buffer、LRU 淘汰和批量渲染，响应、审计、后端日志和前端 console 均扫描不到
+  测试 Secret、external reference、上游 URL 或原始错误。
+
 另外要在隔离 Compose 环境手工验证：匿名访问 Swagger 与业务 API 返回 `401`，读取随机 Bootstrap Token 后可创建首位管理员，第二次 Bootstrap 被拒绝，四角色关键操作符合矩阵，Demo 数据在登录后可见，12 个 AppConfig 的当前工作流均能读取，Jenkins/Kubernetes 关闭时核心功能仍可用；精确重启 API 与 Web 后，会话、Bootstrap 状态、Demo 计数以及 12 份工作流的规范化响应摘要必须保持一致。再修改本地管理员密码，确认旧密码和修改前 Cookie 均失效、新密码登录成功且审计事件存在；注入测试用 `v1` 系统凭据时，应确认界面要求重新录入、启用失败关闭但仍可先禁用/删除。向 OIDC callback 发送仅供测试的标记 `code`/`state` 后，还要确认 Nginx 与后端日志均未出现 query、标记值或 Referer，并验证响应包含 `Cache-Control: no-store` 和 `Referrer-Policy: no-referrer`。只有实际执行并保存命令输出、HTTP 状态和必要的脱敏日志后，才能在 PR 中声称这组 E2E 已通过。
+
+W03 还要在同一隔离入口验证 canonical 动态路径命中专用 SSE 代理配置，响应不被缓冲或 gzip，
+`Last-Event-ID` 能透传；任意数量步骤只按 capabilities 显示日志入口，切换和关闭页面后连接数回落。
+Jenkins 未配置时 Noop 和其他核心功能必须继续正常，日志不可用不能降低 readiness。真实 Jenkins
+凭据不是本地或 CI 门禁前提；Jenkins Adapter 的 folder Job、来源绑定和 progressiveText 行为使用
+受控 fake server 验证，生产二级联调另行记录脱敏证据。
 
 当前后端 Go 源码位于模块根目录和 `internal/`，因此门禁显式使用 `. ./internal/...`，避免误扫 `frontend/node_modules` 中第三方包附带的 Go 示例。后续新增 `cmd/`、`pkg/` 等 Go 源码目录时，必须在同一个 PR 中扩展 `GO_PACKAGES` 并更新本文。
 

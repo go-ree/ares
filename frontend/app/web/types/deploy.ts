@@ -9,10 +9,6 @@ export interface LogItem {
   operator: string;
   message: string;
   auto_deploy: number;
-  ci_job_name: string;
-  cd_job_name: string;
-  ci_build_id: number;
-  cd_build_id: number;
   products: string;
 }
 
@@ -28,10 +24,6 @@ export interface DeployingService {
   operator: string;
   message?: string;
   taskId: number;
-  ciJobName?: string;
-  cdJobName?: string;
-  ciBuildId?: number;
-  cdBuildId?: number;
   products?: string;
   auto_deploy?: number;
 }

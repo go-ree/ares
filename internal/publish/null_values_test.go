@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/go-ree/ares/internal/entity"
+	"github.com/go-ree/ares/internal/workflow"
 )
 
 func TestNormalizeLegacyPipelineParameters(t *testing.T) {
@@ -96,6 +97,33 @@ func TestTaskRecordDoesNotSerializeInternalPipelineInputs(t *testing.T) {
 	if strings.Contains(string(encoded), "pipeline_param") || strings.Contains(string(encoded), "must-not-leak") ||
 		strings.Contains(string(encoded), "jenkins_address") || strings.Contains(string(encoded), "internal-jenkins") {
 		t.Fatalf("internal pipeline inputs leaked through JSON: %s", encoded)
+	}
+}
+
+func TestTaskRecordViewUsesPublicStepProjection(t *testing.T) {
+	record := entity.TaskRecord{TaskId: 7, EngineVersion: 2, Steps: []entity.TaskStepRecord{{
+		StepKey: "build", Uses: "jenkins.job@v1",
+		Config:      json.RawMessage(`{"password":"hidden-config"}`),
+		ExternalRef: json.RawMessage(`{"address":"hidden-address"}`),
+		Output:      json.RawMessage(`{"token":"hidden-output"}`),
+	}}}
+	view := TaskRecordView{TaskRecord: record, Steps: []workflow.TaskStepView{{
+		TaskID: 7, StepKey: "build", Uses: "jenkins.job@v1",
+		Capabilities: workflow.Capabilities{Logs: true},
+	}}}
+	encoded, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized := string(encoded)
+	if strings.Count(serialized, `"steps"`) != 1 ||
+		!strings.Contains(serialized, `"capabilities":{"logs":true,"cancel":false}`) {
+		t.Fatalf("task view = %s", serialized)
+	}
+	for _, secret := range []string{"hidden-config", "hidden-address", "hidden-output"} {
+		if strings.Contains(serialized, secret) {
+			t.Fatalf("task view exposed %q: %s", secret, serialized)
+		}
 	}
 }
 

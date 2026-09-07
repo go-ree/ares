@@ -87,6 +87,14 @@ type CreateBatchPublishResponse struct {
 	TaskRecords  []CreatePublishResult `json:"task_records"`
 }
 
+// TaskRecordView adds live, registry-derived step capabilities without
+// changing the persistent TaskRecord shape. The outer Steps field supersedes
+// the embedded record's internal step slice during JSON serialization.
+type TaskRecordView struct {
+	entity.TaskRecord
+	Steps []workflow.TaskStepView `json:"steps,omitempty"`
+}
+
 // VerifyApp 检验应用信息信息
 func (pm *PublishManager) VerifyApp(req *PublishRequest) (*entity.Apps, error) {
 	var app []entity.Apps
@@ -506,7 +514,7 @@ func (pm *PublishManager) JobStatus() ([]*entity.TaskRecord, error) {
 }
 
 // GetTaskRecordDetails 获取任务详情
-func (pm *PublishManager) GetTaskRecordDetails(taskID int) (*entity.TaskRecord, error) {
+func (pm *PublishManager) GetTaskRecordDetails(taskID int) (*TaskRecordView, error) {
 	var taskRecord entity.TaskRecord
 
 	has, err := db.Engine.Where("task_id = ?", taskID).And("deleted_at IS NULL").Get(&taskRecord)
@@ -517,8 +525,9 @@ func (pm *PublishManager) GetTaskRecordDetails(taskID int) (*entity.TaskRecord, 
 		return nil, newNotFoundError(fmt.Sprintf("未找到任务详情，task_id: %d", taskID))
 	}
 	normalizeTaskRecordNullableText(&taskRecord)
+	var steps []workflow.TaskStepView
 	if taskRecord.EngineVersion >= 2 {
-		taskRecord.Steps, err = release.Shared().Store.ListTaskSteps(context.Background(), taskID)
+		steps, err = release.Shared().Coordinator.ListTaskStepViews(context.Background(), taskID)
 		if err != nil {
 			return nil, fmt.Errorf("查询任务步骤失败：%s", err)
 		}
@@ -536,5 +545,5 @@ func (pm *PublishManager) GetTaskRecordDetails(taskID int) (*entity.TaskRecord, 
 	}
 
 	slog.Info("查询任务详情成功", "task_id", taskID)
-	return &taskRecord, nil
+	return &TaskRecordView{TaskRecord: taskRecord, Steps: steps}, nil
 }

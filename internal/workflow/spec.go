@@ -20,6 +20,10 @@ var (
 	usesPattern    = regexp.MustCompile(`^[a-z][a-z0-9.-]*\.[a-z][a-z0-9.-]*@v[1-9][0-9]*$`)
 )
 
+func ValidStepKey(value string) bool {
+	return stepKeyPattern.MatchString(value)
+}
+
 type ValidationError struct {
 	Problems []string `json:"problems"`
 }

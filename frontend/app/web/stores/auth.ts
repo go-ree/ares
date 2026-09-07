@@ -121,10 +121,21 @@ export const useAuthStore = defineStore('auth', () => {
         return true;
       } catch (error) {
         if (requestGeneration !== sessionGeneration) return isAuthenticated.value;
-        if (
-          axios.isAxiosError(error) &&
-          (error.response?.status === 401 || error.response?.status === 403)
-        ) {
+        if (axios.isAxiosError(error) && error.response?.status === 401) {
+          clearSession('unauthenticated');
+          initializationError.value = null;
+          return false;
+        }
+        if (axios.isAxiosError(error) && error.response?.status === 403) {
+          // A forbidden background probe does not prove that the existing
+          // session is invalid. Keep a previously confirmed identity intact so
+          // callers can withdraw only the affected capability (for example an
+          // SSE log stream) without turning a permission failure into logout.
+          if (previousStatus === 'authenticated') {
+            status.value = 'authenticated';
+            initializationError.value = null;
+            return false;
+          }
           clearSession('unauthenticated');
           initializationError.value = null;
           return false;

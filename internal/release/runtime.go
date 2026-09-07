@@ -16,6 +16,7 @@ type Runtime struct {
 	Store       *workflow.XORMStore
 	Service     *workflow.Service
 	Coordinator *workflow.Coordinator
+	Logs        *workflow.LogService
 }
 
 var (
@@ -37,6 +38,7 @@ func Shared() *Runtime {
 			Store:       store,
 			Service:     workflow.NewService(store, registry),
 			Coordinator: workflow.NewCoordinator(store, registry),
+			Logs:        workflow.NewLogService(store, registry),
 		}
 	})
 	return shared

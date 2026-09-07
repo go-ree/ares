@@ -9,6 +9,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/go-ree/ares/internal/jenkins"
 	"github.com/go-ree/ares/internal/security"
@@ -47,6 +48,11 @@ type jenkinsClient interface {
 	QueueBuildTaskContext(context.Context, string, map[string]string) (int64, string, error)
 	GetQueueBuildStateContext(context.Context, int64) (jenkins.QueueBuildState, error)
 	GetBuildStatusContext(context.Context, string, int64) (string, error)
+}
+
+type jenkinsLogClient interface {
+	Address() string
+	ReadBuildLogChunkContext(context.Context, string, int64, int64) (jenkins.BuildLogPage, error)
 }
 
 type Executor struct {
@@ -89,7 +95,7 @@ func (e *Executor) Descriptor() workflow.Descriptor {
 		Name:         "Jenkins Job",
 		Description:  "触发并跟踪一个可参数化 Jenkins Job",
 		ConfigSchema: append(json.RawMessage(nil), configSchema...),
-		Capabilities: workflow.Capabilities{},
+		Capabilities: workflow.Capabilities{Logs: true},
 	}
 }
 
@@ -124,11 +130,8 @@ func decodeConfig(raw json.RawMessage) (Config, error) {
 		return Config{}, fmt.Errorf("首版只支持 integration=jenkins/default")
 	}
 	config.Job = strings.TrimSpace(config.Job)
-	if config.Job == "" {
-		return Config{}, errors.New("job 不能为空")
-	}
-	if len(config.Job) > 100 {
-		return Config{}, errors.New("job 不能超过 100 个字符")
+	if !validExternalJobName(config.Job) {
+		return Config{}, errors.New("job 必须是 1-100 字节的合法 Jenkins 任务路径")
 	}
 	for key := range config.Parameters {
 		trimmedKey := strings.TrimSpace(key)
@@ -190,27 +193,10 @@ func (e *Executor) Start(ctx context.Context, request workflow.StartRequest) (wo
 }
 
 func (e *Executor) Reconcile(ctx context.Context, request workflow.ReconcileRequest) (workflow.Result, error) {
-	var reference externalReference
-	decoder := json.NewDecoder(bytes.NewReader(request.ExternalReference))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&reference); err != nil {
-		return invalidReferenceResult(request.ExternalReference, "Jenkins 外部引用无效"), nil
+	reference, referenceErr := decodeExternalReference(request.ExternalReference)
+	if referenceErr != nil {
+		return invalidReferenceResult(request.ExternalReference, referenceErr.Error()), nil
 	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return invalidReferenceResult(request.ExternalReference, "Jenkins 外部引用只能包含一个 JSON 对象"), nil
-	}
-	if reference.Integration != "jenkins/default" {
-		return invalidReferenceResult(request.ExternalReference, "Jenkins 外部引用缺少或不支持 integration"), nil
-	}
-	normalizedAddress, err := jenkins.NormalizeAddress(reference.Address)
-	if err != nil || normalizedAddress == "" {
-		return invalidReferenceResult(request.ExternalReference, "Jenkins 外部引用缺少或包含无效的实例地址"), nil
-	}
-	if reference.Job == "" || reference.Job != strings.TrimSpace(reference.Job) || (reference.QueueID <= 0 && reference.BuildID <= 0) {
-		return invalidReferenceResult(request.ExternalReference, "Jenkins 外部引用缺少合法的 job 及 queue_id/build_id"), nil
-	}
-	reference.Address = normalizedAddress
 	// Reconciliation must query through the same immutable snapshot that was
 	// checked against the persisted external reference below.
 	client, release := e.operationClient()
@@ -273,6 +259,104 @@ func (e *Executor) Reconcile(ctx context.Context, request workflow.ReconcileRequ
 		result.Message = "Jenkins 返回无法识别的构建终态"
 	}
 	return result, nil
+}
+
+func (e *Executor) ReadLogs(ctx context.Context, request workflow.LogRequest) (workflow.LogChunk, error) {
+	reference, err := decodeExternalReference(request.ExternalReference)
+	if err != nil {
+		return workflow.LogChunk{}, fmt.Errorf("%w: invalid Jenkins external reference", workflow.ErrLogSourceMismatch)
+	}
+	if reference.BuildID <= 0 {
+		return workflow.LogChunk{}, workflow.ErrLogsNotReady
+	}
+	start, err := parseLogCursor(request.Cursor)
+	if err != nil {
+		return workflow.LogChunk{}, err
+	}
+	client, release := e.operationClient()
+	defer release()
+	if client == nil {
+		return workflow.LogChunk{}, workflow.ErrExecutorUnavailable
+	}
+	logClient, ok := client.(jenkinsLogClient)
+	if !ok {
+		return workflow.LogChunk{}, errors.New("Jenkins client does not support progressive logs")
+	}
+	// The operation lock makes this comparison and the following request
+	// atomic with respect to a settings hot-switch. No network request may
+	// happen before the persisted instance identity has matched.
+	if logClient.Address() != reference.Address {
+		return workflow.LogChunk{}, workflow.ErrLogSourceMismatch
+	}
+	page, err := logClient.ReadBuildLogChunkContext(ctx, reference.Job, reference.BuildID, start)
+	if err != nil {
+		return workflow.LogChunk{}, err
+	}
+	return workflow.LogChunk{
+		Content: page.Content, Cursor: strconv.FormatInt(page.NextStart, 10), EOF: page.EOF,
+	}, nil
+}
+
+func parseLogCursor(cursor string) (int64, error) {
+	if cursor == "" {
+		return 0, nil
+	}
+	if len(cursor) > 19 {
+		return 0, workflow.ErrInvalidLogCursor
+	}
+	for _, character := range []byte(cursor) {
+		if character < '0' || character > '9' {
+			return 0, workflow.ErrInvalidLogCursor
+		}
+	}
+	value, err := strconv.ParseUint(cursor, 10, 63)
+	if err != nil {
+		return 0, workflow.ErrInvalidLogCursor
+	}
+	return int64(value), nil
+}
+
+func decodeExternalReference(raw json.RawMessage) (externalReference, error) {
+	var reference externalReference
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&reference); err != nil {
+		return externalReference{}, errors.New("Jenkins 外部引用无效")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return externalReference{}, errors.New("Jenkins 外部引用只能包含一个 JSON 对象")
+	}
+	if reference.Integration != "jenkins/default" {
+		return externalReference{}, errors.New("Jenkins 外部引用缺少或不支持 integration")
+	}
+	normalizedAddress, err := jenkins.NormalizeAddress(reference.Address)
+	if err != nil || normalizedAddress == "" {
+		return externalReference{}, errors.New("Jenkins 外部引用缺少或包含无效的实例地址")
+	}
+	if !validExternalJobName(reference.Job) ||
+		reference.QueueID < 0 || reference.BuildID < 0 || (reference.QueueID == 0 && reference.BuildID == 0) {
+		return externalReference{}, errors.New("Jenkins 外部引用缺少合法的 job 及 queue_id/build_id")
+	}
+	reference.Address = normalizedAddress
+	return reference, nil
+}
+
+func validExternalJobName(job string) bool {
+	if job == "" || len(job) > 100 || job != strings.TrimSpace(job) {
+		return false
+	}
+	for _, character := range job {
+		if unicode.IsControl(character) {
+			return false
+		}
+	}
+	for _, segment := range strings.Split(job, "/") {
+		if segment == "" || segment == "." || segment == ".." || segment != strings.TrimSpace(segment) {
+			return false
+		}
+	}
+	return true
 }
 
 func invalidReferenceResult(reference json.RawMessage, message string) workflow.Result {

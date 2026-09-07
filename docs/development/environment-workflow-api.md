@@ -14,11 +14,13 @@
 }
 ```
 
-以下系统管理接口都要求请求头 `X-Ares-Admin-Token`：
+以下系统管理接口使用服务端会话和细粒度权限；Cookie 鉴权的写请求还必须通过 Origin 与 CSRF
+校验。过渡期 `X-Ares-Admin-Token` 只有部署者显式启用兼容开关时才可用于原有系统管理接口，
+Web 不读取或发送它：
 
-- `GET /api/v1/system/environments`：读取完整目录；
-- `POST /api/v1/system/environments`：创建环境，body 为 `code/name/enabled/sort_order`；
-- `PATCH /api/v1/system/environments/:code`：修改 `name/enabled/sort_order`。
+- `GET /api/v1/system/environments`：需要 `system-settings:read`，读取完整目录；
+- `POST /api/v1/system/environments`：需要 `system-settings:write`，创建环境，body 为 `code/name/enabled/sort_order`；
+- `PATCH /api/v1/system/environments/:code`：需要 `system-settings:write`，修改 `name/enabled/sort_order`。
 
 环境代码创建后不可修改，服务端会 trim、转小写并校验 `^[a-z][a-z0-9._-]{0,62}$`。停用不删除 AppConfig、Kubernetes 配置或历史任务，只阻止创建新 AppConfig 和发起新发布。
 
@@ -36,10 +38,10 @@
 
 `GET /api/v1/pipeline-step-types` 返回注册表中的步骤描述符、JSON Schema、可选能力和当前可用性。外部集成暂时不可用并不影响保存一份结构合法的流程，但发起发布时会被明确拒绝。
 
-工作流读取和写入都要求 `X-Ares-Admin-Token`：
+工作流读取和写入由服务端权限控制：
 
-- `GET /api/v1/app-configs/:config_id/workflow`：读取当前不可变版本；首次未配置返回 404；
-- `PUT /api/v1/app-configs/:config_id/workflow`：以当前 `revision` 发布新版本并切换绑定；并发冲突返回 409，规范错误返回 422。
+- `GET /api/v1/app-configs/:config_id/workflow`：需要 `workflows:read`，读取当前不可变版本；首次未配置返回 404。没有 `workflows:write` 时，步骤私有配置统一返回空对象；
+- `PUT /api/v1/app-configs/:config_id/workflow`：需要 `workflows:write`，以当前 `revision` 发布新版本并切换绑定；并发冲突返回 409，规范错误返回 422，Cookie 请求还需 CSRF。
 
 ```json
 {
@@ -69,4 +71,31 @@
 
 发布接口只持久化并返回 `queued` 任务，后台有界 Worker 负责推进步骤，HTTP 请求不会等待 Jenkins 等外部系统。批量请求必须包含 `1..100` 个条目。`extra_data` 只接受 JSON object，并会成为内部运行快照，因此常见 password/token/secret/credential/authorization/cookie/key 等敏感键（包括 camelCase 与复数写法）会被递归拒绝；任务 API 不回显完整发布输入。键名检测是纵深防护而非 Secret 管理方案，调用方仍不得在值中夹带凭据。
 
-任务详情 `GET /api/v1/deploy/publish/query/:task_id` 会为 v2 任务附带 `steps`；也可调用 `GET /api/v1/deploy/publish/query/:task_id/steps`。响应包含步骤名称、执行器、位置、状态、失败策略、时间和消息，不返回执行器私有配置、外部引用或内部步骤输出。执行器输出只用于后续步骤的数据传递；未来如需展示，应通过单独的鉴权与字段级公开输出契约提供。
+任务详情 `GET /api/v1/deploy/publish/query/:task_id` 会为 v2 任务附带 `steps`；也可调用
+`GET /api/v1/deploy/publish/query/:task_id/steps`。响应包含步骤名称、执行器、位置、状态、失败
+策略、时间、消息和服务端从当前 Registry 派生的 `capabilities`，不返回执行器私有配置、外部引用
+或内部步骤输出。capabilities 不持久化；执行器未注册时按无能力失败关闭，执行器暂时不可用则不改变
+其静态能力。执行器输出只用于后续步骤的数据传递；未来如需展示，应通过单独的鉴权与字段级公开
+输出契约提供。
+
+## 5. 通用步骤日志
+
+拥有 `logs.read` 的用户通过以下 canonical SSE 入口读取 v2 步骤日志：
+
+```http
+GET /api/v1/tasks/:task_id/steps/:step_key/logs/stream?cursor=:cursor
+```
+
+客户端只提交 Ares 任务、步骤和可选 cursor，不能提交执行器、Job、Build ID、地址或 external
+reference。服务端确认步骤归属后，从任务快照读取 `uses/external_ref` 并分派 Registry 中的
+`LogReader`。只有步骤响应的 `capabilities.logs=true` 时才展示入口；无日志能力返回明确的
+`logs_unsupported`，不能把 200 空文本解释为不支持。
+
+query 只允许一个非空 `cursor`；省略表示首次读取。Ares Web 通过 query 手工续传，其他合规客户端
+也可使用单值 `Last-Event-ID`；两者同时存在时必须一致。
+SSE 使用 `log`、`ping`、`end`、`stream-error`、`auth-expired` 事件。完整 payload、错误分类、
+cursor 边界及前端生命周期见[通用任务步骤日志 API](task-step-logs-api.md)。
+
+旧 `/api/v1/job/stream/log` 与 `/api/v1/deploy/log/stream` 已 deprecated，只为
+`engine_version=1` 的历史任务保留。v2 任务不得使用固定 `ci/cd` 日志路由；当前 Web 只通过隔离的
+task-scoped adapter 为 v1 历史任务调用该兼容入口。
