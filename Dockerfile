@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.26.8-alpine3.23 AS builder
+FROM golang:1.27.1-alpine3.23 AS builder
 
 ARG GOPROXY=https://proxy.golang.org,direct
 ENV CGO_ENABLED=0 \
@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     go build -trimpath -ldflags="-s -w" -o /out/ares ./main.go
 
-FROM alpine:3.23.5
+FROM alpine:3.24.1
 
 RUN apk upgrade --no-cache \
     && apk add --no-cache ca-certificates tzdata \
