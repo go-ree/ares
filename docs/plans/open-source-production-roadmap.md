@@ -1,7 +1,7 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W01 仓库实现已合并、管理项阻塞；W02～W04 已合并，W05 AppConfig 核心的幂等发布进入设计
+> - 当前状态：W01 仓库实现已合并、管理项阻塞；W02～W04 已合并，W05 AppConfig 核心的幂等发布已完成本地实现与验收，准备创建 PR
 > - 基线版本：`main@aa37282`，已合并 [PR #34：实现执行器通用步骤日志](https://github.com/go-ree/ares/pull/34)
 > - 最后更新：2026-09-07
 
@@ -55,7 +55,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 - W02 已用服务端会话、RBAC 与审计替换浏览器伪身份；本地全量门禁、真实部署验收、PR 自动化和主线合并均已完成。
 - W03 已完成执行器通用步骤日志、前端任意步骤展示和受限的 v1 只读兼容，[PR #34](https://github.com/go-ree/ares/pull/34) 已合并。
 - W04 已落地独立 migrator、运行时只读检查和显式 schema manifest，本地 MySQL 8.4 中断、并发、历史库与 Compose 验收矩阵及 GitHub 检查均已通过，[PR #22](https://github.com/go-ree/ares/pull/22) 已合并。
-- 发布接口尚无客户端幂等键和统一预检，重复请求可能创建不同任务。
+- W05 已在当前分支实现 AppConfig canonical 预检、原子幂等创建和统一发布编排器；能力尚待 PR 合并进入主线。
 - Worker 只有步骤认领 CAS，没有完整 owner、lease、fencing 和多副本公平调度。
 - `attempt`、超时基础字段已经存在，但尚无完整重试、退避、取消与尝试历史。
 - 工作流能够拒绝常见敏感字段，但还不能安全解析版本化 Secret 引用。
@@ -79,7 +79,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 | W02    | 认证、RBAC 与审计            | W01                | `已完成` | [PR #23](https://github.com/go-ree/ares/pull/23) | 可信身份、服务端授权、真实发布人和审计记录      |
 | W03    | 通用步骤日志                 | W02                | `已完成` | [PR #34](https://github.com/go-ree/ares/pull/34) | 通过 `task_id + step_key` 读取任意执行器日志    |
 | W04    | 数据库迁移机制收敛           | W01                | `已完成` | [PR #22](https://github.com/go-ree/ares/pull/22) | 存量结构只由版本化 migration 改变               |
-| W05    | AppConfig 核心的幂等发布     | W02、W04           | `设计中` | 待创建                                           | 预检、`config_id` 发布、`Idempotency-Key`       |
+| W05    | AppConfig 核心的幂等发布     | W02、W04           | `开发中` | 待创建                                           | 预检、`config_id` 发布、`Idempotency-Key`       |
 | W06    | 多副本 Worker 与租约         | W04、W05           | `未开始` | 待创建                                           | 公平领取、lease、fencing、故障接管              |
 | W07    | 重试、取消、超时与尝试历史   | W03、W06           | `未开始` | 待创建                                           | 可控的失败恢复和执行器取消能力                  |
 | W08    | Secret Resolver 与密钥轮换   | W02、W04           | `未开始` | 待创建                                           | 工作流只保存 Secret 引用，运行时按版本解析      |
@@ -267,13 +267,13 @@ W02 与 W04 依赖 W01 已交付的仓库内质量基线，可以并行设计；
 
 范围：
 
-- [ ] 新增以 `config_id + ref + inputs` 为核心的发布 API。
-- [ ] 支持 `Idempotency-Key`，保存作用域、规范化请求摘要和创建结果。
-- [ ] 相同 key、相同请求返回原任务；相同 key、不同请求返回 409。
-- [ ] 旧 `app_name + env` 接口改为兼容适配层并复用同一领域服务。
-- [ ] 新增单个和批量发布预检，返回环境、AppConfig、工作流版本及步骤可用性。
-- [ ] 合并重复的发布 UI；选择环境后展示可发布应用及不可发布原因。
-- [ ] 批量发布逐项返回结果，进度基于真实步骤状态而不是固定 CI/CD 百分比。
+- [x] 新增以 `config_id + ref + inputs` 为核心的发布 API。
+- [x] 支持 `Idempotency-Key`，保存作用域、规范化请求摘要和创建结果。
+- [x] 相同 key、相同请求返回原任务；相同 key、不同请求返回 409。
+- [x] 旧 `app_name + env` 接口改为兼容适配层并复用同一领域服务。
+- [x] 新增单个和批量发布预检，返回环境、AppConfig、工作流版本及步骤可用性。
+- [x] 合并重复的发布 UI；选择环境后展示可发布应用及不可发布原因。
+- [x] 批量发布逐项返回结果，进度基于真实步骤状态而不是固定 CI/CD 百分比。
 
 非目标：不在本阶段增加自动审批、定时发布或跨应用 DAG。
 
@@ -423,6 +423,7 @@ W02 与 W04 依赖 W01 已交付的仓库内质量基线，可以并行设计；
 | D-005 | 多副本交付语义     | `待固化` | Ares 提供 at-least-once；执行器必须配合幂等键，lease 使用 fencing 防陈旧写                                                 | W05、W06、W07 |
 | D-006 | 中间件策略         | `待固化` | 默认不依赖 Redis/RabbitMQ；通知与队列能力通过可选 Adapter 扩展                                                             | W09、W10      |
 | D-007 | 通用步骤日志协议   | `已确定` | [ADR-0003](../architecture/decisions/0003-generic-step-logs.md)：服务端步骤快照分派、opaque cursor 与统一鉴权 SSE          | W03、W07、W09 |
+| D-008 | 发布命令幂等协议   | `已确定` | [ADR-0004](../architecture/decisions/0004-appconfig-idempotent-releases.md)：AppConfig 目标、原子 receipt 与冻结请求重放    | W05、W06      |
 
 每项架构决策形成 ADR 后，在本表补充文档链接并将状态更新为 `已确定`。若推翻既有结论，必须新增决策记录，不覆盖历史原因。
 
@@ -434,7 +435,7 @@ W02 与 W04 依赖 W01 已交付的仓库内质量基线，可以并行设计；
 | R-002 | Xorm 可能隐式修改存量表结构              | 高       | W04 已收敛为版本化迁移；升级前备份并禁止旧镜像写升级库         | 已关闭     |
 | R-003 | 多副本会重复 Reconcile running 步骤      | 高       | W06 引入 lease 和 fencing；完成前整个 Ares Worker 保持单副本   | 开放       |
 | R-004 | v2 日志仍依赖 Jenkins 兼容字段           | 中       | [PR #34](https://github.com/go-ree/ares/pull/34) 已实现并合并通用日志能力 | 已关闭     |
-| R-005 | 重试请求可能重复创建发布任务             | 中       | W05 引入 `Idempotency-Key` 和请求摘要                          | 开放       |
+| R-005 | 重试请求可能重复创建发布任务             | 中       | W05 已实现 `Idempotency-Key`、请求摘要和原子 receipt           | 待合并     |
 | R-006 | 工作流不能安全消费 Secret                | 中       | W08 上线前继续拒绝敏感字段，不允许保存明文凭据                 | 开放       |
 | R-007 | 开发/构建依赖存在已知漏洞或版本漂移      | 中       | W01 固定工具链、升级依赖并建立自动扫描                         | 开放       |
 | R-008 | 前端缺少真实的自动化交互测试             | 中       | W02 已补身份、权限和用户管理关键路径测试及 Compose E2E         | 已关闭     |
@@ -445,9 +446,22 @@ W02 与 W04 依赖 W01 已交付的仓库内质量基线，可以并行设计；
 
 ## 8. 下一步
 
-[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。[PR #22](https://github.com/go-ree/ares/pull/22)、[PR #23](https://github.com/go-ree/ares/pull/23) 与 [PR #34](https://github.com/go-ree/ares/pull/34) 已分别把迁移、身份权限和通用步骤日志纳入主线。当前进入 W05：先固定 AppConfig 核心发布、预检、幂等键、请求摘要、并发事务、兼容适配和批量逐项结果契约，再根据文档实施代码与迁移。
+[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。[PR #22](https://github.com/go-ree/ares/pull/22)、[PR #23](https://github.com/go-ree/ares/pull/23) 与 [PR #34](https://github.com/go-ree/ares/pull/34) 已分别把迁移、身份权限和通用步骤日志纳入主线。W05 已完成本地实现、MySQL 8.4 与隔离 Compose 验收，下一步是完成中文 PR 自动化并等待维护者合并；合并前不启动依赖 W05 schema/语义的 W06 生产代码。
 
 ## 9. 进度记录
+
+### 2026-09-07：W05 实现完成并通过本地验收
+
+- 分支与状态：`codex/w05-idempotent-publish` 基于 `main@aa37282`；W05 的 ADR、实现和本地完成定义均已满足，当前仍为 `开发中`，中文 PR 待创建且不会由开发任务直接合并；创建 PR 后再进入 `待验收`。
+- 领域与 API：新增 AppConfig 目标列表、单项/批量预检和单项/批量 canonical 创建；输入固定为 `config_id/ref/inputs/expected_workflow_version_id`，BIGINT 在 wire 上使用十进制字符串。旧 `app_name + env` 路由只作为带弃用头的适配层，并复用同一原子发布服务。
+- 幂等与事务：epoch 6 新增任务 AppConfig 稳定引用和两张永久只增 receipt 表。主体 ID、版本化语义操作和 key 摘要构成作用域，请求摘要使用精确规范 JSON；reservation、任务、步骤快照和有序 items 在一个事务提交。32 路同 key 并发只产生一份结果，跨 engine/进程重放不重复创建，异参冲突、3 秒占用等待、死锁重试、部分步骤/结果插入故障和提交确认丢失均有真实 MySQL 回归。带 key 的 legacy 重试优先按主体与操作读取历史 receipt，并以其中的有序 Config ID 校验历史 alias；目标软删除或活动 alias 歧义都不会遮蔽已提交结果，异参、换序和跨主体请求不会误重放。
+- 一致性与权限：创建按全局顺序锁定 AppConfig、应用、环境、工作流绑定/定义和域名；四类域名写入也先锁父 AppConfig，MySQL 8.4 `READ COMMITTED` 下已证明不能穿透发布快照。不可变工作流版本只读且校验 checksum，每个步骤重新执行当前 Executor `Validate`；执行器可用性只读取进程内快照，持锁期间不访问 Jenkins 或 Kubernetes 网络。运行账号对 receipt 仅有 `SELECT/INSERT`，无 `UPDATE/DELETE/DDL`。
+- 前端：删除重复批量页面，单发/批量共用 Release Composer；动态环境下按服务端资格选择 AppConfig，只提交本次预检通过项并冻结精确工作流版本。提交后对响应计数、顺序、目标、版本和结果不变量严格校验；网络、畸形响应、401/403/408/429、网关 5xx、处理中或结果未知均保留原 key/body。冻结内容绑定原 `actor_user_id`，重新认证后先刷新会话并核对主体，不允许换账号重放。提交中/结果不明确时阻止路由离开并提示页面卸载风险。
+- 自动化门禁：全量 Go test/vet、关键包 Race Detector、模块校验、Swagger 可重复生成、govulncheck（0 个可达漏洞）、工作流与 Compose 配置检查、MySQL 8.4 完整 migration/最小账号矩阵均通过；前端 ESLint、Prettier、Type Check、生产构建、完整 Vitest 与 npm high/critical 审计均通过。
+- Compose E2E：第二套全新空卷最终 `238/238` 条断言通过，确认 epoch 6、22 张受管表、3 个应用/4 个环境/12 个 AppConfig 及 12 套两步 Noop Demo；Jenkins/Kubernetes 均停用且没有 Redis/RabbitMQ 服务或变量时，单发、批量混合结果和 Noop 执行正常。API 重启后单发/批量 receipt 逐字节重放，数据库保持 6 个任务、12 个步骤、2 个 receipt、3 个 item，无重复；14 份公开 JSON 和全栈日志未发现 inputs、执行器私有配置、external reference、幂等 key 或测试凭据。隔离容器、网络、卷和临时文件已清理。
+- 数据库与回退：epoch 6 是只增但与 epoch 5 不兼容的迁移。部署顺序为停旧写入并备份、执行 migrator/manifest/权限门禁、升级后端、再升级 canonical 前端；不能让旧镜像写 epoch 6。必须回退时冻结写入并恢复迁移前备份及匹配的 epoch 5 应用，不提供 down migration。
+- 独立复核：后端事务/迁移、前端状态机、安全边界和 Compose 部署分别进行终审；发现的 legacy N+1、历史回执被当前 alias 删除/歧义遮蔽、域名幻读、存储工作流配置再校验、畸形成功响应、导航丢失冻结请求及会话主体切换风险均已修复并加入回归测试。
+- 关联 PR：待创建；创建后回填链接与 GitHub 自动化结果。
 
 ### 2026-09-07：W03 合并校准与 W05 设计启动
 
