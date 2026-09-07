@@ -461,7 +461,7 @@ W02 与 W04 依赖 W01 已交付的仓库内质量基线，可以并行设计；
 - Compose E2E：第二套全新空卷最终 `238/238` 条断言通过，确认 epoch 6、22 张受管表、3 个应用/4 个环境/12 个 AppConfig 及 12 套两步 Noop Demo；Jenkins/Kubernetes 均停用且没有 Redis/RabbitMQ 服务或变量时，单发、批量混合结果和 Noop 执行正常。API 重启后单发/批量 receipt 逐字节重放，数据库保持 6 个任务、12 个步骤、2 个 receipt、3 个 item，无重复；14 份公开 JSON 和全栈日志未发现 inputs、执行器私有配置、external reference、幂等 key 或测试凭据。隔离容器、网络、卷和临时文件已清理。
 - 数据库与回退：epoch 6 是只增但与 epoch 5 不兼容的迁移。部署顺序为停旧写入并备份、执行 migrator/manifest/权限门禁、升级后端、再升级 canonical 前端；不能让旧镜像写 epoch 6。必须回退时冻结写入并恢复迁移前备份及匹配的 epoch 5 应用，不提供 down migration。
 - 独立复核：后端事务/迁移、前端状态机、安全边界和 Compose 部署分别进行终审；发现的 legacy N+1、历史回执被当前 alias 删除/歧义遮蔽、域名幻读、存储工作流配置再校验、畸形成功响应、导航丢失冻结请求及会话主体切换风险均已修复并加入回归测试。
-- 关联 PR：[PR #35：实现 AppConfig 原子幂等发布与统一编排](https://github.com/go-ree/ares/pull/35)；GitHub 自动化结果确认后继续回填。
+- 关联 PR：[PR #35：实现 AppConfig 原子幂等发布与统一编排](https://github.com/go-ree/ares/pull/35)；实现批次 `9bb1277` 的 GitHub 自动化 `8/8` 通过，包括后端、前端、Race、Go 漏洞、工作流、MySQL 迁移与恢复、MySQL 最小权限账号以及 Compose 镜像与供应链检查。
 
 ### 2026-09-07：W03 合并校准与 W05 设计启动
 
