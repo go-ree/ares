@@ -1,7 +1,7 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W01 仓库实现已合并、管理项阻塞；W02、W04 已合并，W03 通用步骤日志已完成本地验收、中文 PR 待创建
+> - 当前状态：W01 仓库实现已合并、管理项阻塞；W02、W04 已合并，W03 通用步骤日志进入 PR 验收
 > - 基线版本：`main@2349e4a`，已合并 [PR #23：建立服务端认证、RBAC 与审计边界](https://github.com/go-ree/ares/pull/23)
 > - 最后更新：2026-09-07
 
@@ -77,7 +77,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 | W00    | 后续路线与进度机制           | PR #4              | `已完成` | [PR #5](https://github.com/go-ree/ares/pull/5)   | 建立本计划、状态口径和验收规则                  |
 | W01    | 开源工程与质量门禁           | W00                | `阻塞`   | [PR #6](https://github.com/go-ree/ares/pull/6)   | 开源治理文件、Required Checks、依赖与供应链基线 |
 | W02    | 认证、RBAC 与审计            | W01                | `已完成` | [PR #23](https://github.com/go-ree/ares/pull/23) | 可信身份、服务端授权、真实发布人和审计记录      |
-| W03    | 通用步骤日志                 | W02                | `开发中` | 待创建                                           | 通过 `task_id + step_key` 读取任意执行器日志    |
+| W03    | 通用步骤日志                 | W02                | `待验收` | [PR #34](https://github.com/go-ree/ares/pull/34) | 通过 `task_id + step_key` 读取任意执行器日志    |
 | W04    | 数据库迁移机制收敛           | W01                | `已完成` | [PR #22](https://github.com/go-ree/ares/pull/22) | 存量结构只由版本化 migration 改变               |
 | W05    | AppConfig 核心的幂等发布     | W02、W04           | `未开始` | 待创建                                           | 预检、`config_id` 发布、`Idempotency-Key`       |
 | W06    | 多副本 Worker 与租约         | W04、W05           | `未开始` | 待创建                                           | 公平领取、lease、fencing、故障接管              |
@@ -433,7 +433,7 @@ W02 与 W04 依赖 W01 已交付的仓库内质量基线，可以并行设计；
 | R-001 | 浏览器身份可伪造，公开部署后缺少权限边界 | 高       | W02 已建立真实认证、RBAC 与审计                                | 已关闭     |
 | R-002 | Xorm 可能隐式修改存量表结构              | 高       | W04 已收敛为版本化迁移；升级前备份并禁止旧镜像写升级库         | 已关闭     |
 | R-003 | 多副本会重复 Reconcile running 步骤      | 高       | W06 引入 lease 和 fencing；完成前整个 Ares Worker 保持单副本   | 开放       |
-| R-004 | v2 日志仍依赖 Jenkins 兼容字段           | 中       | W03 已实现执行器通用日志能力；待关联 PR 合并后关闭              | 开放       |
+| R-004 | v2 日志仍依赖 Jenkins 兼容字段           | 中       | [PR #34](https://github.com/go-ree/ares/pull/34) 已实现通用日志；待合并后关闭 | 开放       |
 | R-005 | 重试请求可能重复创建发布任务             | 中       | W05 引入 `Idempotency-Key` 和请求摘要                          | 开放       |
 | R-006 | 工作流不能安全消费 Secret                | 中       | W08 上线前继续拒绝敏感字段，不允许保存明文凭据                 | 开放       |
 | R-007 | 开发/构建依赖存在已知漏洞或版本漂移      | 中       | W01 固定工具链、升级依赖并建立自动扫描                         | 开放       |
@@ -445,13 +445,13 @@ W02 与 W04 依赖 W01 已交付的仓库内质量基线，可以并行设计；
 
 ## 8. 下一步
 
-[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。[PR #22](https://github.com/go-ree/ares/pull/22) 已合并，W04 的 schema 所有权、独立 migrator 与启动兼容性检查成为主线基线。[PR #23](https://github.com/go-ree/ares/pull/23) 已合并，W02 的身份、会话、RBAC、可信操作主体、审计、前端权限界面和 Compose 初始化成为主线能力。W03 的实现、本地门禁与隔离 Compose 验收已经完成；当前先创建中文 PR 并等待维护者验收，合并后再进入 W05 的 AppConfig 核心幂等发布。
+[PR #6](https://github.com/go-ree/ares/pull/6) 已合并，W01 的仓库内实现与自动化验收完成，但仍受许可证、两类私密报告渠道和 `main` 保护规则三类仓库管理条件阻塞。[PR #22](https://github.com/go-ree/ares/pull/22) 已合并，W04 的 schema 所有权、独立 migrator 与启动兼容性检查成为主线基线。[PR #23](https://github.com/go-ree/ares/pull/23) 已合并，W02 的身份、会话、RBAC、可信操作主体、审计、前端权限界面和 Compose 初始化成为主线能力。W03 的实现、本地门禁与隔离 Compose 验收已经完成，[PR #34](https://github.com/go-ree/ares/pull/34) 正在等待维护者验收；合并后再进入 W05 的 AppConfig 核心幂等发布。
 
 ## 9. 进度记录
 
 ### 2026-09-07：W03 实现完成并通过本地验收
 
-- 分支与状态：`codex/w03-generic-step-logs` 基于 `main@2349e4a`，W03 范围清单与本地完成定义均已满足；中文 PR 待创建，因此工作包仍保持 `开发中`，R-004 待主线合并后关闭。
+- 分支与状态：`codex/w03-generic-step-logs` 基于 `main@2349e4a`，W03 范围清单与本地完成定义均已满足；已创建中文 [PR #34](https://github.com/go-ree/ares/pull/34)，工作包进入 `待验收`，R-004 待主线合并后关闭。
 - 后端：新增 `task_id + step_key + opaque cursor` 的鉴权 SSE、Registry `LogReader` 能力和服务端任务步骤精确查找；Jenkins Adapter 只使用快照中的实例地址、Job 与 Build 引用，支持 folder Job、UTF-8 安全分块和 256 KiB 上限。Noop 明确声明不支持日志，任务公开投影不再暴露步骤配置、外部引用和输出。
 - 安全与兼容：canonical 与两个 v1 旧路由共享全局/用户连接配额、周期会话复验、最大时长、上游空闲期限、滚动写 deadline、取消和脱敏审计；旧路由仅服务可验证的 v1 任务并返回弃用头。首次 provider read 在提交 200 前执行，普通 HTTP `WriteTimeout` 被安全清除，但仍受日志流 context 上限约束，稳定错误继续保留 HTTP 状态。
 - 前端：按服务端返回的任意步骤与 `capabilities.logs` 展示入口，使用同源 Fetch SSE 读取非 2xx 状态并续传；覆盖严格 UTF-8/SSE 解析、登录失效复验、5 次重连上限、浏览器静默期限、单步骤 2 MiB/10000 行及当前详情 8 MiB LRU 总缓存上限，关闭、切换、卸载或权限撤销都会释放连接与定时器。
@@ -460,7 +460,7 @@ W02 与 W04 依赖 W01 已交付的仓库内质量基线，可以并行设计；
 - Compose E2E：隔离项目从全新 volume 构建并健康启动，生成 3 个应用、4 个环境、12 个 AppConfig/工作流及 8 个初始步骤；一次性 Bootstrap、登录/登出、真实 v2 Noop 发布、canonical 错误矩阵、v1 弃用兼容、Nginx SSE 禁缓冲/禁 gzip、恶意参数脱敏和 MySQL/API/Web 重启持久化共 63 项断言通过。测试结束后容器、网络、卷和临时凭据目录残留均为 0。
 - 独立复核：后端、前端、安全、部署与提交卫生分别进行只读审查；已确认的日志标识泄露、空块游标/空闲计时、非规范 task ID、首次慢读 deadline、网络重连会话复验、错误体取消和多步骤缓存总量问题均已修复并加入回归测试。
 - 兼容与回退：canonical API 为增量能力；旧路由保留一版 v1 只读兼容但拒绝 v2。前后端需协调发布；回退时先回退前端再回退后端，无需恢复数据库。
-- 关联 PR：待创建。
+- 关联 PR：[PR #34](https://github.com/go-ree/ares/pull/34)；本地自动化、隔离 Compose 与五路独立复核均已通过，等待维护者验收，不直接合并。
 
 ### 2026-09-07：W02 合并校准与 W03 设计启动
 

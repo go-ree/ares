@@ -1,6 +1,6 @@
 # 可插拔 CI/CD 实施路线
 
-> 状态：PR #4 已交付阶段 A～C 与阶段 D 主链路；W03 已完成阶段 D 通用步骤日志的实现与本地验收，中文 PR 待创建。阶段 E 后续工作统一在 [开源化与生产能力开发计划](open-source-production-roadmap.md) 中跟踪。
+> 状态：PR #4 已交付阶段 A～C 与阶段 D 主链路；W03 已完成阶段 D 通用步骤日志的实现与本地验收，[PR #34](https://github.com/go-ree/ares/pull/34) 待维护者验收。阶段 E 后续工作统一在 [开源化与生产能力开发计划](open-source-production-roadmap.md) 中跟踪。
 
 本文是 [可插拔 CI/CD 与动态环境架构](../architecture/pluggable-cicd.md) 的实施计划。每一阶段都要求可独立验证、可升级并支持前向修复；数据库迁移后的旧镜像降级不等于安全回退，旧数据删除不属于当前阶段。
 
@@ -61,7 +61,7 @@
 - [x] 把旧两 Job 组合幂等导入为流程版本并绑定 AppConfig。
 - [x] 新任务进入 v2；旧轮询器只续跑带可验证实例绑定的 v1 任务，历史未绑定在途任务 fail-closed。
 - [x] 旧 CI/CD 字段只作为兼容投影。
-- [x] 日志改为通过任务步骤读取，限制任意 Job 访问（W03 已完成本地验收，待关联 PR 合并）。
+- [x] 日志改为通过任务步骤读取，限制任意 Job 访问（W03 [PR #34](https://github.com/go-ree/ares/pull/34) 已完成本地验收，待合并）。
 
 验收：包含 Jenkins 步骤的任务行为与旧发布一致；关闭 Jenkins 后仅该类流程不可运行，Ares 其余功能和 Noop 流程正常。
 
@@ -89,7 +89,7 @@ PR #4 以形成可运行的第一条纵向闭环为目标，已经交付：
 5. 前端提供动态环境选择与基础步骤编辑能力。
 6. 补齐单元测试、前端构建和 Docker Compose 空库验证。
 
-可靠重试、取消和更多第三方执行器进入 [后续开发计划](open-source-production-roadmap.md)，不以不完整实现扩大首版风险；通用步骤日志已由 W03 完成实现与本地验收，待关联 PR 合并进入主线。
+可靠重试、取消和更多第三方执行器进入 [后续开发计划](open-source-production-roadmap.md)，不以不完整实现扩大首版风险；通用步骤日志已由 W03 [PR #34](https://github.com/go-ree/ares/pull/34) 完成实现与本地验收，待合并进入主线。
 
 ## 4. 数据迁移与发布步骤
 
