@@ -2527,7 +2527,7 @@ const docTemplate = `{
                                             "type": "integer"
                                         },
                                         "result": {
-                                            "$ref": "#/definitions/entity.TaskRecord"
+                                            "$ref": "#/definitions/publish.TaskRecordView"
                                         }
                                     }
                                 }
@@ -2605,7 +2605,7 @@ const docTemplate = `{
                                         "result": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/entity.TaskStepRecord"
+                                                "$ref": "#/definitions/workflow.TaskStepView"
                                             }
                                         }
                                     }
@@ -3680,6 +3680,197 @@ const docTemplate = `{
                         "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/tasks/{task_id}/steps/{step_key}/logs/stream": {
+            "get": {
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Publish"
+                ],
+                "summary": "按工作流任务步骤流式读取日志",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "工作流步骤 key",
+                        "name": "step_key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "不透明日志游标；不得与不同值的 Last-Event-ID 同时提交",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "断线续传游标；不得与不同值的 cursor 同时提交",
+                        "name": "Last-Event-ID",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE events: log, ping, end, stream-error, auth-expired",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "请求或游标无效",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "任务或步骤不存在",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "日志尚未就绪或来源不匹配",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "步骤不支持日志",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "429": {
+                        "description": "日志流容量已满",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "502": {
+                        "description": "上游日志响应错误",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "503": {
+                        "description": "步骤执行器不可用",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
@@ -4890,6 +5081,87 @@ const docTemplate = `{
                 }
             }
         },
+        "publish.TaskRecordView": {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string"
+                },
+                "applet_images": {
+                    "description": "新增：任务图片（仅对外返回）",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.AppletImage"
+                    }
+                },
+                "auto_deploy": {
+                    "type": "integer"
+                },
+                "branch": {
+                    "type": "string"
+                },
+                "cd_build_id": {
+                    "type": "integer"
+                },
+                "cd_job_name": {
+                    "type": "string"
+                },
+                "ci_build_id": {
+                    "type": "integer"
+                },
+                "ci_job_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "deleted_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "engine_version": {
+                    "type": "integer"
+                },
+                "env": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "products": {
+                    "type": "string"
+                },
+                "publisher": {
+                    "type": "string"
+                },
+                "publisher_user_id": {
+                    "type": "integer"
+                },
+                "rundeck_app_name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/workflow.TaskStepView"
+                    }
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "workflow_version_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "publish.UpsertTaskAppletImagesRequest": {
             "type": "object",
             "properties": {
@@ -4997,6 +5269,65 @@ const docTemplate = `{
                 },
                 "with": {
                     "type": "object"
+                }
+            }
+        },
+        "workflow.TaskStepView": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "capabilities": {
+                    "$ref": "#/definitions/workflow.Capabilities"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "on_failure": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "step_key": {
+                    "type": "string"
+                },
+                "step_record_id": {
+                    "type": "integer"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "uses": {
+                    "type": "string"
+                },
+                "workflow_version_id": {
+                    "type": "integer"
                 }
             }
         },

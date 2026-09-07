@@ -77,6 +77,27 @@ func (u unavailableExecutor) Descriptor() Descriptor {
 
 func (u unavailableExecutor) Available(context.Context) error { return errors.New("not configured") }
 
+type falselyDeclaredLogExecutor struct{ *NoopExecutor }
+
+func (e falselyDeclaredLogExecutor) Descriptor() Descriptor {
+	descriptor := e.NoopExecutor.Descriptor()
+	descriptor.Uses = "test.false-logs@v1"
+	descriptor.Capabilities.Logs = true
+	return descriptor
+}
+
+type undeclaredLogExecutor struct{ *NoopExecutor }
+
+func (e undeclaredLogExecutor) Descriptor() Descriptor {
+	descriptor := e.NoopExecutor.Descriptor()
+	descriptor.Uses = "test.undeclared-logs@v1"
+	return descriptor
+}
+
+func (e undeclaredLogExecutor) ReadLogs(context.Context, LogRequest) (LogChunk, error) {
+	return LogChunk{}, nil
+}
+
 func TestRegistryRejectsDuplicateAndReportsAvailability(t *testing.T) {
 	registry := NewRegistry()
 	if err := registry.Register(NewNoopExecutor()); err != nil {
@@ -94,6 +115,16 @@ func TestRegistryRejectsDuplicateAndReportsAvailability(t *testing.T) {
 	}
 	if descriptors[1].Available || descriptors[1].UnavailableReason != "not configured" {
 		t.Fatalf("availability = %#v", descriptors[1])
+	}
+}
+
+func TestRegistryRejectsCapabilityImplementationDrift(t *testing.T) {
+	registry := NewRegistry()
+	if err := registry.Register(falselyDeclaredLogExecutor{NewNoopExecutor()}); err == nil || !strings.Contains(err.Error(), "logs") {
+		t.Fatalf("declared-only logs capability error = %v", err)
+	}
+	if err := registry.Register(undeclaredLogExecutor{NewNoopExecutor()}); err == nil || !strings.Contains(err.Error(), "logs") {
+		t.Fatalf("implemented-only logs capability error = %v", err)
 	}
 }
 

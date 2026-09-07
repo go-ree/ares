@@ -3,6 +3,9 @@ package workflow
 import (
 	"context"
 	"encoding/json"
+	"time"
+
+	"github.com/go-ree/ares/internal/entity"
 )
 
 const (
@@ -51,6 +54,43 @@ type StepSpec struct {
 type Capabilities struct {
 	Logs   bool `json:"logs"`
 	Cancel bool `json:"cancel"`
+}
+
+// TaskStepView is the public projection of a persisted task-step snapshot.
+// Executor config, external references, and opaque output are deliberately
+// absent. Capabilities are derived from the live registry, never persisted.
+type TaskStepView struct {
+	StepRecordID      int64        `json:"step_record_id"`
+	TaskID            int          `json:"task_id"`
+	WorkflowVersionID int64        `json:"workflow_version_id"`
+	StepKey           string       `json:"step_key"`
+	Name              string       `json:"name"`
+	Uses              string       `json:"uses"`
+	Category          string       `json:"category,omitempty"`
+	Position          int          `json:"position"`
+	TimeoutSeconds    int          `json:"timeout_seconds"`
+	OnFailure         string       `json:"on_failure"`
+	Status            string       `json:"status"`
+	Attempt           int          `json:"attempt"`
+	Message           string       `json:"message,omitempty"`
+	StartedTime       *time.Time   `json:"started_at,omitempty"`
+	FinishedTime      *time.Time   `json:"finished_at,omitempty"`
+	CreatedTime       time.Time    `json:"created_at"`
+	UpdatedTime       time.Time    `json:"updated_at"`
+	Capabilities      Capabilities `json:"capabilities"`
+}
+
+func taskStepView(record entity.TaskStepRecord, capabilities Capabilities) TaskStepView {
+	return TaskStepView{
+		StepRecordID: record.StepRecordID, TaskID: record.TaskID,
+		WorkflowVersionID: record.WorkflowVersionID, StepKey: record.StepKey,
+		Name: record.Name, Uses: record.Uses, Category: record.Category,
+		Position: record.Position, TimeoutSeconds: record.TimeoutSeconds,
+		OnFailure: record.OnFailure, Status: record.Status, Attempt: record.Attempt,
+		Message: record.Message, StartedTime: record.StartedTime,
+		FinishedTime: record.FinishedTime, CreatedTime: record.CreatedTime,
+		UpdatedTime: record.UpdatedTime, Capabilities: capabilities,
+	}
 }
 
 type Descriptor struct {

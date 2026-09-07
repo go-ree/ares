@@ -71,6 +71,8 @@ type routePolicy struct {
 	Action          string
 	ResourceType    string
 	ResourceParam   string
+	ResourceParams  []string
+	ResourceQuery   string
 	SensitiveRead   bool
 	AllowLegacy     bool
 	SSE             bool
@@ -183,7 +185,7 @@ func (runtime Runtime) require(policy routePolicy) gin.HandlerFunc {
 					return revalidateErr
 				}
 				if policy.Permission != "" && !revalidated.Principal.Has(policy.Permission) {
-					return controller.ErrSSESessionExpired
+					return controller.ErrSSEPermissionRevoked
 				}
 				return nil
 			})
@@ -305,6 +307,16 @@ func (runtime Runtime) appendAudit(ctx context.Context, c *gin.Context, policy r
 func resourceID(c *gin.Context, policy routePolicy) string {
 	if discovered := controller.RequestAuditResourceID(c); discovered != "" {
 		return discovered
+	}
+	if len(policy.ResourceParams) > 0 {
+		parts := make([]string, 0, len(policy.ResourceParams))
+		for _, parameter := range policy.ResourceParams {
+			parts = append(parts, c.Param(parameter))
+		}
+		return strings.Join(parts, "/")
+	}
+	if policy.ResourceQuery != "" {
+		return c.Query(policy.ResourceQuery)
 	}
 	if policy.ResourceParam == "" {
 		return ""

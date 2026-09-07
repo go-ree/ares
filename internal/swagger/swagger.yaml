@@ -780,6 +780,61 @@ definitions:
         description: 总页数
         type: integer
     type: object
+  publish.TaskRecordView:
+    properties:
+      app_name:
+        type: string
+      applet_images:
+        description: 新增：任务图片（仅对外返回）
+        items:
+          $ref: '#/definitions/entity.AppletImage'
+        type: array
+      auto_deploy:
+        type: integer
+      branch:
+        type: string
+      cd_build_id:
+        type: integer
+      cd_job_name:
+        type: string
+      ci_build_id:
+        type: integer
+      ci_job_name:
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      deleted_at:
+        format: date-time
+        type: string
+      engine_version:
+        type: integer
+      env:
+        type: string
+      message:
+        type: string
+      products:
+        type: string
+      publisher:
+        type: string
+      publisher_user_id:
+        type: integer
+      rundeck_app_name:
+        type: string
+      status:
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/workflow.TaskStepView'
+        type: array
+      task_id:
+        type: integer
+      updated_at:
+        format: date-time
+        type: string
+      workflow_version_id:
+        type: integer
+    type: object
   publish.UpsertTaskAppletImagesRequest:
     properties:
       applet_images:
@@ -852,6 +907,45 @@ definitions:
         type: string
       with:
         type: object
+    type: object
+  workflow.TaskStepView:
+    properties:
+      attempt:
+        type: integer
+      capabilities:
+        $ref: '#/definitions/workflow.Capabilities'
+      category:
+        type: string
+      created_at:
+        type: string
+      finished_at:
+        type: string
+      message:
+        type: string
+      name:
+        type: string
+      on_failure:
+        type: string
+      position:
+        type: integer
+      started_at:
+        type: string
+      status:
+        type: string
+      step_key:
+        type: string
+      step_record_id:
+        type: integer
+      task_id:
+        type: integer
+      timeout_seconds:
+        type: integer
+      updated_at:
+        type: string
+      uses:
+        type: string
+      workflow_version_id:
+        type: integer
     type: object
   workflow.WorkflowSpec:
     properties:
@@ -2276,7 +2370,7 @@ paths:
                 code:
                   type: integer
                 result:
-                  $ref: '#/definitions/entity.TaskRecord'
+                  $ref: '#/definitions/publish.TaskRecordView'
               type: object
         "400":
           description: 请求错误
@@ -2318,7 +2412,7 @@ paths:
                   type: integer
                 result:
                   items:
-                    $ref: '#/definitions/entity.TaskStepRecord'
+                    $ref: '#/definitions/workflow.TaskStepView'
                   type: array
               type: object
       summary: 获取发布任务的通用步骤快照
@@ -2927,6 +3021,109 @@ paths:
       summary: 修改用户角色或启用状态
       tags:
       - System
+  /api/v1/tasks/{task_id}/steps/{step_key}/logs/stream:
+    get:
+      parameters:
+      - description: 任务 ID
+        in: path
+        name: task_id
+        required: true
+        type: integer
+      - description: 工作流步骤 key
+        in: path
+        name: step_key
+        required: true
+        type: string
+      - description: 不透明日志游标；不得与不同值的 Last-Event-ID 同时提交
+        in: query
+        name: cursor
+        type: string
+      - description: 断线续传游标；不得与不同值的 cursor 同时提交
+        in: header
+        name: Last-Event-ID
+        type: string
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: 'SSE events: log, ping, end, stream-error, auth-expired'
+          schema:
+            type: string
+        "400":
+          description: 请求或游标无效
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "404":
+          description: 任务或步骤不存在
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "409":
+          description: 日志尚未就绪或来源不匹配
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "422":
+          description: 步骤不支持日志
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "429":
+          description: 日志流容量已满
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "500":
+          description: 内部错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "502":
+          description: 上游日志响应错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "503":
+          description: 步骤执行器不可用
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 按工作流任务步骤流式读取日志
+      tags:
+      - Publish
   /home:
     get:
       responses:

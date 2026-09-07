@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-ree/ares/internal/api/util"
 	"github.com/go-ree/ares/internal/auth"
-	"github.com/go-ree/ares/internal/entity"
 	"github.com/go-ree/ares/internal/workflow"
 
 	"github.com/gin-gonic/gin"
@@ -21,10 +20,15 @@ const maxWorkflowRequestBytes = 512 * 1024
 type WorkflowController struct {
 	service     *workflow.Service
 	coordinator *workflow.Coordinator
+	logs        *workflow.LogService
 }
 
-func NewWorkflowController(service *workflow.Service, coordinator *workflow.Coordinator) *WorkflowController {
-	return &WorkflowController{service: service, coordinator: coordinator}
+func NewWorkflowController(service *workflow.Service, coordinator *workflow.Coordinator, logs ...*workflow.LogService) *WorkflowController {
+	controller := &WorkflowController{service: service, coordinator: coordinator}
+	if len(logs) > 0 {
+		controller.logs = logs[0]
+	}
+	return controller
 }
 
 // NewDefaultWorkflowController wires the built-in registry and XORM store. A
@@ -36,6 +40,7 @@ func NewDefaultWorkflowController(engine *xorm.Engine) *WorkflowController {
 	return NewWorkflowController(
 		workflow.NewService(store, registry),
 		workflow.NewCoordinator(store, registry),
+		workflow.NewLogService(store, registry),
 	)
 }
 
@@ -138,20 +143,20 @@ func (wc *WorkflowController) PutAppConfigWorkflow(c *gin.Context) {
 // @Tags Publish
 // @Summary 获取发布任务的通用步骤快照
 // @Param task_id path int true "任务 ID"
-// @Success 200 {object} util.ResponseTemplate{code=int,result=[]entity.TaskStepRecord}
+// @Success 200 {object} util.ResponseTemplate{code=int,result=[]workflow.TaskStepView}
 // @Router /api/v1/deploy/publish/query/{task_id}/steps [get]
 func (wc *WorkflowController) GetTaskSteps(c *gin.Context) {
 	taskID, ok := positivePathID(c, "task_id", "任务ID")
 	if !ok {
 		return
 	}
-	steps, err := wc.coordinator.ListTaskSteps(c.Request.Context(), taskID)
+	steps, err := wc.coordinator.ListTaskStepViews(c.Request.Context(), taskID)
 	if err != nil {
 		writeWorkflowError(c, "查询任务步骤失败", err)
 		return
 	}
 	if steps == nil {
-		steps = make([]entity.TaskStepRecord, 0)
+		steps = make([]workflow.TaskStepView, 0)
 	}
 	c.JSON(http.StatusOK, util.ResponseSuccessful("查询成功", steps))
 }

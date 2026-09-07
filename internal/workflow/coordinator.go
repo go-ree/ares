@@ -39,6 +39,28 @@ func (c *Coordinator) ListTaskSteps(ctx context.Context, taskID int) ([]entity.T
 	return c.store.ListTaskSteps(ctx, taskID)
 }
 
+func (c *Coordinator) ListTaskStepViews(ctx context.Context, taskID int) ([]TaskStepView, error) {
+	steps, err := c.ListTaskSteps(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return c.TaskStepViews(steps), nil
+}
+
+// TaskStepViews projects internal snapshots into public views and derives
+// capabilities only from the live executor registry.
+func (c *Coordinator) TaskStepViews(steps []entity.TaskStepRecord) []TaskStepView {
+	views := make([]TaskStepView, len(steps))
+	for index, step := range steps {
+		capabilities := Capabilities{}
+		if c != nil && c.registry != nil {
+			capabilities, _ = c.registry.Capabilities(step.Uses)
+		}
+		views[index] = taskStepView(step, capabilities)
+	}
+	return views
+}
+
 // Advance performs at most one executor call. Database CAS in ClaimStep makes
 // concurrent workers safe: losers observe claimed=false and do no external IO.
 func (c *Coordinator) Advance(ctx context.Context, taskID int) (AdvanceResult, error) {

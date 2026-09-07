@@ -632,6 +632,68 @@ func TestServerMarkedStreamingFailureOverridesCommittedHTTP200Audit(t *testing.T
 	}
 }
 
+func TestSensitiveReadAuditCapturesCompositeRouteResourceBeforeHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service, store, sessions := newAuthBoundary(t)
+	router := gin.New()
+	router.GET("/tasks/:task_id/steps/:step_key/stream", Runtime{Auth: service}.require(routePolicy{
+		Permission: auth.PermissionLogsRead, Action: "task.step-log.read",
+		ResourceType: "task-step-log", ResourceParams: []string{"task_id", "step_key"},
+		SensitiveRead: true,
+	}), func(c *gin.Context) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, authenticatedRequest(t, service, sessions[auth.RoleViewer],
+		http.MethodGet, "/tasks/42/steps/build/stream", ""))
+	store.mu.Lock()
+	events := append([]auth.AuditEvent(nil), store.audits...)
+	store.mu.Unlock()
+	if recorder.Code != http.StatusBadRequest || len(events) != 2 ||
+		events[0].ResourceID != "42/build" || events[1].ResourceID != "42/build" ||
+		events[0].Result != "authorized" || events[1].Result != "failed" {
+		t.Fatalf("composite audit = status:%d events:%#v", recorder.Code, events)
+	}
+}
+
+func TestSSERevalidationDistinguishesPermissionRevocationFromSessionExpiration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service, store, sessions := newAuthBoundary(t)
+	router := gin.New()
+	var got error
+	router.GET("/stream", Runtime{Auth: service}.require(routePolicy{
+		Permission: auth.PermissionApplicationsWrite, Action: "application.stream", SSE: true,
+	}), func(c *gin.Context) {
+		store.mu.Lock()
+		for key, session := range store.sessions {
+			if session.User.ID == 2 {
+				session.User.Role = auth.RoleViewer
+				store.sessions[key] = session
+			}
+		}
+		store.mu.Unlock()
+		value, ok := c.Get("ares.internal.sse-session-revalidator")
+		if !ok {
+			t.Fatal("SSE revalidator was not attached")
+		}
+		revalidator, ok := value.(controller.SSESessionRevalidator)
+		if !ok {
+			t.Fatalf("SSE revalidator type = %T", value)
+		}
+		got = revalidator(c.Request.Context())
+		c.Status(http.StatusNoContent)
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, authenticatedRequest(t, service, sessions[auth.RoleDeveloper],
+		http.MethodGet, "/stream", ""))
+	if recorder.Code != http.StatusNoContent || !errors.Is(got, controller.ErrSSEPermissionRevoked) ||
+		errors.Is(got, controller.ErrSSESessionExpired) {
+		t.Fatalf("status=%d revalidation=%v", recorder.Code, got)
+	}
+}
+
 func TestDeniedRequestIsAuditedWithoutCredentials(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service, store, _ := newAuthBoundary(t)

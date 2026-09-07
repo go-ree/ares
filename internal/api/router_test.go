@@ -25,6 +25,7 @@ func TestRouterRegistersWithoutPanic(t *testing.T) {
 
 	foundAppsQuery := false
 	foundCompatibilityRoute := false
+	foundTaskStepLogs := false
 	for _, route := range router.Routes() {
 		if route.Method == "POST" && route.Path == "/api/v1/apps/query" {
 			foundAppsQuery = true
@@ -32,12 +33,18 @@ func TestRouterRegistersWithoutPanic(t *testing.T) {
 		if route.Method == "GET" && route.Path == "/api/v1/compatible/metadata/relation/all" {
 			foundCompatibilityRoute = true
 		}
+		if route.Method == "GET" && route.Path == "/api/v1/tasks/:task_id/steps/:step_key/logs/stream" {
+			foundTaskStepLogs = true
+		}
 	}
 	if !foundAppsQuery {
 		t.Fatal("expected apps query route to be registered")
 	}
 	if !foundCompatibilityRoute {
 		t.Fatal("expected historical compatibility route to be registered")
+	}
+	if !foundTaskStepLogs {
+		t.Fatal("expected generic task step log route to be registered")
 	}
 }
 

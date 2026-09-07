@@ -363,6 +363,46 @@ func (s *XORMStore) ListTaskSteps(ctx context.Context, taskID int) ([]entity.Tas
 	return rows, nil
 }
 
+func (s *XORMStore) GetTaskStepLogSource(ctx context.Context, taskID int, stepKey string) (TaskStepLogSource, error) {
+	if s == nil || s.engine == nil {
+		return TaskStepLogSource{}, fmt.Errorf("数据库未初始化")
+	}
+	var row entity.TaskStepRecord
+	has, err := s.engine.Context(ctx).
+		Table(entity.TableTaskStepRecords).Alias("step").
+		Select("step.task_id, step.step_key, step.uses, step.status, step.external_ref").
+		Join("INNER", []string{entity.TableTaskRecord, "task"}, "task.task_id = step.task_id").
+		Where("task.task_id = ? AND step.step_key = ?", taskID, stepKey).
+		And("task.deleted_at IS NULL AND task.engine_version >= ?", 2).
+		And("task.workflow_version_id = step.workflow_version_id").
+		Get(&row)
+	if err != nil {
+		return TaskStepLogSource{}, err
+	}
+	if !has {
+		// An authorized caller may receive the stable compatibility signal for
+		// an existing v1 task, while deleted, unknown, and malformed historical
+		// rows remain indistinguishable from a missing resource.
+		var task entity.TaskRecord
+		hasTask, taskErr := s.engine.Context(ctx).
+			Table(entity.TableTaskRecord).
+			Select("engine_version").
+			Where("task_id = ? AND deleted_at IS NULL", taskID).
+			Get(&task)
+		if taskErr != nil {
+			return TaskStepLogSource{}, taskErr
+		}
+		if hasTask && task.EngineVersion == 1 {
+			return TaskStepLogSource{}, ErrLegacyTask
+		}
+		return TaskStepLogSource{}, fmt.Errorf("任务步骤不存在，task_id=%d step_key=%s: %w", taskID, stepKey, ErrNotFound)
+	}
+	return TaskStepLogSource{
+		TaskID: row.TaskID, StepKey: row.StepKey, Uses: row.Uses, Status: row.Status,
+		ExternalReference: append([]byte(nil), row.ExternalRef...),
+	}, nil
+}
+
 func (s *XORMStore) ClaimStep(ctx context.Context, stepRecordID int64) (bool, error) {
 	now := time.Now()
 	updated, err := s.engine.Context(ctx).

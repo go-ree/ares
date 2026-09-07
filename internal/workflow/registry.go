@@ -29,6 +29,14 @@ func (r *Registry) Register(executor Executor) error {
 	if strings.TrimSpace(descriptor.Name) == "" {
 		return fmt.Errorf("执行器 %s 的 name 不能为空", descriptor.Uses)
 	}
+	_, implementsLogs := executor.(LogReader)
+	if descriptor.Capabilities.Logs != implementsLogs {
+		return fmt.Errorf("执行器 %s 的 logs 能力声明与实现不一致", descriptor.Uses)
+	}
+	_, implementsCancel := executor.(Canceller)
+	if descriptor.Capabilities.Cancel != implementsCancel {
+		return fmt.Errorf("执行器 %s 的 cancel 能力声明与实现不一致", descriptor.Uses)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.executors[descriptor.Uses]; exists {
@@ -36,6 +44,23 @@ func (r *Registry) Register(executor Executor) error {
 	}
 	r.executors[descriptor.Uses] = executor
 	return nil
+}
+
+func (r *Registry) LogReader(uses string) (LogReader, bool) {
+	executor, ok := r.Get(uses)
+	if !ok {
+		return nil, false
+	}
+	reader, ok := executor.(LogReader)
+	return reader, ok
+}
+
+func (r *Registry) Capabilities(uses string) (Capabilities, bool) {
+	executor, ok := r.Get(uses)
+	if !ok {
+		return Capabilities{}, false
+	}
+	return executor.Descriptor().Capabilities, true
 }
 
 func (r *Registry) Get(uses string) (Executor, bool) {

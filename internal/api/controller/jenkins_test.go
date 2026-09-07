@@ -20,7 +20,7 @@ func TestTaskBuildLogReferenceUsesPersistedTaskIdentity(t *testing.T) {
 	task := entity.TaskRecord{
 		TaskId: 17, CiJobName: "folder/build", CiBuildId: 42,
 		CdJobName: "folder/deploy", CdBuildId: 73,
-		JenkinsAddress: "https://jenkins.example/",
+		JenkinsAddress: "https://jenkins.example/", EngineVersion: 1,
 	}
 	ci, err := taskBuildLogReference(task, "ci", 100, "https://jenkins.example")
 	if err != nil {
@@ -44,6 +44,16 @@ func TestTaskBuildLogReferenceUsesPersistedTaskIdentity(t *testing.T) {
 	}
 	if _, err := taskBuildLogReference(task, "ci", 0, "https://jenkins-new.example"); err == nil {
 		t.Fatal("a different Jenkins instance should be rejected")
+	}
+	v2 := task
+	v2.EngineVersion = 2
+	if _, err := taskBuildLogReference(v2, "ci", 0, "https://jenkins.example"); err == nil {
+		t.Fatal("v2 task must not bypass the generic LogReader endpoint")
+	}
+	unknown := task
+	unknown.EngineVersion = 0
+	if _, err := taskBuildLogReference(unknown, "ci", 0, "https://jenkins.example"); err == nil {
+		t.Fatal("unknown engine version must fail closed")
 	}
 }
 

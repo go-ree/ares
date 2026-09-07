@@ -1,9 +1,11 @@
 package jenkins
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestBuildRuntimeRejectsInvalidAddress(t *testing.T) {
@@ -263,6 +266,45 @@ func TestGetProgressiveTextBoundsEachUpstreamResponse(t *testing.T) {
 	}
 }
 
+func TestGetProgressiveTextDoesNotSplitUTF8AtResponseLimit(t *testing.T) {
+	payload := strings.Repeat("x", int(maxProgressiveTextResponseBytes)-1) + "雪" + "tail"
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/api/json" {
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = response.Write([]byte(`{"jobs":[]}`))
+			return
+		}
+		start, err := strconv.ParseInt(request.URL.Query().Get("start"), 10, 64)
+		if err != nil || start < 0 || start > int64(len(payload)) {
+			response.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		response.Header().Set("X-Text-Size", strconv.Itoa(len(payload)))
+		response.Header().Set("X-More-Data", "false")
+		_, _ = response.Write([]byte(payload[start:]))
+	}))
+	t.Cleanup(server.Close)
+	runtime, err := BuildRuntime(context.Background(), RuntimeConfig{Address: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, next, more, err := getProgressiveText(context.Background(), runtime, "demo", 42, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !utf8.ValidString(first) || next != maxProgressiveTextResponseBytes-1 || !more {
+		t.Fatalf("first bytes=%d next=%d more=%v valid=%v", len(first), next, more, utf8.ValidString(first))
+	}
+	second, final, more, err := getProgressiveText(context.Background(), runtime, "demo", 42, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !utf8.ValidString(second) || first+second != payload || final != int64(len(payload)) || more {
+		t.Fatalf("second bytes=%d final=%d more=%v valid=%v", len(second), final, more, utf8.ValidString(second))
+	}
+}
+
 func TestGetProgressiveTextRejectsInvalidCursorHeaders(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -348,6 +390,40 @@ func TestStreamJenkinsBuildLogReportsFinalFetchFailure(t *testing.T) {
 		}
 	default:
 		t.Fatal("final progressiveText failure was not sent to the stream error channel")
+	}
+}
+
+func TestLegacyStreamLogFailureRedactsStoredJobAndBuildIdentifiers(t *testing.T) {
+	const jobMarker = "sensitive-folder/sensitive-job-marker"
+	const buildMarker int64 = 987654321
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		if request.URL.Path == "/api/json" {
+			_, _ = response.Write([]byte(`{"jobs":[]}`))
+			return
+		}
+		http.NotFound(response, request)
+	}))
+	t.Cleanup(server.Close)
+	runtime, err := BuildRuntime(context.Background(), RuntimeConfig{Address: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	succeeded := (&ClientSnapshot{runtime: runtime}).StreamJenkinsBuildLog(
+		context.Background(),
+		&BuildLogQuery{JobName: jobMarker, BuildId: buildMarker},
+		make(chan BuildLogChunk, 1), make(chan error, 1),
+	)
+	logs := output.String()
+	if succeeded || strings.Contains(logs, jobMarker) || strings.Contains(logs, strconv.FormatInt(buildMarker, 10)) ||
+		!strings.Contains(logs, "operation=get_job") {
+		t.Fatalf("unsafe legacy stream log output: %q", logs)
 	}
 }
 
@@ -489,6 +565,40 @@ func TestQueueBuildTaskContextAllowsDisabledCrumbIssuer(t *testing.T) {
 	}
 }
 
+func TestQueueBuildTaskContextFailureRedactsJobIdentifierFromLogs(t *testing.T) {
+	const jobMarker = "sensitive-folder/sensitive-build-marker"
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/json":
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = response.Write([]byte(`{"jobs":[]}`))
+		case "/crumbIssuer/api/json":
+			http.NotFound(response, request)
+		default:
+			connection, _, err := response.(http.Hijacker).Hijack()
+			if err == nil {
+				_ = connection.Close()
+			}
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	runtime, err := BuildRuntime(context.Background(), RuntimeConfig{Address: server.URL})
+	if err != nil {
+		t.Fatalf("BuildRuntime() error = %v", err)
+	}
+	var output bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	_, _, err = (&ClientSnapshot{runtime: runtime}).QueueBuildTaskContext(context.Background(), jobMarker, nil)
+	logs := output.String()
+	if err == nil || strings.Contains(logs, jobMarker) || !strings.Contains(logs, "operation=queue_build") {
+		t.Fatalf("unsafe Jenkins trigger log output: %q (error = %v)", logs, err)
+	}
+}
+
 func TestQueueBuildTaskContextCrumbTransportFailureDoesNotPanic(t *testing.T) {
 	for _, test := range []struct {
 		name    string
@@ -603,5 +713,102 @@ func TestGetBuildStatusContextSupportsFolderJobWithSingleBuildPoll(t *testing.T)
 	}
 	if got := buildPolls.Load(); got != 1 {
 		t.Fatalf("build polls = %d, want exactly one", got)
+	}
+}
+
+func TestReadBuildLogChunkContextSupportsFolderAndFinalDrain(t *testing.T) {
+	var atTerminalCursor atomic.Int32
+	var buildPolls atomic.Int32
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/json":
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = response.Write([]byte(`{"jobs":[]}`))
+		case "/job/folder/job/demo/api/json":
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(response, `{"name":"demo","url":%q}`, server.URL+"/job/folder/job/demo")
+		case "/job/folder/job/demo/42/api/json":
+			buildPolls.Add(1)
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = response.Write([]byte(`{"number":42,"building":false,"result":"SUCCESS"}`))
+		case "/job/folder/job/demo/42/logText/progressiveText":
+			response.Header().Set("Content-Type", "text/plain")
+			switch request.URL.Query().Get("start") {
+			case "0":
+				response.Header().Set("X-Text-Size", "5")
+				response.Header().Set("X-More-Data", "false")
+				_, _ = response.Write([]byte("line\n"))
+			case "5":
+				if atTerminalCursor.Add(1) == 1 {
+					response.Header().Set("X-Text-Size", "5")
+					response.Header().Set("X-More-Data", "false")
+					return
+				}
+				response.Header().Set("X-Text-Size", "10")
+				response.Header().Set("X-More-Data", "false")
+				_, _ = response.Write([]byte("tail\n"))
+			default:
+				http.Error(response, "bad cursor", http.StatusBadRequest)
+			}
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	t.Cleanup(server.Close)
+	runtime, err := BuildRuntime(context.Background(), RuntimeConfig{Address: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &ClientSnapshot{runtime: runtime}
+	first, err := client.ReadBuildLogChunkContext(context.Background(), "folder/demo", 42, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Content != "line\n" || first.NextStart != 5 || first.EOF || buildPolls.Load() != 0 {
+		t.Fatalf("first=%#v buildPolls=%d", first, buildPolls.Load())
+	}
+	final, err := client.ReadBuildLogChunkContext(context.Background(), "folder/demo", 42, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if final.Content != "tail\n" || final.NextStart != 10 || !final.EOF || buildPolls.Load() != 1 {
+		t.Fatalf("final=%#v buildPolls=%d", final, buildPolls.Load())
+	}
+}
+
+func TestReadBuildLogChunkContextKeepsRunningEmptyBuildOpen(t *testing.T) {
+	var progressiveReads atomic.Int32
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/json":
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = response.Write([]byte(`{"jobs":[]}`))
+		case "/job/demo/api/json":
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(response, `{"name":"demo","url":%q}`, server.URL+"/job/demo")
+		case "/job/demo/42/api/json":
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = response.Write([]byte(`{"number":42,"building":true}`))
+		case "/job/demo/42/logText/progressiveText":
+			progressiveReads.Add(1)
+			response.Header().Set("X-Text-Size", "0")
+			response.Header().Set("X-More-Data", "false")
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	t.Cleanup(server.Close)
+	runtime, err := BuildRuntime(context.Background(), RuntimeConfig{Address: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := (&ClientSnapshot{runtime: runtime}).ReadBuildLogChunkContext(context.Background(), "demo", 42, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Content != "" || page.NextStart != 0 || page.EOF || progressiveReads.Load() != 1 {
+		t.Fatalf("page=%#v progressiveReads=%d", page, progressiveReads.Load())
 	}
 }
