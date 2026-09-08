@@ -1,6 +1,6 @@
 # 可插拔 CI/CD 实施路线
 
-> 状态：PR #4 已交付阶段 A～C 与阶段 D 主链路；W03 [PR #34](https://github.com/go-ree/ares/pull/34) 已把通用步骤日志合并到主线，阶段 D 全部完成。W05 [PR #35](https://github.com/go-ree/ares/pull/35) 已把发布幂等合并到主线；W06 多副本 Worker 已完成实现与本地验收，中文 PR 待创建，其余阶段 E 工作统一在 [开源化与生产能力开发计划](open-source-production-roadmap.md) 中跟踪。
+> 状态：PR #4 已交付阶段 A～C 与阶段 D 主链路；W03 [PR #34](https://github.com/go-ree/ares/pull/34) 已把通用步骤日志合并到主线，阶段 D 全部完成。W05 [PR #35](https://github.com/go-ree/ares/pull/35) 已把发布幂等合并到主线；W06 多副本 Worker 已完成实现与本地验收，[PR #36](https://github.com/go-ree/ares/pull/36) 待验收，其余阶段 E 工作统一在 [开源化与生产能力开发计划](open-source-production-roadmap.md) 中跟踪。
 
 本文是 [可插拔 CI/CD 与动态环境架构](../architecture/pluggable-cicd.md) 的实施计划。每一阶段都要求可独立验证、可升级并支持前向修复；数据库迁移后的旧镜像降级不等于安全回退，旧数据删除不属于当前阶段。
 
@@ -69,7 +69,7 @@
 
 - [x] 移除运行时 Xorm 结构同步，空库 bootstrap 与存量结构变化统一使用版本化迁移（W04 已由 PR #22 合并完成）。
 - [ ] 增加 attempt、有限重试、退避、超时和取消。
-- [x] 为多副本 Worker 增加 `next_poll_at`、owner/lease、fencing、公平到期扫描、跨副本集成 revision 和 v1 leader（W06 实现与本地验收已完成，中文 PR 待创建）。
+- [x] 为多副本 Worker 增加 `next_poll_at`、owner/lease、fencing、公平到期扫描、跨副本集成 revision 和 v1 leader（W06 实现与本地验收已完成，[PR #36](https://github.com/go-ree/ares/pull/36) 待验收）。
 - [x] 发布 API 支持 `Idempotency-Key`（W05 已由 [PR #35](https://github.com/go-ree/ares/pull/35) 合并完成）。
 - [ ] 增加 Secret Resolver，流程仅保存 Secret 引用。
 - [ ] 提供执行器契约测试套件和开发模板。
@@ -83,7 +83,7 @@
 v1 MySQL named leader。全量 Go/Race/前端/Swagger/Compose/漏洞门禁和 MySQL 8.4.10 迁移、租约接管、
 配置围栏、v1 leader/NULL 兼容矩阵均通过。隔离 Compose 以 `--scale ares=3` 启动，在精确停止一个
 副本后仍完成第二个 Noop 发布，恢复三副本后幂等重放零增量；该烟测证明服务可用性，持租任务的
-接管、fencing 与幂等副作用一次由真实 MySQL 可控阻塞用例证明。中文 PR 尚待创建，详细证据以
+接管、fencing 与幂等副作用一次由真实 MySQL 可控阻塞用例证明。中文 [PR #36](https://github.com/go-ree/ares/pull/36) 已创建并等待维护者评审，详细证据以
 [开源化与生产能力开发计划](open-source-production-roadmap.md) 为准。
 
 2026-09-07 进度同步：W04 已由 [PR #22](https://github.com/go-ree/ares/pull/22) 合并完成。epoch 1～4 使用独立完整 schema/data 契约，运行时只读检查不再执行结构 DDL；Compose 使用特权账号门禁、默认锁定的 migrator、管理员守护的唯一迁移会话和无 DDL runtime 账号。完整实现与验收证据以[开源化与生产能力开发计划](open-source-production-roadmap.md) W04 记录为准。
