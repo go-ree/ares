@@ -39,6 +39,7 @@ func (s *XORMStore) SaveWorkflow(ctx context.Context, command SaveWorkflowComman
 
 	session := s.engine.NewSession()
 	defer session.Close()
+	session.Context(ctx)
 	if err := session.Begin(); err != nil {
 		return WorkflowView{}, err
 	}
@@ -93,7 +94,7 @@ func (s *XORMStore) SaveWorkflow(ctx context.Context, command SaveWorkflowComman
 		if !hasLatest {
 			return WorkflowView{}, fmt.Errorf("流程 %d 没有版本: %w", workflowID, ErrNotFound)
 		}
-		if _, decodeErr := decodeStoredWorkflowSpec(latest); decodeErr != nil {
+		if _, decodeErr := DecodeStoredWorkflowVersion(latest); decodeErr != nil {
 			return WorkflowView{}, decodeErr
 		}
 		nextVersion = latest.Version + 1
@@ -171,7 +172,7 @@ func (s *XORMStore) GetCurrentWorkflow(ctx context.Context, configID int) (Workf
 	if !has {
 		return WorkflowView{}, ErrNotFound
 	}
-	spec, err := decodeStoredWorkflowSpec(version)
+	spec, err := DecodeStoredWorkflowVersion(version)
 	if err != nil {
 		return WorkflowView{}, err
 	}
@@ -185,7 +186,9 @@ func (s *XORMStore) GetCurrentWorkflow(ctx context.Context, configID int) (Workf
 	}, nil
 }
 
-func decodeStoredWorkflowSpec(version entity.ReleaseWorkflowVersion) (WorkflowSpec, error) {
+// DecodeStoredWorkflowVersion validates the immutable checksum before exposing
+// a workflow snapshot to another domain transaction.
+func DecodeStoredWorkflowVersion(version entity.ReleaseWorkflowVersion) (WorkflowSpec, error) {
 	spec, err := DecodeSpecJSON(version.Spec)
 	if err != nil {
 		return WorkflowSpec{}, fmt.Errorf("读取工作流版本 %d: %w", version.VersionID, err)
@@ -215,13 +218,9 @@ func (s *XORMStore) CreateTaskWithSnapshot(ctx context.Context, task *entity.Tas
 	if task.TaskId != 0 {
 		return fmt.Errorf("新任务不能预设 task_id")
 	}
-	task.EngineVersion = 2
-	task.WorkflowVersionID = workflow.WorkflowVersionID
-	task.Status = TaskQueued
-	task.Message = ""
-
 	session := s.engine.NewSession()
 	defer session.Close()
+	session.Context(ctx)
 	if err = session.Begin(); err != nil {
 		return err
 	}
@@ -231,8 +230,35 @@ func (s *XORMStore) CreateTaskWithSnapshot(ctx context.Context, task *entity.Tas
 		}
 	}()
 
-	// Omit empty nullable compatibility columns so SQL stores NULL instead of
-	// semantically meaningless empty strings.
+	if err = InsertTaskWithSnapshotInSession(ctx, session, task, workflow); err != nil {
+		return err
+	}
+	return session.Commit()
+}
+
+// Kept private for package tests and older internal call sites.
+func decodeStoredWorkflowSpec(version entity.ReleaseWorkflowVersion) (WorkflowSpec, error) {
+	return DecodeStoredWorkflowVersion(version)
+}
+
+// InsertTaskWithSnapshotInSession inserts a v2 task and every step snapshot in
+// the caller-owned transaction. It exists so release admission, idempotency and
+// the immutable execution snapshot can share one commit boundary.
+func InsertTaskWithSnapshotInSession(ctx context.Context, session *xorm.Session, task *entity.TaskRecord, workflow WorkflowView) error {
+	if session == nil {
+		return fmt.Errorf("数据库事务不能为空")
+	}
+	if task == nil {
+		return fmt.Errorf("任务不能为空")
+	}
+	if task.TaskId != 0 {
+		return fmt.Errorf("新任务不能预设 task_id")
+	}
+	task.EngineVersion = 2
+	task.WorkflowVersionID = workflow.WorkflowVersionID
+	task.Status = TaskQueued
+	task.Message = ""
+
 	omit := []string{"message"}
 	if task.CiJobName == "" {
 		omit = append(omit, "ci_job_name")
@@ -243,16 +269,13 @@ func (s *XORMStore) CreateTaskWithSnapshot(ctx context.Context, task *entity.Tas
 	if task.Products == "" {
 		omit = append(omit, "products")
 	}
-	if _, err = session.Context(ctx).Omit(omit...).Insert(task); err != nil {
+	if _, err := session.Context(ctx).Omit(omit...).Insert(task); err != nil {
 		return err
 	}
 	if task.TaskId <= 0 {
 		return fmt.Errorf("数据库未返回 task_id")
 	}
-	if err = insertTaskStepSnapshots(ctx, session, task.TaskId, workflow); err != nil {
-		return err
-	}
-	return session.Commit()
+	return insertTaskStepSnapshots(ctx, session, task.TaskId, workflow)
 }
 
 func (s *XORMStore) CreateTaskSnapshot(ctx context.Context, taskID int, workflow WorkflowView) (err error) {
@@ -261,6 +284,7 @@ func (s *XORMStore) CreateTaskSnapshot(ctx context.Context, taskID int, workflow
 	}
 	session := s.engine.NewSession()
 	defer session.Close()
+	session.Context(ctx)
 	if err = session.Begin(); err != nil {
 		return err
 	}

@@ -819,6 +819,8 @@ tables=(
 	auth_oidc_flows
 	auth_bootstrap_state
 	audit_events
+	release_idempotency_records
+	release_idempotency_items
 	schema_migrations
 	runtime_read_only
 )
@@ -856,6 +858,10 @@ mysql_as_user "$runtime_user" "$runtime_password" "$database" \
 mysql_as_user "$runtime_user" "$runtime_password" "$database" \
 	"INSERT INTO release_workflow_versions (id, payload) VALUES (1, 'immutable');" >/dev/null || \
 	fail 'runtime 应能追加工作流版本'
+mysql_as_user "$runtime_user" "$runtime_password" "$database" \
+	"INSERT INTO release_idempotency_records (id, payload) VALUES (1, 'immutable');
+	INSERT INTO release_idempotency_items (id, payload) VALUES (1, 'immutable');" >/dev/null || \
+	fail 'runtime 应能追加发布幂等回执及结果'
 if workflow_update_output="$(mysql_as_user "$runtime_user" "$runtime_password" "$database" \
 	"UPDATE release_workflow_versions SET payload = 'tampered' WHERE id = 1" 2>&1)"; then
 	fail 'runtime 不应能修改已发布的工作流版本'
@@ -868,6 +874,20 @@ if workflow_delete_output="$(mysql_as_user "$runtime_user" "$runtime_password" "
 fi
 [[ "$workflow_delete_output" == *'ERROR 1142'* ]] || \
 	fail "工作流版本 DELETE 拒绝原因不符合预期：${workflow_delete_output}"
+for immutable_receipt_table in release_idempotency_records release_idempotency_items; do
+	if receipt_update_output="$(mysql_as_user "$runtime_user" "$runtime_password" "$database" \
+		"UPDATE ${immutable_receipt_table} SET payload = 'tampered' WHERE id = 1" 2>&1)"; then
+		fail "runtime 不应能修改发布回执表 ${immutable_receipt_table}"
+	fi
+	[[ "$receipt_update_output" == *'ERROR 1142'* ]] || \
+		fail "发布回执表 ${immutable_receipt_table} UPDATE 拒绝原因不符合预期：${receipt_update_output}"
+	if receipt_delete_output="$(mysql_as_user "$runtime_user" "$runtime_password" "$database" \
+		"DELETE FROM ${immutable_receipt_table} WHERE id = 1" 2>&1)"; then
+		fail "runtime 不应能删除发布回执表 ${immutable_receipt_table}"
+	fi
+	[[ "$receipt_delete_output" == *'ERROR 1142'* ]] || \
+		fail "发布回执表 ${immutable_receipt_table} DELETE 拒绝原因不符合预期：${receipt_delete_output}"
+done
 if mysql_as_user "$runtime_user" "$runtime_password" "$database" \
 	'CREATE TABLE runtime_forbidden (id BIGINT PRIMARY KEY)' >/dev/null 2>&1; then
 	fail 'runtime 不应拥有 DDL 权限'
@@ -897,10 +917,11 @@ assert_query_equals 0 \
 			'env_configs', 'integration_settings',
 			'dev_language_rules', 'release_workflows', 'release_workflow_versions',
 			'app_config_workflows', 'task_step_records', 'auth_users', 'auth_identities',
-			'auth_sessions', 'auth_oidc_flows', 'auth_bootstrap_state', 'audit_events'
+			'auth_sessions', 'auth_oidc_flows', 'auth_bootstrap_state', 'audit_events',
+			'release_idempotency_records', 'release_idempotency_items'
 		)" \
 	'runtime DML 表白名单不匹配'
-assert_query_equals $'18\t34\tDELETE,INSERT,UPDATE' \
+assert_query_equals $'20\t36\tDELETE,INSERT,UPDATE' \
 	"SELECT COUNT(DISTINCT TABLE_NAME), COUNT(*),
 		COALESCE(GROUP_CONCAT(DISTINCT PRIVILEGE_TYPE ORDER BY PRIVILEGE_TYPE SEPARATOR ','), '')
 	FROM information_schema.TABLE_PRIVILEGES
@@ -925,7 +946,9 @@ for table_privileges in \
 	'auth_sessions:DELETE,INSERT,UPDATE' \
 	'auth_oidc_flows:DELETE,INSERT,UPDATE' \
 	'auth_bootstrap_state:UPDATE' \
-	'audit_events:INSERT'; do
+	'audit_events:INSERT' \
+	'release_idempotency_records:INSERT' \
+	'release_idempotency_items:INSERT'; do
 	table_name="${table_privileges%%:*}"
 	want_privileges="${table_privileges#*:}"
 	assert_query_equals "$want_privileges" \

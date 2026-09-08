@@ -266,6 +266,7 @@ func (cc *AppConfigsController) ListDomainsByConfigID(c *gin.Context) {
 // @Param request body app.UpsertDomainsRequest true "domains 列表"
 // @Success 200 {object} util.ResponseTemplate{code=int} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 404 {object} util.ResponseTemplate{code=int} "配置不存在"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router /api/v1/app-configs/{config_id}/domains [put]
 func (cc *AppConfigsController) OverwriteDomainsByConfigID(c *gin.Context) {
@@ -296,6 +297,7 @@ func (cc *AppConfigsController) OverwriteDomainsByConfigID(c *gin.Context) {
 // @Param request body app.DomainItem true "单条域名配置"
 // @Success 200 {object} util.ResponseTemplate{code=int,result=entity.AppConfigDomain} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 404 {object} util.ResponseTemplate{code=int} "配置不存在"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router /api/v1/app-configs/{config_id}/domains [post]
 func (cc *AppConfigsController) CreateDomain(c *gin.Context) {
@@ -327,6 +329,7 @@ func (cc *AppConfigsController) CreateDomain(c *gin.Context) {
 // @Param domain_id path int true "域名记录ID"
 // @Success 200 {object} util.ResponseTemplate{code=int} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 404 {object} util.ResponseTemplate{code=int} "配置不存在"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router /api/v1/app-configs/{config_id}/domains/{domain_id} [delete]
 func (cc *AppConfigsController) DeleteDomain(c *gin.Context) {
@@ -359,6 +362,7 @@ func (cc *AppConfigsController) DeleteDomain(c *gin.Context) {
 // @Param request body app.PatchDomainRequest true "更新字段（指针语义）"
 // @Success 200 {object} util.ResponseTemplate{code=int,result=entity.AppConfigDomain} "成功"
 // @Failure 400 {object} util.ResponseTemplate{code=int} "请求错误"
+// @Failure 404 {object} util.ResponseTemplate{code=int} "配置或域名记录不存在"
 // @Failure 500 {object} util.ResponseTemplate{code=int} "内部错误"
 // @Router /api/v1/app-configs/{config_id}/domains/{domain_id} [patch]
 func (cc *AppConfigsController) PatchDomain(c *gin.Context) {
@@ -391,11 +395,14 @@ func (cc *AppConfigsController) PatchDomain(c *gin.Context) {
 
 func writeAppDomainError(c *gin.Context, message string, err error) {
 	var validationError *app.ValidationError
+	var configNotFoundError *app.AppConfigNotFoundError
 	var notFoundError *app.DomainNotFoundError
 	var conflictError *app.DomainConflictError
 	switch {
 	case errors.As(err, &validationError):
 		c.JSON(http.StatusBadRequest, util.ResponseFailure(message, validationError.Error()))
+	case errors.As(err, &configNotFoundError):
+		c.JSON(http.StatusNotFound, util.ResponseFailure(message, configNotFoundError.Error()))
 	case errors.As(err, &notFoundError):
 		c.JSON(http.StatusNotFound, util.ResponseFailure(message, notFoundError.Error()))
 	case errors.As(err, &conflictError):

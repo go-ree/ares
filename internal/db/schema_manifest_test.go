@@ -84,6 +84,28 @@ func TestEpoch5SemanticSchemaManifestOwnsAuthBoundary(t *testing.T) {
 	}
 }
 
+func TestEpoch6SemanticSchemaManifestOwnsIdempotentReleaseBoundary(t *testing.T) {
+	if got := len(epoch6SemanticSchemaManifest.tables); got != 22 {
+		t.Fatalf("managed table count = %d, want 22", got)
+	}
+	for _, table := range []string{
+		"release_idempotency_records", "release_idempotency_items",
+	} {
+		if _, exists := epoch6SemanticSchemaManifest.tables[table]; !exists {
+			t.Errorf("epoch 6 manifest does not own %s", table)
+		}
+		if _, leaked := epoch5SemanticSchemaManifest.tables[table]; leaked {
+			t.Errorf("epoch 6 table %s mutated immutable epoch 5", table)
+		}
+	}
+	if _, exists := epoch6SemanticSchemaManifest.tables["task_record"].critical["app_config_id"]; !exists {
+		t.Error("epoch 6 manifest does not own task_record.app_config_id")
+	}
+	if _, leaked := epoch5SemanticSchemaManifest.tables["task_record"].critical["app_config_id"]; leaked {
+		t.Error("epoch 6 app_config_id mutated immutable epoch 5")
+	}
+}
+
 func TestParseCreateTableAutoIncrementIgnoresQuotedContent(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -133,6 +155,7 @@ func TestEpochSchemaManifestsAreCompleteAndIndependent(t *testing.T) {
 		{"epoch3", epoch3SemanticSchemaManifest, 14},
 		{"epoch4", epoch4SemanticSchemaManifest, 14},
 		{"epoch5", epoch5SemanticSchemaManifest, 20},
+		{"epoch6", epoch6SemanticSchemaManifest, 22},
 	}
 	for _, want := range wants {
 		t.Run(want.name, func(t *testing.T) {
@@ -184,6 +207,7 @@ func TestPublishedEpochManifestDigestsAreStable(t *testing.T) {
 		3: "f237bba7a8d41b55f67d5fd1b3eac459247ba20bc5322555ee6e537c18100aa9",
 		4: "3777439f7d9f0dfe812f586e63dc4a1812713ba91bb8e4e548995db7e778c4fc",
 		5: "210c78958db0ae7b68d6b9d2a8ff5cb535cf0b9b9992396c69c80b2e631a5f9e",
+		6: "a99d3f17df9a31fa3bfee26cf15a373e18fdf406b428dccfdcde0e94abe2b6d4",
 	}
 	for epoch, manifest := range publishedEpochSchemaManifests() {
 		if got := semanticSchemaManifestDigest(manifest); got != wants[epoch] {
@@ -203,6 +227,7 @@ func TestPublishedEpochDataContractDigestsAreStable(t *testing.T) {
 		3: "47cc55f7586403f63044f83c88094bef79cb430ace9c4b42f4c033642ca6468a",
 		4: "47cc55f7586403f63044f83c88094bef79cb430ace9c4b42f4c033642ca6468a",
 		5: "15ad4d8623a474fbe0e025d06990443e0e79e862159186ec136ec2ff94b1fd58",
+		6: "3a8bbc9437bb32688db4deed08789fc724b342792329e995b98da1ce100a88e9",
 	}
 	for epoch := uint64(1); epoch <= ApplicationSchemaEpoch; epoch++ {
 		got := stringListDigest(epochDataContractIDs(epoch))
@@ -225,6 +250,7 @@ func publishedEpochSchemaManifests() map[uint64]semanticSchemaManifest {
 		3: epoch3SemanticSchemaManifest,
 		4: epoch4SemanticSchemaManifest,
 		5: epoch5SemanticSchemaManifest,
+		6: epoch6SemanticSchemaManifest,
 	}
 }
 

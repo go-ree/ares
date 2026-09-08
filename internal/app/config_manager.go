@@ -13,6 +13,7 @@ import (
 	"github.com/go-ree/ares/internal/tool"
 
 	"github.com/go-sql-driver/mysql"
+	"xorm.io/xorm"
 )
 
 type devLanguageRulesJSON struct {
@@ -679,44 +680,26 @@ func (cm *ConfigManager) OverwriteDomainsByConfigID(ctx context.Context, configI
 		})
 	}
 
-	s := db.Engine.NewSession()
-	defer s.Close()
-	s = s.Context(ctx)
-	if err := s.Begin(); err != nil {
+	return withLockedAppConfigDomainMutation(ctx, configID, func(session *xorm.Session) error {
+		// 硬删除：避免软删除残留导致唯一键冲突
+		if _, err := session.Context(ctx).Exec("DELETE FROM app_config_domains WHERE config_id = ?", configID); err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		_, err := session.Context(ctx).Insert(&rows)
 		return err
-	}
-
-	// 硬删除：避免软删除残留导致唯一键冲突
-	if _, err := s.Exec("DELETE FROM app_config_domains WHERE config_id = ?", configID); err != nil {
-		_ = s.Rollback()
-		return err
-	}
-
-	if len(rows) == 0 {
-		return s.Commit()
-	}
-	if _, err := s.Insert(&rows); err != nil {
-		_ = s.Rollback()
-		return err
-	}
-	return s.Commit()
+	})
 }
 
 func (cm *ConfigManager) CreateDomain(ctx context.Context, configID int, d DomainItem) (*entity.AppConfigDomain, error) {
+	if configID <= 0 {
+		return nil, NewValidationError("无效的 config_id")
+	}
 	host, path, err := normalizeDomainHostPath(d.Host, d.Path)
 	if err != nil {
 		return nil, NewValidationError(err.Error())
-	}
-
-	// 先查冲突，返回更友好的错误
-	cnt, err := db.Engine.Context(ctx).
-		Where("config_id = ? AND host = ? AND path = ?", configID, host, path).
-		Count(&entity.AppConfigDomain{})
-	if err != nil {
-		return nil, err
-	}
-	if cnt > 0 {
-		return nil, NewDomainConflictError(host, path)
 	}
 
 	row := &entity.AppConfigDomain{
@@ -724,7 +707,21 @@ func (cm *ConfigManager) CreateDomain(ctx context.Context, configID int, d Domai
 		Host:     host,
 		Path:     path,
 	}
-	if _, err := db.Engine.Context(ctx).Insert(row); err != nil {
+	err = withLockedAppConfigDomainMutation(ctx, configID, func(session *xorm.Session) error {
+		// 父行锁将同一配置的 domain 写入串行化，因此该检查与后续插入属于同一快照边界。
+		cnt, countErr := session.Context(ctx).
+			Where("config_id = ? AND host = ? AND path = ?", configID, host, path).
+			Count(&entity.AppConfigDomain{})
+		if countErr != nil {
+			return countErr
+		}
+		if cnt > 0 {
+			return NewDomainConflictError(host, path)
+		}
+		_, insertErr := session.Context(ctx).Insert(row)
+		return insertErr
+	})
+	if err != nil {
 		return nil, err
 	}
 	return row, nil
@@ -735,11 +732,11 @@ func (cm *ConfigManager) DeleteDomainByID(ctx context.Context, configID int, dom
 	if configID <= 0 || domainID <= 0 {
 		return NewValidationError("无效的参数")
 	}
-	_, err := db.Engine.Context(ctx).Exec("DELETE FROM app_config_domains WHERE config_id = ? AND id = ?", configID, domainID)
-	if err != nil {
+	return withLockedAppConfigDomainMutation(ctx, configID, func(session *xorm.Session) error {
+		_, err := session.Context(ctx).Exec(
+			"DELETE FROM app_config_domains WHERE config_id = ? AND id = ?", configID, domainID)
 		return err
-	}
-	return nil
+	})
 }
 
 func (cm *ConfigManager) PatchDomainByID(ctx context.Context, configID int, domainID int64, req PatchDomainRequest) (*entity.AppConfigDomain, error) {
@@ -747,47 +744,94 @@ func (cm *ConfigManager) PatchDomainByID(ctx context.Context, configID int, doma
 		return nil, NewValidationError("无效的参数")
 	}
 
-	// 取当前值
 	var cur entity.AppConfigDomain
-	has, err := db.Engine.Context(ctx).Where("config_id = ? AND id = ?", configID, domainID).Get(&cur)
+	err := withLockedAppConfigDomainMutation(ctx, configID, func(session *xorm.Session) error {
+		// 父行之后再锁子行，保持与发布事务的 app_configs -> app_config_domains 顺序一致。
+		has, getErr := session.Context(ctx).ForUpdate().
+			Where("config_id = ? AND id = ?", configID, domainID).
+			Get(&cur)
+		if getErr != nil {
+			return getErr
+		}
+		if !has {
+			return NewDomainNotFoundError(configID, domainID)
+		}
+
+		newHost := cur.Host
+		newPath := cur.Path
+		if req.Host != nil {
+			newHost = *req.Host
+		}
+		if req.Path != nil {
+			newPath = *req.Path
+		}
+
+		host, path, normalizeErr := normalizeDomainHostPath(newHost, newPath)
+		if normalizeErr != nil {
+			return NewValidationError(normalizeErr.Error())
+		}
+
+		// 冲突检查：排除自身
+		cnt, countErr := session.Context(ctx).
+			Where("config_id = ? AND host = ? AND path = ? AND id <> ?", configID, host, path, domainID).
+			Count(&entity.AppConfigDomain{})
+		if countErr != nil {
+			return countErr
+		}
+		if cnt > 0 {
+			return NewDomainConflictError(host, path)
+		}
+
+		// 更新（硬更新，不触发软删除机制）
+		if _, updateErr := session.Context(ctx).Exec(
+			"UPDATE app_config_domains SET host = ?, path = ? WHERE config_id = ? AND id = ?",
+			host, path, configID, domainID); updateErr != nil {
+			return updateErr
+		}
+		cur.Host = host
+		cur.Path = path
+		return nil
+	})
 	if err != nil {
 		return nil, err
+	}
+	return &cur, nil
+}
+
+// withLockedAppConfigDomainMutation is the single lock boundary for domain writes.
+// Release creation locks the same mutable tables in app_configs -> ... ->
+// app_config_domains order. Taking the active parent row first both preserves that
+// order and prevents a READ COMMITTED phantom insert from crossing a release snapshot.
+func withLockedAppConfigDomainMutation(ctx context.Context, configID int, mutate func(*xorm.Session) error) (err error) {
+	session := db.Engine.NewSession()
+	defer session.Close()
+	session.Context(ctx)
+	if err = session.Begin(); err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = session.Rollback()
+		}
+	}()
+
+	var config entity.AppConfigs
+	has, err := session.Context(ctx).ForUpdate().
+		Where("config_id = ? AND deleted_at IS NULL", configID).
+		Get(&config)
+	if err != nil {
+		return err
 	}
 	if !has {
-		return nil, NewDomainNotFoundError(configID, domainID)
+		return NewAppConfigNotFoundErrorByID(configID)
 	}
-
-	newHost := cur.Host
-	newPath := cur.Path
-	if req.Host != nil {
-		newHost = *req.Host
+	if err = mutate(session); err != nil {
+		return err
 	}
-	if req.Path != nil {
-		newPath = *req.Path
+	if err = session.Commit(); err != nil {
+		return err
 	}
-
-	host, path, err := normalizeDomainHostPath(newHost, newPath)
-	if err != nil {
-		return nil, NewValidationError(err.Error())
-	}
-
-	// 冲突检查：排除自身
-	cnt, err := db.Engine.Context(ctx).
-		Where("config_id = ? AND host = ? AND path = ? AND id <> ?", configID, host, path, domainID).
-		Count(&entity.AppConfigDomain{})
-	if err != nil {
-		return nil, err
-	}
-	if cnt > 0 {
-		return nil, NewDomainConflictError(host, path)
-	}
-
-	// 更新（硬更新，不触发软删除机制）
-	if _, err := db.Engine.Context(ctx).Exec("UPDATE app_config_domains SET host = ?, path = ? WHERE config_id = ? AND id = ?", host, path, configID, domainID); err != nil {
-		return nil, err
-	}
-
-	cur.Host = host
-	cur.Path = path
-	return &cur, nil
+	committed = true
+	return nil
 }

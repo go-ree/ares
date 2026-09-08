@@ -113,8 +113,8 @@ func TestMySQL84Migrations(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertCompatibleStatus(t, status)
-		if got := harness.tableCount(t, databaseName); got != len(epoch5SemanticSchemaManifest.tables)+1 {
-			t.Fatalf("table count after migrate up = %d, want %d", got, len(epoch5SemanticSchemaManifest.tables)+1)
+		if got := harness.tableCount(t, databaseName); got != len(epoch6SemanticSchemaManifest.tables)+1 {
+			t.Fatalf("table count after migrate up = %d, want %d", got, len(epoch6SemanticSchemaManifest.tables)+1)
 		}
 
 		database := openIntegrationDatabase(t, dsn)
@@ -140,6 +140,112 @@ func TestMySQL84Migrations(t *testing.T) {
 		after := readLedgerStamps(t, database)
 		if !reflect.DeepEqual(after, before) {
 			t.Fatalf("idempotent migrate up changed the ledger\nbefore=%+v\nafter=%+v", before, after)
+		}
+	})
+
+	t.Run("epoch six receipts are valid and malformed outcomes fail closed", func(t *testing.T) {
+		dsn, _ := harness.newDatabase(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		if _, err := MigrateUp(ctx, dsn, "", 45*time.Second, 10*time.Second); err != nil {
+			t.Fatal(err)
+		}
+		database := openIntegrationDatabase(t, dsn)
+		if _, err := database.Exec(`INSERT INTO auth_users
+			(user_id, username, display_name, role, auth_source)
+			VALUES (42, 'epoch-six-actor', 'Epoch Six Actor', 'releaser', 'local')`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`INSERT INTO env_configs
+			(id, env, description_cn, enabled) VALUES (6004, 'dev', 'Epoch six', 1)`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`INSERT INTO apps
+			(app_id, app_name, app_name_cn, owner, owner_cn, dev_language, git_url)
+			VALUES (6005, 'epoch-six-app', 'Epoch Six App', 'owner', 'Owner', 'go', 'https://example.invalid/epoch-six')`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`INSERT INTO app_configs
+			(config_id, app_id, env, code_package_type) VALUES (6003, 6005, 'dev', 'go')`); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := database.Exec(`INSERT INTO release_workflows
+			(workflow_id, name) VALUES (6001, 'epoch-six-receipt')`); err != nil {
+			t.Fatal(err)
+		}
+		spec := []byte(`{}`)
+		checksum := sha256.Sum256(spec)
+		if _, err := database.Exec(`INSERT INTO release_workflow_versions
+			(version_id, workflow_id, version, spec, checksum, created_by)
+			VALUES (6002, 6001, 1, ?, ?, 'integration')`, spec, hex.EncodeToString(checksum[:])); err != nil {
+			t.Fatal(err)
+		}
+		result, err := database.Exec(`INSERT INTO task_record
+			(app_name, branch, env, publisher, publisher_user_id, app_config_id,
+			 engine_version, workflow_version_id)
+			VALUES ('epoch-six-app', 'main', 'dev', 'integration', 42, 6003, 2, 6002)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		taskID, err := result.LastInsertId()
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err = database.Exec(`INSERT INTO release_idempotency_records
+			(actor_user_id, semantic_operation, key_digest, request_digest, item_count)
+			VALUES (42, 'release.create@v1', ?, ?, 1)`,
+			bytes.Repeat([]byte{0x61}, 32), bytes.Repeat([]byte{0x62}, 32))
+		if err != nil {
+			t.Fatal(err)
+		}
+		recordID, err := result.LastInsertId()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`INSERT INTO release_idempotency_items
+			(record_id, request_index, config_id, task_id, workflow_version_id, outcome, error_code)
+			VALUES (?, 0, 6003, ?, 6002, 'accepted', NULL)`, recordID, taskID); err != nil {
+			t.Fatal(err)
+		}
+		status, err := InspectSchema(ctx, dsn, 45*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertCompatibleStatus(t, status)
+		_, duplicateErr := database.Exec(`INSERT INTO release_idempotency_records
+			(actor_user_id, semantic_operation, key_digest, request_digest, item_count)
+			VALUES (42, 'release.create@v1', ?, ?, 1)`,
+			bytes.Repeat([]byte{0x61}, 32), bytes.Repeat([]byte{0x65}, 32))
+		var mysqlDuplicate *mysql.MySQLError
+		if !errors.As(duplicateErr, &mysqlDuplicate) || mysqlDuplicate.Number != 1062 ||
+			!strings.Contains(mysqlDuplicate.Message, "uk_release_idempotency_scope_actor_key") {
+			t.Fatalf("duplicate idempotency scope error = %v, want named MySQL 1062", duplicateErr)
+		}
+
+		result, err = database.Exec(`INSERT INTO release_idempotency_records
+			(actor_user_id, semantic_operation, key_digest, request_digest, item_count)
+			VALUES (42, 'release.create@v1', ?, ?, 1)`,
+			bytes.Repeat([]byte{0x63}, 32), bytes.Repeat([]byte{0x64}, 32))
+		if err != nil {
+			t.Fatal(err)
+		}
+		malformedRecordID, err := result.LastInsertId()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`INSERT INTO release_idempotency_items
+			(record_id, request_index, config_id, outcome, error_code)
+			VALUES (?, 0, 9999, 'rejected', 'made_up_failure')`, malformedRecordID); err != nil {
+			t.Fatal(err)
+		}
+		status, err = InspectSchema(ctx, dsn, 45*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status.Compatible() || !containsProblem(status.ManifestDiffs,
+			"rejected release receipt must contain only a stable error code") {
+			t.Fatalf("malformed receipt status = %+v", status)
 		}
 	})
 
@@ -1718,8 +1824,8 @@ func TestMySQL84Migrations(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !before.Initialized || !before.NeedsAdoption || len(before.Applied) != 3 || len(before.Pending) != 2 {
-			t.Fatalf("legacy status = %+v, want three adopted candidates and two pending migrations", before)
+		if !before.Initialized || !before.NeedsAdoption || len(before.Applied) != 3 || len(before.Pending) != 3 {
+			t.Fatalf("legacy status = %+v, want three adopted candidates and three pending migrations", before)
 		}
 
 		status, err := MigrateUp(ctx, dsn, "", 45*time.Second, 10*time.Second)
@@ -1732,12 +1838,12 @@ func TestMySQL84Migrations(t *testing.T) {
 		var adopted, native int
 		if err := database.QueryRow(`SELECT
 			SUM(epoch <= 3 AND legacy_adopted = 1),
-			SUM(epoch IN (4, 5) AND legacy_adopted = 0)
+			SUM(epoch IN (4, 5, 6) AND legacy_adopted = 0)
 			FROM schema_migrations`).Scan(&adopted, &native); err != nil {
 			t.Fatal(err)
 		}
-		if adopted != 3 || native != 2 {
-			t.Fatalf("ledger adoption counts = adopted:%d native:%d, want 3 and 2", adopted, native)
+		if adopted != 3 || native != 3 {
+			t.Fatalf("ledger adoption counts = adopted:%d native:%d, want 3 and 3", adopted, native)
 		}
 		var appName, environment, packagePath string
 		if err := database.QueryRow(`SELECT a.app_name, c.env, c.code_package_path
@@ -2258,6 +2364,71 @@ func TestMySQL84Migrations(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertCompatibleStatus(t, status)
+	})
+
+	t.Run("epoch six dirty resume accepts every atomic DDL boundary", func(t *testing.T) {
+		boundaries := []struct {
+			name       string
+			statements []string
+		}{
+			{name: "task target", statements: []string{idempotentReleaseTaskTargetDDL}},
+			{name: "receipt record", statements: []string{
+				idempotentReleaseTaskTargetDDL, idempotentReleaseTables()[0],
+			}},
+			{name: "receipt items", statements: []string{
+				idempotentReleaseTaskTargetDDL,
+				idempotentReleaseTables()[0], idempotentReleaseTables()[1],
+			}},
+		}
+		for _, boundary := range boundaries {
+			t.Run(boundary.name, func(t *testing.T) {
+				dsn, _ := harness.newDatabase(t)
+				database := migrateDatabaseToEpoch(t, dsn, 5)
+				migration := schemaMigrations[5]
+				insertDirtyMigrationRow(t, database, migration)
+				for _, statement := range boundary.statements {
+					if _, err := database.Exec(statement); err != nil {
+						t.Fatal(err)
+					}
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+				defer cancel()
+				status, err := MigrateUp(ctx, dsn, migration.version, 45*time.Second, 10*time.Second)
+				if err != nil {
+					t.Fatal(err)
+				}
+				assertCompatibleStatus(t, status)
+			})
+		}
+	})
+
+	t.Run("epoch six dirty resume rejects a split task target boundary", func(t *testing.T) {
+		dsn, _ := harness.newDatabase(t)
+		database := migrateDatabaseToEpoch(t, dsn, 5)
+		migration := schemaMigrations[5]
+		insertDirtyMigrationRow(t, database, migration)
+		if _, err := database.Exec(`ALTER TABLE task_record
+			ADD COLUMN app_config_id INT NULL AFTER publisher_user_id`); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		status, err := MigrateUp(ctx, dsn, migration.version, 45*time.Second, 10*time.Second)
+		assertSchemaStateError(t, err)
+		if !containsProblem(status.ManifestDiffs, "app_config_id") &&
+			!containsProblem(status.ManifestDiffs, "app_config") {
+			t.Fatalf("split epoch-six boundary problems = %v", status.ManifestDiffs)
+		}
+		var receiptTables int
+		if err := database.QueryRow(`SELECT COUNT(*) FROM information_schema.TABLES
+			WHERE TABLE_SCHEMA = DATABASE()
+				AND TABLE_NAME IN ('release_idempotency_records', 'release_idempotency_items')`).
+			Scan(&receiptTables); err != nil {
+			t.Fatal(err)
+		}
+		if receiptTables != 0 {
+			t.Fatalf("refused split boundary created %d receipt tables", receiptTables)
+		}
 	})
 
 	t.Run("epoch five dirty resume accepts empty bootstrap DDL boundary", func(t *testing.T) {
@@ -3403,7 +3574,7 @@ func (h *mysqlIntegrationHarness) newRuntimeUser(t *testing.T, targetDSN, databa
 		"GRANT SELECT ON `%s`.* TO %s", grantPattern, account)); err != nil {
 		t.Fatal(err)
 	}
-	for _, tableName := range sortedStringKeys(epoch5SemanticSchemaManifest.tables) {
+	for _, tableName := range sortedStringKeys(epoch6SemanticSchemaManifest.tables) {
 		privileges := expectedRuntimeDMLPrivileges(tableName)
 		if privileges == "" {
 			continue

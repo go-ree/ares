@@ -112,16 +112,6 @@
                 <span class="menu-text">日志查询</span>
               </el-menu-item>
               <el-menu-item
-                v-if="
-                  authStore.can(PERMISSIONS.APPLICATIONS_READ) &&
-                  authStore.can(PERMISSIONS.RELEASES_CREATE)
-                "
-                index="/operation/batch-deploy"
-              >
-                <el-icon><Upload /></el-icon>
-                <span class="menu-text">一键批量发布</span>
-              </el-menu-item>
-              <el-menu-item
                 v-if="authStore.can(PERMISSIONS.KUBERNETES_READ)"
                 index="/operation/monitor"
               >

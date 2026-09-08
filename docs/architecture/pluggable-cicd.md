@@ -11,6 +11,9 @@ Ares 的历史实现围绕应用管理发布，但发布链路把“流水线”
 - 任务记录只保存 CI/CD 两组 Jenkins Job 和 Build Number，不能表达任意数量的步骤。
 
 本设计保留“应用是核心、一个应用拥有多个环境配置”的领域主轴，并把发布流程绑定到具体的应用环境配置。
+发布命令的一致性与重试协议由
+[ADR-0004：以 AppConfig 为目标的原子幂等发布](decisions/0004-appconfig-idempotent-releases.md)
+固定。
 
 ## 2. 目标与非目标
 
@@ -131,8 +134,12 @@ Kubernetes 集成按环境代码动态建立运行时客户端映射，不预分
 | `app_config_workflows` | AppConfig 到当前版本的原子绑定 |
 | `task_record` | 发布运行主记录和兼容字段 |
 | `task_step_records` | 任务的步骤快照、当前状态和外部引用 |
+| `release_idempotency_records` | 按服务端主体和语义操作保存发布命令摘要 |
+| `release_idempotency_items` | 按原请求顺序保存任务或稳定业务失败结果 |
 
-`task_record` 保留旧 `ci_*`、`cd_*` 字段用于兼容查询，但通用步骤记录是新引擎的事实源。
+`task_record` 保留旧 `ci_*`、`cd_*` 字段用于兼容查询，但通用步骤记录是新引擎的事实源。W05
+新增的 `app_config_id` 是新任务的稳定目标，历史任务允许为空；应用名、环境名仍作为运行快照展示，
+不能再用于 canonical 创建定位。
 
 ## 6. 执行器边界
 
@@ -192,13 +199,26 @@ pending -> running -> succeeded
 
 后续版本可在不改变流程规范的情况下增加 `retry_wait`、`timed_out` 和人工 `waiting`。
 
-任务创建时在一个数据库事务中保存流程规范、发布上下文和所有步骤快照。Worker 使用条件更新/CAS 认领待执行步骤；不得依赖“最近三小时”窗口。跨数据库与外部系统无法获得真正 exactly-once，执行器必须收到稳定幂等键：
+Canonical 发布以 `config_id` 定位目标。任务创建时在一个数据库事务中锁定并重新校验 AppConfig、
+应用、环境、域名和当前工作流，把客户端请求摘要、任务、发布上下文、所有步骤快照及有序结果一起
+提交。单发重试只重放已提交任务；批量的全部成功任务和业务失败项也形成一个原子 receipt，不再由
+多个 goroutine 分别提交。Worker 使用条件更新/CAS 认领待执行步骤；不得依赖“最近三小时”窗口。
+
+客户端创建 key 的唯一作用域是稳定用户 ID、版本化语义操作与 key SHA-256 摘要。请求摘要覆盖
+`config_id/ref/inputs/expected_workflow_version_id`，使用保留精确 JSON 数值的规范化编码；时间戳、
+镜像名和可变配置快照不能参与摘要。W05 永久保留只增 receipt，不自动清理。同 key、同摘要跨
+进程/重启重放原结果，同 key、不同摘要失败关闭。
+
+跨数据库与外部系统无法获得真正 exactly-once，执行器必须收到稳定幂等键：
 
 ```text
 task_id / step_key / attempt
 ```
 
-Jenkins Adapter 将其作为构建参数传递。取得 Queue ID 后立即持久化并交给后续协调；如果触发请求在取得 Queue ID 前结果不明确，首版无法跨系统证明 exactly-once，后续需结合 Jenkins 侧按幂等键查询或新的发布 API 去重能力继续完善。
+Jenkins Adapter 将它作为构建参数传递。客户端 `Idempotency-Key` 只用于 Ares 创建命令，绝不能
+替代或透传这个执行器键。取得 Queue ID 后立即持久化并交给后续协调；如果触发请求在取得 Queue ID
+前结果不明确，Ares 的 HTTP 创建去重并不能独自证明外部系统 exactly-once，仍需 Jenkins 侧按
+`task_id/step_key/attempt` 查询或对账。
 
 ## 8. API 边界
 
@@ -210,10 +230,24 @@ Jenkins Adapter 将其作为构建参数传递。取得 Queue ID 后立即持久
 - `GET /api/v1/pipeline-step-types`：拥有工作流读权限的用户读取步骤描述符。
 - `GET /api/v1/app-configs/:config_id/workflow`：拥有工作流读权限的用户读取当前流程；没有写权限时执行器私有配置被脱敏。
 - `PUT /api/v1/app-configs/:config_id/workflow`：拥有工作流写权限的管理员校验规范、创建不可变版本并切换绑定；Cookie 写请求同时校验 CSRF。
+- `GET /api/v1/releases/targets`：按动态环境分页返回应用与 AppConfig 发布资格投影，供统一发布器选择目标。
+- `POST /api/v1/app-configs/:config_id/releases/preflight`：按稳定 AppConfig 目标预检公开发布资格，不写任务或幂等记录。
+- `POST /api/v1/app-configs/:config_id/releases`：以 `ref/inputs/expected_workflow_version_id` 和必需的项目级 `Idempotency-Key` 原子创建单个任务。
+- `POST /api/v1/releases/batch/preflight`：按输入顺序逐项预检 1～100 个不重复 AppConfig。
+- `POST /api/v1/releases/batch`：以一个必需 key 原子提交整个有序批次及结果。
 - `GET /api/v1/deploy/publish/query/:task_id/steps`：拥有任务读权限的用户读取通用步骤运行记录及服务端派生的 capabilities。
 - `GET /api/v1/tasks/:task_id/steps/:step_key/logs/stream`：拥有日志读权限的用户按任务步骤读取通用 SSE 日志；唯一 query 字段是可选 cursor。
 
-现有发布接口保留，内部切换到通用 Release/Workflow 服务。后续新增以 `config_id` 和 `Idempotency-Key` 为主的新发布 API，旧 `app_name + env` DTO 作为兼容适配层。
+完整请求、重放、结果和错误契约见 [AppConfig 发布 API](../development/release-api.md)。项目级 key
+使用单一未加引号 ASCII token，长度 16～128 bytes，匹配
+`[A-Za-z0-9][A-Za-z0-9._~-]*`；本项目不宣称遵循尚未成为正式标准或已经过期的外部草案。
+
+旧 `/api/v1/deploy/publish` 与 `/api/v1/deploy/publish/batch` 保留一个发布版本。adapter 映射
+`branch/extra_data` 后调用相同领域服务；带 key 的重放优先使用已有 receipt 的有序 `config_id` 校验
+历史 `app_name + env` alias，首次请求才解析活动 alias，并在解析后复查 receipt、最终由 canonical
+唯一键竞争收敛。缺 key 时明确保持非幂等兼容。这个无新 schema 的边界依赖 app name 及 AppConfig
+环境/归属不可变且只做软删除；改变这些约束前必须引入版本化 alias snapshot。Web 不调用或 fallback
+到旧接口。
 
 ## 9. 兼容与迁移
 
@@ -225,6 +259,9 @@ Jenkins Adapter 将其作为构建参数传递。取得 Queue ID 后立即持久
 4. 新任务写通用步骤记录；恰好匹配旧 CI/CD 的 Jenkins 流程仍可投影旧字段供历史查询兼容，但 W03 起的 Web 日志入口不再读取这些字段。
 5. 升级时不迁移、不重触发在途旧任务，新任务进入新引擎。旧 schema 未保存 Jenkins 地址，无法证明实例归属的 v1 在途任务必须在网络调用前 fail-closed；只有显式绑定且与当前运行时一致的任务才允许旧引擎收尾。
 6. W03 将旧 Jenkins 日志接口收紧为只读 v1 历史任务并标记 deprecated；v2 任务只使用通用步骤日志。观察至少一个大版本后，才评估移除旧表、旧字段和 v1 日志接口。
+7. Epoch 6 为 `task_record` 扩展可空 `app_config_id`，不猜测回填历史任务；新增两张只增幂等表，
+   不从旧请求或任务推导 receipt。
+8. W05 后所有 canonical 任务写稳定目标和原子 receipt；旧发布接口只在 adapter 层保留一个版本。
 
 结构迁移采用前向兼容策略，但升级后的数据库不能由旧版 Xorm 进程继续写入。旧同步逻辑会删除它不认识的新索引，却保留迁移版本标记；因此回退必须使用 schema/Worker 兼容镜像，或恢复升级前数据库备份，不能只替换为旧二进制。
 
@@ -238,7 +275,8 @@ Jenkins Adapter 将其作为构建参数传递。取得 Queue ID 后立即持久
 - SSE 只暴露有界日志文本和 opaque cursor；cursor、日志正文、external reference 与上游错误不进入审计。会话撤销后流关闭，页面关闭或切换任务/步骤必须取消上游 context。
 - Secret 只保留引用，数据库快照、日志、错误消息和接口响应不得回传明文。
 - 环境、流程、发布、任务和日志均使用 ADR-0002 的服务端细粒度 RBAC；前端按钮和 capabilities 只用于体验，不是授权边界。
-- 批量发布采用有界并发，不创建无上限 goroutine。
+- `Idempotency-Key` 原文、key/request digest 和 inputs 不进入日志、审计、响应或执行器；发布人和幂等作用域只来自服务端 `Principal`。
+- 批量发布最多 100 个不重复目标、2000 个步骤快照，在单个有界数据库事务中按稳定锁顺序创建；HTTP 事务不并发调用执行器。
 - Jenkins 步骤的外部引用绑定实例地址；已绑定的在途 v1/v2 任务存在时禁止换址，运行时切换与步骤 Start/Reconcile 通过读写门闩串行化。历史未绑定 v1 任务不猜测归属、不访问 Jenkins，并进入明确失败终态。
 
 ## 11. 架构验收
@@ -249,4 +287,6 @@ Jenkins Adapter 将其作为构建参数传递。取得 Queue ID 后立即持久
 - 一个包含三个以上步骤的任务能逐步推进、失败即停，并正确返回每步状态。
 - 两个 Worker 同时扫描时，一个步骤只被一个 Worker 认领。
 - 修改流程后，已开始和历史任务仍展示原始步骤快照。
+- 同一用户跨 session、进程和重启重放相同发布 key 只得到原任务；改变目标、ref、inputs 或预期工作流版本得到稳定冲突。
+- 批量混合业务结果保持请求顺序并可整体重放；任一数据库故障不会留下部分 receipt、任务或步骤。
 - 旧终态任务和旧 CI/CD 字段仍可查询。
