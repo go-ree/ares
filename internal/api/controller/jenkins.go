@@ -18,6 +18,7 @@ import (
 	"github.com/go-ree/ares/internal/config"
 	"github.com/go-ree/ares/internal/db"
 	"github.com/go-ree/ares/internal/entity"
+	"github.com/go-ree/ares/internal/integration"
 	"github.com/go-ree/ares/internal/jenkins"
 )
 
@@ -40,6 +41,22 @@ var (
 	ErrSSEPermissionRevoked = errors.New("SSE permission revoked")
 	errJenkinsStream        = errors.New("Jenkins log stream failed")
 )
+
+var ensureJenkinsRuntimeCurrent = integration.EnsureJenkinsCurrent
+
+func ensureJenkinsEnabled(c *gin.Context) bool {
+	if err := ensureJenkinsRuntimeCurrent(c.Request.Context()); err != nil {
+		c.JSON(http.StatusServiceUnavailable, util.ResponseFailure(
+			"Jenkins 集成配置暂不可用", "jenkins integration settings unavailable"))
+		return false
+	}
+	if jenkins.IsConfigured() {
+		return true
+	}
+	c.JSON(http.StatusServiceUnavailable, util.ResponseFailure(
+		"Jenkins 集成未启用", "jenkins integration is disabled"))
+	return false
+}
 
 // SSESessionRevalidator rechecks the already-authenticated browser session.
 // Implementations must honor ctx and must not refresh the session's idle
@@ -90,8 +107,7 @@ func acquireLogSSE(c *gin.Context) (func(), bool) {
 // @Failure 502 {object} util.ResponseTemplate{code=int} "调用链异常"
 // @Router	/api/v1/status/nodes [get]
 func GetJenkinsNodeStatus(c *gin.Context) {
-	if !jenkins.IsConfigured() {
-		c.JSON(503, util.ResponseFailure("Jenkins 集成未启用", "jenkins integration is disabled"))
+	if !ensureJenkinsEnabled(c) {
 		return
 	}
 	nodeInfo, err := jenkins.GetJenkinsNodeStatus()
@@ -134,8 +150,11 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 		return
 	}
 	if db.Engine == nil {
-		if !jenkins.IsConfigured() {
-			c.JSON(http.StatusServiceUnavailable, util.ResponseFailure("Jenkins 集成未启用", "jenkins integration is disabled"))
+		// There is no task row to classify while the database is unavailable, and
+		// no provider call can be made safely. Run the same revision gate so this
+		// compatibility endpoint fails closed with the stable integration 503
+		// instead of consulting a possibly stale process-local runtime.
+		if !ensureJenkinsEnabled(c) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, util.ResponseFailure("查询任务失败", "internal error"))
@@ -157,11 +176,10 @@ func StreamJenkinsBuildLogHandler(c *gin.Context) {
 		c.JSON(http.StatusConflict, util.ResponseFailure("旧版日志接口不适用于通用工作流任务", "legacy_task"))
 		return
 	}
-	// This is a local runtime-state check only and deliberately follows the
-	// engine-version boundary so v2 and unknown tasks can never be routed into
-	// the legacy provider path, even while Jenkins is disabled.
-	if !jenkins.IsConfigured() {
-		c.JSON(http.StatusServiceUnavailable, util.ResponseFailure("Jenkins 集成未启用", "jenkins integration is disabled"))
+	// Resolve the engine-version boundary before touching Jenkins so v2 and
+	// unknown tasks can never be routed into the legacy provider path. The
+	// refresh then makes a DB outage or unapplied remote revision fail closed.
+	if !ensureJenkinsEnabled(c) {
 		return
 	}
 	if present {

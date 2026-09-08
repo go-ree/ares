@@ -1,0 +1,8 @@
+services:
+  ares:
+    # Optional loopback-only backend diagnostics for a single ares replica.
+    # Do not combine this override with `--scale ares=3`: every replica would
+    # otherwise compete for the same host port. Normal browser/API access goes
+    # through the `web` service and does not need this mapping.
+    ports:
+      - "127.0.0.1:${ARES_API_PORT:-8081}:8080"

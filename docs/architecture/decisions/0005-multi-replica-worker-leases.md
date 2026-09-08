@@ -37,11 +37,16 @@ W06 需要让 MySQL 成为默认的调度事实源，在不要求 Redis 或 Rabb
    传播 context，但 Ares 不假设远端请求一定随取消停止。
 8. `next_poll_at` 是唯一调度时间，业务 `updated_at` 不再承担轮转职责。成功轮询使用基础间隔加
    jitter，执行器/集成暂不可用和可恢复的协调失败使用持久化、有上限的指数退避加 jitter。
-9. 进程收到退出信号后先停止领取新任务，继续为在途任务续租并等待有界 drain；超时后取消本地
-   context，未能完成的租约由数据库时间自然过期并被其他实例接管。
-10. 集成设置以数据库 revision 为事实源，写入使用 CAS；每个副本周期读取 revision 并原子替换
-    本地运行快照。Redis/RabbitMQ 可以在未来作为通知优化，但不参与 W06 正确性。
-11. v1 遗留状态机不进入 v2 租约协议。每轮 v1 排空必须持有 MySQL 会话级 leader lock；连接断开
+9. HTTP listener 必须在任何后台任务开始领取前同步绑定；绑定失败时进程直接退出，不允许出现
+   “端口不可用但 Worker 已经开始执行”的半启动实例。
+10. 进程收到退出信号后先停止领取新任务，继续为在途任务续租并等待有界 drain；进程管理器与
+    Worker 共享从首次停止时刻计算的同一个绝对 deadline，不能由各组件重新计时。超时后取消本地
+    context，未能完成的租约由数据库时间自然过期并被其他实例接管。
+11. 集成设置以数据库 revision 为事实源，写入使用 CAS；每个副本周期读取 revision 并原子替换
+    本地运行快照。Jenkins 步骤认领与已启用配置的变更还通过稳定 provider 行形成数据库事务围栏，
+    避免远端副本在配置提交后才用旧运行时 Start。Redis/RabbitMQ 可以在未来作为通知优化，但不参与
+    W06 正确性。
+12. v1 遗留状态机不进入 v2 租约协议。每轮 v1 排空必须持有 MySQL 会话级 leader lock；连接断开
     自动释放，同一数据库在任一时刻最多一个旧状态机执行。
 
 ## 数据模型与迁移
@@ -60,7 +65,9 @@ epoch 7 只增加列和索引，不删除历史字段：
 `idx_task_worker_due(engine_version, deleted_at, next_poll_at, task_id)` 支持有界到期扫描和全局
 `next_poll_at/task_id` 顺序，不因 queued/running 两个状态分段而破坏公平性。迁移仅把已有、未删除、
 queued/running v2 任务的 `next_poll_at` 初始化为迁移时数据库时间；终态、软删除和 v1 任务保持 NULL。
-已有 integration row 从 revision 1 开始，新 row 也从 1 开始。迁移后 schema 与数据契约必须拒绝：
+已有 integration row 从 revision 1 开始；迁移以 `INSERT IGNORE` 补齐 revision 1 的 `jenkins` 与
+`kubernetes` 禁用单例行，且不覆盖已有 Web 配置。这两行同时是步骤认领的稳定事务围栏。迁移后
+schema 与数据契约必须拒绝：
 
 - v2 活跃任务缺少 `next_poll_at`；
 - v1、终态或软删除任务保留 `next_poll_at`；
@@ -68,6 +75,7 @@ queued/running v2 任务的 `next_poll_at` 初始化为迁移时数据库时间�
 - 持有租约但 fencing token 为 0；
 - 终态或软删除任务仍保留租约；
 - revision 为 0；
+- 内置 provider 事务围栏行缺失；
 - failure count 超过实现允许的饱和值。
 
 epoch 7 与 epoch 6 应用不并行写同一数据库。升级前停止 epoch 6 实例并备份，执行独立 migrator，
@@ -154,11 +162,19 @@ Worker 不以紧循环轮询数据库或不可用集成：
 ## 进程生命周期
 
 后台 Worker 直接接入 `signal.NotifyContext` 派生的服务 context，不再以
-`context.Background()` 从 Cron 启动。退出分为两个阶段：
+`context.Background()` 从 Cron 启动。启动时先同步创建并绑定 HTTP listener，只有绑定成功后才启动
+后台任务；若 listener 绑定或后台任务启动失败，关闭已绑定 listener 并直接失败，不能留下隐形 Worker。
+
+首次收到退出信号或关键后台组件异常退出时，Manager 记录唯一的绝对 drain deadline，并通过受管
+context 提供给 Worker。Manager、Worker 和“已经领取但尚未启动”的租约释放都消费同一段预算，
+不能各自再获得完整 drain timeout。退出分为三个阶段：
 
 1. context 取消后立即停止扫描和领取，已经领取的任务继续执行和续租。
-2. 在 drain timeout 内等待在途任务到达可释放边界；到期后取消 task contexts 并停止续租，Worker
-   返回，剩余租约由数据库时间过期。
+2. 领取与取消并发时，尚未启动的租约在剩余预算内尽力释放；deadline 已到或数据库不可用时不延长
+   进程退出，改由租约自然过期。
+3. 在相同 deadline 前等待在途任务到达可释放边界；到期后取消 task contexts 并停止续租，Worker
+   返回，剩余租约由数据库时间过期。延迟调用 Wait 时，已经完成的 drain 结果优先于超时分支；
+   drain 期间出现的非 context runner 错误仍必须和超时一起返回。
 
 退出不把 context cancellation 误写成执行器业务失败。对于已经 running 但结果未知的 Start，保留
 安全失败状态而不是自动回到 pending。进程不得无限等待不遵守 context 的第三方执行器；超过有界
@@ -171,15 +187,29 @@ Worker 不以紧循环轮询数据库或不可用集成：
 零行表示其他副本已经提交，当前请求返回稳定冲突并重新加载，不能覆盖胜者。首次插入通过主键竞争
 收敛为同样结果。
 
+Jenkins 已启用 generation 的地址、身份、凭据、超时或启停变更还必须与步骤 Start 线性排序：
+
+1. `ClaimStep` 在同一个 fenced 事务中，先对内置 provider 行加共享锁，再提交
+   `pending -> running`。
+2. Jenkins 配置 CAS 对该 provider 行加排他锁，并在同一个 `READ COMMITTED` 事务中检查 v1 活跃
+   任务和 running 的 Jenkins v2 步骤。若步骤先认领，配置更新看到在途任务并拒绝；若配置更新先
+   获锁，认领等待其提交，之后执行器在外呼前同步并使用新 revision。
+3. 当前配置已经禁用时允许重新启用，即使仍有待恢复的 running 引用；否则故障恢复会被“必须先
+   排空”永久阻塞。禁用状态下所有执行器、v1 轮询和兼容 API 都必须先执行 revision 同步并保持
+   fail-closed；恢复后仍以 external reference 中的 Jenkins 地址校验实例身份。
+
+直接绕过 Ares 写数据库配置不属于受支持的控制面；事务围栏只约束通过 Web/API CAS 的配置变更。
+
 每个实例运行 context-aware 的低频同步器，只读取 provider、revision 和密文配置。revision 较新时，
 先在候选对象中解密、校验和构造运行时，再以现有进程内门闩原子替换；慢探测完成前必须重新读取
 数据库 revision，不能让旧候选覆盖新设置。远端临时不可用时保存安全错误并有界退避重试，不阻塞
 核心 API readiness，也不回显上游正文。禁用配置无需网络即可快速收敛。
 
-数据库 revision 提供最终自动收敛和并发写 CAS，不宣称外部平台配置切换与在途 HTTP 请求线性一致。
-Jenkins external reference 已固定实例地址；地址更换继续要求先排空活动步骤，窄竞态将在执行前同步
-检查和地址匹配中 fail-closed。若未来需要在线无缝迁移 provider，应另立带 generation pinning 的
-任务快照决策，不能弱化当前引用校验。
+数据库 revision 提供最终自动收敛和并发写 CAS；事务围栏额外约束 Jenkins 工作流 Start 与受支持的
+配置更新顺序，但仍不把已经发出的外部 HTTP 请求纳入数据库事务，也不为任意 provider 宣称通用的
+在线切换能力。Jenkins external reference 固定实例地址；已启用 generation 的变更继续要求先排空
+活动步骤。若未来需要不停机轮换 provider generation，应另立带 generation/Secret pinning 的任务
+快照决策，不能弱化当前引用校验。
 
 ## v1 遗留任务
 
@@ -215,11 +245,16 @@ W06 至少验证：
    只有一个业务副作用。
 5. 任务数超过单次扫描上限时，按 next poll/task ID 最终全部被领取，没有通过 updated_at 轮转。
 6. 执行器和数据库临时不可用时退避有上限、有 jitter，恢复后继续执行且不形成请求风暴。
-7. SIGTERM 后不再领取新任务；正常在途任务于 drain 窗口完成，超时任务被取消并可到期接管。
-8. 两个实例并发修改或加载 integration settings 时 revision/CAS 只保留一个胜者，其他实例自动收敛。
+7. HTTP 绑定失败时不启动 Worker；SIGTERM 后不再领取新任务，Manager、Worker 与未启动租约释放
+   共用绝对 drain deadline；正常在途任务于窗口内完成，超时任务被取消并可到期接管。
+8. 两个实例并发修改或加载 integration settings 时 revision/CAS 只保留一个胜者，其他实例自动收敛；
+   Jenkins 配置 CAS 与步骤认领在 provider 行围栏上严格排序，已认领步骤会阻止已启用 generation
+   被替换。
 9. 多实例同时运行 v1 排空循环时只有命名锁持有者访问旧 Jenkins；断开连接后另一实例可以接管。
 10. MySQL 8.4 migration 的空库、epoch 6 升级、每个 DDL 中断边界、重复执行、manifest、数据契约和
-    最小权限账号均通过；隔离 Compose 至少运行三个 API/Worker 副本完成 Noop 发布与故障接管。
+    最小权限账号均通过；隔离 Compose 至少运行三个 API/Worker 副本，停掉任一副本后其余副本仍能
+    读取旧任务、创建并完成新 Noop 发布，恢复后幂等重放结果不变。持租任务接管、fencing 和阻塞
+    外部调用重叠必须由可控的真实 MySQL 故障测试单独证明，不能以快速 Noop 烟测替代。
 
 ## 后果
 

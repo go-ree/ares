@@ -2,7 +2,7 @@
 
 ## 运行拓扑
 
-默认 `compose.yaml` 编排七个服务；`auth-secrets`、两个数据库账号任务和 `migrate` 是成功后退出的一次性任务：
+默认 `compose.yaml` 编排七类服务；`auth-secrets`、两个数据库账号任务和 `migrate` 是成功后退出的一次性任务，`ares` 可以按相同镜像横向扩展为多个 API/Worker 副本：
 
 ```text
 auth-secrets / 在私有 volume 中生成身份与配置加密密钥（退出 0） ───────┐
@@ -20,12 +20,14 @@ database-runtime-user / 创建并收紧运行时账号（root 管理连接，退
     │
     └───────────────────────────────────────────────────────────────┤
                                                                     ▼
-ares / ares serve（运行时账号） ◄── web / Nginx ◄── 浏览器 :8080
-    ├─────────► Jenkins（可选外部集成）
-    └─────────► Kubernetes（可选外部集成）
+ares × N / ares serve（共享运行时账号与 MySQL） ◄── web / Nginx ◄── 浏览器 :8080
+    ├───────────────────────────────► Jenkins（可选外部集成）
+    └───────────────────────────────► Kubernetes（可选外部集成）
 ```
 
-只有 Web 端口对外开放。后端调试端口默认只绑定 `127.0.0.1:8081`，MySQL 不暴露宿主端口。
+基础 Compose 只向宿主发布 Web 端口，MySQL 和后端均不暴露宿主端口，因此 `ares` 可以直接扩容。
+需要单副本后端诊断时，可以显式叠加 `deploy/compose/api-debug.yaml`，把后端端口仅绑定到
+`127.0.0.1:8081`；该 override 不能与多副本扩容同时使用。
 Nginx 为 Vue Router 提供 SPA fallback，并针对 canonical 通用步骤日志和 v1 Jenkins 兼容日志关闭
 代理缓冲与 gzip、默认透传 `Last-Event-ID` 并保留有界长连接。配置不能用
 `$http_last_event_id` 显式重写该 Header，否则 Nginx 会合并重复值并绕过后端单值校验。
@@ -40,6 +42,23 @@ docker compose ps -a
 ```
 
 如果当前 Compose 版本不支持 `--wait`，可运行 `docker compose up -d --build`，再用 `docker compose ps -a` 等待 `auth-secrets`、`database-migrator-user`、`migrate`、`database-runtime-user` 均为 `Exited (0)`，并确认 `mysql`、`ares`、`web` 均为 healthy。密钥初始化、账号初始化、迁移或运行时收权失败都会阻止后端启动，可用 `docker compose logs auth-secrets database-migrator-user migrate database-runtime-user` 查看原因。
+
+同一 MySQL 8.4 single-writer 上的三副本启动方式为：
+
+```bash
+docker compose up -d --build --wait --scale ares=3
+docker compose ps ares
+```
+
+三个 `ares` 副本共享数据库与 `auth_secrets` volume；会话、任务租约和 integration revision 因而
+可以跨副本工作。Nginx 使用 Docker DNS 解析 `ares:8080`。缩容或停止时 Compose 先发送 SIGTERM，
+`ARES_CONTAINER_STOP_GRACE_PERIOD` 必须大于 `ARES_WORKER_DRAIN_TIMEOUT`，避免在 Worker 的有界
+drain 完成前发送 SIGKILL。需要直接访问单副本后端诊断端口时改用以下命令，且不要添加 `--scale`：
+
+```bash
+docker compose -f compose.yaml -f deploy/compose/api-debug.yaml \
+  up -d --build --wait --scale ares=1
+```
 
 验证：
 
@@ -66,7 +85,7 @@ docker compose run --rm --no-deps \
 | ----------------------------------------------- | --------------------------------- | ------------------------------------------------------------- |
 | `ARES_BIND_ADDRESS`                             | `127.0.0.1`                       | Web 监听地址；确认网络边界后才改为 `0.0.0.0`                  |
 | `ARES_HTTP_PORT`                                | `8080`                            | Web 对外端口；Compose 据此形成精确公开源                      |
-| `ARES_API_PORT`                                 | `8081`                            | 仅绑定本机的后端调试端口                                      |
+| `ARES_API_PORT`                                 | `8081`                            | 仅供单副本 `api-debug.yaml` override 绑定本机后端调试端口     |
 | `MYSQL_DATABASE`                                | `ares`                            | 数据库名                                                      |
 | `MYSQL_RUNTIME_USER`                            | `ares_runtime`                    | 按表授予最小业务 DML 权限的运行时数据库用户                   |
 | `MYSQL_RUNTIME_PASSWORD`                        | 本地示例值                        | 运行时数据库密码                                              |
@@ -75,6 +94,19 @@ docker compose run --rm --no-deps \
 | `MYSQL_ROOT_PASSWORD`                           | `ares-root-password`              | MySQL root 密码                                               |
 | `ARES_DB_SCHEMA_MIGRATION_TIMEOUT`              | `2m`                              | 单次版本化 schema 迁移操作的超时；大库可按 DDL / 扫描耗时调高 |
 | `ARES_DB_MIGRATION_LOCK_TIMEOUT`                | `30s`                             | migrator 等待数据库级锁的最长时间                             |
+| `ARES_WORKER_ENABLED`                           | `true`                            | 是否执行 v2 Worker 和 v1 遗留排空；不影响集成配置同步         |
+| `ARES_WORKER_CONCURRENCY`                       | `8`                               | 单实例最多同时推进的 v2 任务数（1～64）                       |
+| `ARES_WORKER_CLAIM_BATCH_SIZE`                  | `8`                               | 单次领取上限（1～64，且不能超过 concurrency）                 |
+| `ARES_WORKER_SCAN_INTERVAL`                     | `1s`                              | 没有可领取容量或任务时的基础扫描间隔                          |
+| `ARES_WORKER_LEASE_DURATION`                    | `30s`                             | v2 任务租期                                                   |
+| `ARES_WORKER_RENEW_INTERVAL`                    | `10s`                             | 租约续期间隔；不能超过租期的三分之一                          |
+| `ARES_WORKER_NORMAL_POLL_INTERVAL`              | `5s`                              | 正常异步步骤的下一次轮询基础间隔                              |
+| `ARES_WORKER_BACKOFF_MIN`                       | `2s`                              | 可恢复调度失败的退避下界                                      |
+| `ARES_WORKER_BACKOFF_MAX`                       | `2m`                              | 可恢复调度失败的退避上界                                      |
+| `ARES_WORKER_DRAIN_TIMEOUT`                     | `20s`                             | 收到退出信号后等待在途 v2 任务的时间                          |
+| `ARES_CONTAINER_STOP_GRACE_PERIOD`              | `30s`                             | Compose 等待容器退出的期限；必须长于 Worker drain timeout     |
+| `ARES_WORKER_INTEGRATION_SYNC_INTERVAL`         | `15s`                             | 各副本读取集成设置 revision 的周期                            |
+| `ARES_WORKER_LEGACY_POLL_INTERVAL`              | `10s`                             | v1 遗留任务 leader 排空周期                                   |
 | `ARES_DATABASE_ACCOUNT_CONNECT_TIMEOUT_SECONDS` | `5`                               | 数据库账号任务单次 MySQL 连接超时（1～30 秒）                 |
 | `ARES_DATABASE_ACCOUNT_LOCK_TIMEOUT_SECONDS`    | `30`                              | 数据库账号任务等待账号级互斥锁的时限（1～300 秒）             |
 | `ARES_DATABASE_ACCOUNT_INIT_TIMEOUT_SECONDS`    | `60`                              | 每个数据库账号任务总时限（1～300 秒）                         |
@@ -94,6 +126,10 @@ docker compose run --rm --no-deps \
 
 Compose 会根据两组 MySQL 变量生成运行时 `ARES_DB_CONN_STR`、迁移 `ARES_DB_MIGRATION_CONN_STR`，并根据 root Secret 为一次性 `migrate` 生成 `ARES_DB_MIGRATION_ADMIN_CONN_STR`。`ares` 只收到运行时连接；`migrate` 同时收到迁移连接和管理员连接，且其 `ARES_DB_CONN_STR` 是仅用于严格只读 `migrate status` 的管理员检查连接，以便 runtime 尚未配置时也能审计 schema。脱离 Compose 时，`serve` 和常规只读 `migrate status` 使用 `ARES_DB_CONN_STR`，生产 `migrate up` 应同时使用迁移连接与管理员连接；迁移连接缺失时不会回退到运行时连接。guarded 管理员身份必须与 DSN 用户精确一致，并直接持有全局 `PROCESS`、`CREATE USER`、`SELECT`、`TRIGGER`、`EVENT`、`SHOW VIEW`，以及 `CONNECTION_ADMIN` 或 `SUPER`；其 `mysql.user.User_attributes.$.Restrictions` 必须为空，经角色间接获得或缺少这些能力都会在任何账号、schema 或 ledger 修改前失败。管理员连接缺失时二进制可以执行普通迁移，但无法自行强制账号锁定、单会话生命周期和权威元数据检查，只适用于外部编排或 DBA 已实现等价守护的场景。YAML 配置严格要求单文档和已知字段，拼错 `migration_admin_conn_str` 等 key 会直接失败，不会被环境变量覆盖掩盖。其他可用配置包括 `ARES_WEB_ADDRESS`、`ARES_LOG_LEVEL`、`ARES_LOG_ACCESS_FILE` 和 `ARES_LOG_RUNTIME_FILE`。
 
+`ARES_WORKER_ENABLED=false` 用于 API-only 副本：该副本不领取 v2 任务，也不参与 v1 Jenkins 遗留任务排空；integration revision 同步器仍会运行，使它能够自动加载其他副本通过 Web 保存的 Jenkins/Kubernetes 配置。全部 Worker 时长和并发配置在进程启动时严格校验，非法值、反向退避范围或续期间隔过长都会阻止启动，不会静默回退。基础 Compose 会把上表全部 `ARES_WORKER_*` 变量显式传入每个 `ares` 副本；其他变量仍只有在 `environment` 或 override 文件中显式映射后才会从 `.env` 进入容器。
+
+旧配置中的 `job.taskManager.cron` 仅为升级解析兼容而保留，运行时会忽略它；v2 扫描使用 `worker.scan_interval`，v1 排空使用 `worker.legacy_poll_interval`。新配置不应继续写入该字段。
+
 Compose 把公开源固定为 `http://localhost:${ARES_HTTP_PORT}`，开启本地登录和一次性 Bootstrap，关闭 OIDC 与旧共享管理员 Token。`auth-secrets` 会在私有 `auth_secrets` volume 中一次生成并复用会话根密钥、Bootstrap Token 和系统配置加密密钥；`docker compose down` 会保留它们，`docker compose down -v` 会连同 MySQL 数据一起删除并重新生成。请勿把真实密码或 Token 提交到仓库。数据库示例密码仅用于本机体验；部署到共享环境前必须在未提交的 `.env` 中替换，并且应在首次启动之前完成。
 
 Compose 不依赖 MySQL 只在空数据目录运行一次的 initdb 机制。MySQL 健康后，`database-migrator-user` 先使用 root 管理连接安全收敛迁移账号并保持锁定；账号任务的 named lock、全部特权预检和账号修改始终复用同一条禁用自动重连的物理连接。`migrate` 的管理员连接持有相同迁移账号锁，再为本次执行设置随机一次性密码、短暂解锁并建立唯一迁移会话，随后立即重新锁号、轮换掉一次性密码并清理其他会话。watchdog 会持续验证锁 ownership；退出路径会关闭唯一连接并复核 migrator 仍锁定且没有残留会话。迁移完成后，`database-runtime-user` 同时按全局顺序持有迁移账号锁和运行时账号锁，再收敛运行时账号：Ares schema 通过全库 `SELECT` 覆盖 22 张受管表和 `schema_migrations`，22 张受管表中只有 20 张获得精确表级 DML；`pipelines` 与 `pipelines_job_combination` 保持只读，审计事件和两张幂等回执表只能追加，运行时不能修改 ledger。持锁连接失效时，旧任务只有非阻塞拿齐原锁才能执行 fail-closed 收敛，不会排队越过后续 owner。
@@ -102,7 +138,7 @@ MySQL named lock 只在当前服务端实例内有效。全部账号任务、roo
 
 账号任务要求 MySQL 8.4.x，并在任何写入前拒绝 mandatory roles、匿名账号、同名非 `%` Host、目标身份的出向 role/PROXY/DEFINER、目标身份在其他 schema 或全局的权限、Ares schema 中的 trigger/event/routine/view，以及 runtime/migrator 之外仍持有目标 schema 权限的主体；guarded 管理员还会权威拒绝外部 schema 子表反向引用 Ares 受管表或 ledger 的外键。随后才锁号、轮换并丢弃旧双密码、清除入向角色/PROXY 和直授权、终止旧会话并授予白名单权限。数据库级授权还会根据 `@@GLOBAL.partial_revokes` 转义 `\\`、`%`、`_` 等 grant-pattern 元字符，避免 `ares_prod` 的授权意外覆盖 `aresXprod`；旧的不安全 pattern 会先被拒绝并要求 DBA 撤权。runtime 最终回连验证实际身份与有效角色；运行时任务还会先证明 migrator 已锁定且无会话。任何检查或清理失败都会阻止应用启动，不能绕过。
 
-这意味着 PR #6 等旧 volume 不能在旧 `MYSQL_USER` 仍持有数据库级 `ALL PRIVILEGES` 时直接升级。两个账号任务只管理 `MYSQL_MIGRATION_USER` 与 `MYSQL_RUNTIME_USER`，不会猜测、修改或删除旧主体；必须先停止全部旧实例并验证备份，再由 DBA 按[数据库迁移与恢复手册](database-migrations.md)审计、撤销或删除旧账号对 Ares schema 的授权，之后才能启动当前 epoch 6 链路。`.env` 中的 `MYSQL_ROOT_PASSWORD` 仍须匹配该 volume 内的实际 root 密码；只修改环境变量不会改变 MySQL 内的 root 密码。共享 MySQL 若不能满足特权门禁或不允许一次性 root 任务，应由 DBA 按相同身份解析、继承关系、旧会话和权限矩阵建号，并在生产编排中以受控的等价 Job 替换两个账号任务。不要通过删除生产 volume 解决凭据问题。
+这意味着 PR #6 等旧 volume 不能在旧 `MYSQL_USER` 仍持有数据库级 `ALL PRIVILEGES` 时直接升级。两个账号任务只管理 `MYSQL_MIGRATION_USER` 与 `MYSQL_RUNTIME_USER`，不会猜测、修改或删除旧主体；必须先停止全部旧实例并验证备份，再由 DBA 按[数据库迁移与恢复手册](database-migrations.md)审计、撤销或删除旧账号对 Ares schema 的授权，之后才能启动当前 epoch 7 链路。`.env` 中的 `MYSQL_ROOT_PASSWORD` 仍须匹配该 volume 内的实际 root 密码；只修改环境变量不会改变 MySQL 内的 root 密码。共享 MySQL 若不能满足特权门禁或不允许一次性 root 任务，应由 DBA 按相同身份解析、继承关系、旧会话和权限矩阵建号，并在生产编排中以受控的等价 Job 替换两个账号任务。不要通过删除生产 volume 解决凭据问题。
 
 账号脚本在 `NO_BACKSLASH_ESCAPES` 模式下把正确转义的密码直接交给 `CREATE USER` / `ALTER USER`，依赖并验证 MySQL 8.4 `general_log` 将密码重写为 `<secret>`；脚本不会通过密码变量、可逆十六进制值或动态 `PREPARE` 中转。若托管平台或审计代理改变日志行为，必须先证明日志仍不含明文或可逆密码表示。
 
@@ -191,7 +227,7 @@ LogReader/上游请求前取得；容量满返回 429、`Retry-After` 和 `strea
 
 ## 数据库与 Demo 初始化
 
-Ares migrator 是专用 schema owner，当前仅支持 MySQL 8.4.x。空库由显式 bootstrap 创建 epoch 1 的固定 10 表基线，再按 epoch 顺序扩展到当前 epoch 6 的 22 张受管表；bootstrap 中断只在已有对象是无业务数据、完整定义匹配且按固定顺序形成连续前缀时恢复。已有表只由 migration 修改。`ares serve` 仅做只读兼容性检查，不执行 Xorm 结构同步或其他 DDL。epoch 2 起的数据契约还要求每条未删除 AppConfig 的环境都对应未删除的 `env_configs` 目录项；缺失或软删除引用会 fail-closed，不会自动猜测。当前受管表包括：
+Ares migrator 是专用 schema owner，当前仅支持 MySQL 8.4.x。空库由显式 bootstrap 创建 epoch 1 的固定 10 表基线，再按 epoch 顺序扩展到当前 epoch 7 的 22 张受管表；bootstrap 中断只在已有对象是无业务数据、完整定义匹配且按固定顺序形成连续前缀时恢复。已有表只由 migration 修改。`ares serve` 仅做只读兼容性检查，不执行 Xorm 结构同步或其他 DDL。epoch 2 起的数据契约还要求每条未删除 AppConfig 的环境都对应未删除的 `env_configs` 目录项；缺失或软删除引用会 fail-closed，不会自动猜测。当前受管表包括：
 
 - `apps`
 - `app_configs`
@@ -216,7 +252,7 @@ Ares migrator 是专用 schema owner，当前仅支持 MySQL 8.4.x。空库由�
 - `release_idempotency_records`
 - `release_idempotency_items`
 
-epoch 5 为发布任务和工作流版本增加稳定的用户 ID 引用；历史显示名快照继续保留，但新请求不能自行指定发布人或修改人。epoch 6 为任务增加稳定的 AppConfig 引用，并新增两张永久、只增的发布幂等回执表；迁移不会猜测历史任务的 AppConfig，也不会为历史发布补造回执。应用 ID 自增起点会设为 `10000`，与 API 校验范围一致。四种开发语言规则只补缺失项，不覆盖已有规则。
+epoch 5 为发布任务和工作流版本增加稳定的用户 ID 引用；历史显示名快照继续保留，但新请求不能自行指定发布人或修改人。epoch 6 为任务增加稳定的 AppConfig 引用，并新增两张永久、只增的发布幂等回执表；迁移不会猜测历史任务的 AppConfig，也不会为历史发布补造回执。epoch 7 在不新增表的情况下为任务增加数据库调度时间、租约 owner/expiry、单调 fencing token 和失败计数，并为集成设置增加 revision；只对已有的未删除 queued/running v2 任务初始化下一次调度时间，v1、终态和软删除任务保持未调度。应用 ID 自增起点会设为 `10000`，与 API 校验范围一致。四种开发语言规则只补缺失项，不覆盖已有规则。
 
 当 `ARES_DEMO_DATA_ENABLED=true` 且应用、应用配置、发布任务和工作流等业务表全部为空时，一个事务会写入：
 
@@ -318,17 +354,31 @@ docker compose up -d --build --wait
 
 ### 从旧镜像迁移
 
+当前版本的最终数据库版本是 epoch 7，迁移
+`20260908_001_worker_leases` 为 v2 Worker 增加调度时间、任务租约、单调 fencing token 与
+持久化失败计数，并为 `integration_settings` 增加 revision。epoch 7 与 epoch 6 应用不能混合
+写入同一数据库；必须停止全部旧副本并验证备份后再迁移，随后只启动新版本副本。
+
 新镜像不再把仓库的环境配置或集群凭据打包进镜像。数据库运行连接通过 `ARES_DB_CONN_STR` 注入，一次性 migrator 使用独立的 `ARES_DB_MIGRATION_CONN_STR` 和只在该作业内可见的 `ARES_DB_MIGRATION_ADMIN_CONN_STR`；Jenkins 与 Kubernetes 配置改为启动后由 `admin` 会话在 Web 中保存。升级前请备份数据库和现有系统配置加密密钥，并为身份服务准备稳定的会话根密钥。系统配置加密密钥遗失或变更后，已保存的敏感配置无法解密，需要重新录入；W02 之前保存的 `v1` 凭据也会在界面明确要求重新录入，不做无上下文的静默迁移。会话根密钥变化会使现有会话和未完成的 OIDC 登录流失效。
 
 迁移 `20260902_001_cleanup_legacy_null_strings` 会治理历史字符串 `"NULL"` 并调整相关列约束，批处理覆盖 `0`、负数及最小带符号主键；`20260903_001_pluggable_cicd` 会扩展动态环境与工作流表，并把旧的 CI/CD Job 组合幂等转换为 AppConfig 工作流；`20260903_002_cicd_runtime_hardening` 会增加 Worker 调度索引与 Jenkins 实例地址字段；`20260903_003_versioned_migrations` 会验证 schema manifest 并完成版本化迁移边界收口；`20260904_001_auth_rbac_audit` 会建立六张身份/审计表，并为发布任务和工作流版本增加稳定的用户 ID 引用；`20260907_001_idempotent_releases` 会为任务增加稳定的 AppConfig 引用，并建立两张永久、只增的发布幂等回执表。升级前须确认活动环境代码合法（末尾 LF、CR、CRLF 等控制字符不会被 MySQL 的行尾锚点误接纳）、没有规范化后的 `(app_id, env)` 重复项，且每条未删除 AppConfig 的环境都有未删除目录项；同时必须停止所有旧版 Ares 写入实例，并在迁移前撤销旧版/未知主体对目标 schema 的授权及外部入向外键。迁移结果记录在 `schema_migrations`。NULL 迁移细节见 [NULL 字符串治理方案](../plans/null-string-cleanup.md)，流水线迁移与回退边界见 [可插拔 CI/CD 实施路线](../plans/pluggable-cicd-roadmap.md)。
 
 版本化迁移在专用连接上持有当前 MySQL 实例内的数据库级 named lock，单次操作超时可通过 `ARES_DB_SCHEMA_MIGRATION_TIMEOUT` 调高，等待锁的时间由 `ARES_DB_MIGRATION_LOCK_TIMEOUT` 单独控制。运行时只读检查和业务请求不会获得迁移账号权限。升级超大旧表时应先在副本验证，并按维护窗口调整迁移 DSN 的 I/O 超时；正式执行仍必须使用稳定 single-writer 端点。
 
-epoch 6 的 `migrate status` 与 `serve` 会永久校验全部已保留幂等回执，因此生产上线前必须按[数据库迁移与恢复手册](database-migrations.md#永久-receipt-verifier-的容量基线与告警门槛)建立生产规模容量基线。本手册不声称未经实测的固定时延：以获批的 `ARES_DB_SCHEMA_MIGRATION_TIMEOUT` 为预算，基准 p95 达到预算的 50% 时告警，达到 80% 或出现超时、取消、校验失败时阻止发布。不得通过删除回执或临时扩大运行时账号权限解决容量问题。
+epoch 6 引入且由 epoch 7 继续继承的 `migrate status` 与 `serve` 会永久校验全部已保留幂等回执，因此生产上线前必须按[数据库迁移与恢复手册](database-migrations.md#永久-receipt-verifier-的容量基线与告警门槛)建立生产规模容量基线。本手册不声称未经实测的固定时延：以获批的 `ARES_DB_SCHEMA_MIGRATION_TIMEOUT` 为预算，基准 p95 达到预算的 50% 时告警，达到 80% 或出现超时、取消、校验失败时阻止发布。不得通过删除回执或临时扩大运行时账号权限解决容量问题。
 
-迁移完成后不要把旧镜像接回可写数据库：epoch 6 与 epoch 5 及更早应用不兼容，旧版也缺少当前 AppConfig 目标和幂等回执边界。推荐以前向修复处理应用问题；必须回退时，应冻结写入，将数据库恢复到升级前备份，再部署与该备份匹配的旧应用。单独降级二进制/镜像不是受支持的回滚方式。完整停机升级、dirty 恢复和故障排查步骤见[数据库迁移与恢复手册](database-migrations.md)。
+迁移完成后不要把旧镜像接回可写数据库：epoch 7 与 epoch 6 及更早应用不兼容，旧版 Worker 不理解任务租约、fencing 和 integration revision。推荐以前向修复处理应用问题；必须回退时，应冻结写入，将数据库恢复到升级前备份，再部署与该备份匹配的旧应用。单独降级二进制/镜像不是受支持的回滚方式。完整停机升级、dirty 恢复和故障排查步骤见[数据库迁移与恢复手册](database-migrations.md)。
 
-Jenkins 外部引用绑定到接收任务时的服务地址。仍有已绑定的 v1 `packaging/deploying`、会自动部署的 `packaged` 任务，或 v2 `running` Jenkins 步骤时，系统设置会拒绝更换 Jenkins 地址或停用集成；应先让这些任务结束或由管理员明确处置。旧结构没有保存任务所属的 Jenkins 地址，因此迁移不会根据当前设置猜测并自动回填。升级前创建且尚未结束的 v1 任务无法证明外部实例归属，旧轮询器会在任何 Jenkins 网络请求前把它们确定性终止为失败；其历史日志查询也会明确拒绝，避免误读或误触发新实例上的同名 Job/Build。生产升级必须优先排空旧任务；若无法排空，应预期这些任务需要在升级后人工重新发布。仅轮换同一地址的凭据不会触发换址限制。
+Jenkins 外部引用绑定到接收任务时的服务地址。当前设置为 enabled 且仍有已绑定的 v1
+`packaging/deploying`、会自动部署的 `packaged` 任务，或 v2 `running` Jenkins 步骤时，地址、
+username、Token、timeout 和停用等任何 generation 变化都会被拒绝；应先让这些任务结束或由管理员
+明确处置。保存设置与发布/任务检查在同一 provider 事务 fence 下完成，并结合 revision CAS，不能让
+并发发布越过在途检查提交到旧 generation。当前设置已经 disabled 时，允许重新启用以恢复仍可证明
+归属的遗留 running 任务，但执行前仍按 external reference 中固定的地址严格匹配。旧结构没有保存
+任务所属的 Jenkins 地址，因此迁移不会根据当前设置猜测并自动回填。升级前创建且尚未结束的 v1
+任务无法证明外部实例归属，旧轮询器会在任何 Jenkins 网络请求前把它们确定性终止为失败；其历史
+日志查询也会明确拒绝，避免误读或误触发新实例上的同名 Job/Build。生产升级必须优先排空旧任务；
+若无法排空，应预期这些任务需要在升级后人工重新发布。
 
 ## 上线前检查
 
@@ -336,11 +386,12 @@ Jenkins 外部引用绑定到接收任务时的服务地址。仍有已绑定的
 - 使用 HTTPS 精确配置公开源和 OIDC 回调，完成首位管理员 Bootstrap 后关闭 Bootstrap，并确认旧共享管理员 Token 保持关闭。
 - 验证 `viewer`、`developer`、`releaser`、`admin` 的实际权限边界，以及匿名 `401`、越权 `403`、写请求 CSRF 和会话撤销行为。
 - 使用本地管理员演练密码修改，确认修改前全部浏览器会话和旧密码均立即失效，新密码可以重新登录。
-- 限制 `ARES_API_PORT` 的本机绑定；生产流量只通过实施 TLS 和请求大小/超时限制的入口进入。
+- 生产环境不要叠加单副本 `api-debug.yaml`；生产流量只通过实施 TLS 和请求大小/超时限制的入口进入。
 - 确认 OIDC/Jenkins/Kubernetes 只使用受信 HTTPS 精确端点，不依赖重定向、代理 URL 或跳过 TLS 校验；旧版系统凭据已重新录入。
 - 验证通用步骤日志代理不缓冲、不 gzip，透传 `Last-Event-ID`；关闭/切换页面后连接数回落，撤销 `logs.read` 只终止日志而不登出有效会话。
 - 确认旧日志路由只服务 v1 历史任务并返回弃用 Header；v2 页面只按步骤 capabilities 使用 canonical 日志入口。
 - 使用外部托管 MySQL 时建立备份、恢复演练和监控。
 - 为 `audit_events` 设置行数/字节/增长率告警和经校验的 DBA 归档、分批保留流程。
 - 使用真实 Jenkins Job、镜像仓库和 kubeconfig 完成二级联调。
-- W06 多副本 Worker 与租约完成前，整个 Ares Worker 必须保持单副本运行。旧 v1 Jenkins 兼容轮询器没有跨实例领取或 leader election；v2 步骤虽然已有 pending 步骤认领 CAS，但多个实例仍可能同时 Reconcile 同一个 running 步骤，不能据此认为已经支持多副本。
+- 多副本必须连接同一 MySQL 8.4 single-writer 端点：v2 任务依靠 task lease 与 fencing 领取、续租和提交结果；v1 Jenkins 遗留轮询器每轮使用零等待的 MySQL named leader lock，只允许一个副本扫描和外呼。named lock 不跨多个 writer，也不把 v1 提升为 exactly-once；确认历史 v1 已排空后应停止依赖该兼容路径。
+- 验证实际副本数、故障后租约接管、陈旧 fencing 写入拒绝和 SIGTERM drain；若调整 `ARES_WORKER_DRAIN_TIMEOUT`，同时把 `ARES_CONTAINER_STOP_GRACE_PERIOD` 设置为更长的值。

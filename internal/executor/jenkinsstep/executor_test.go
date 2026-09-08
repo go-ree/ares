@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/go-ree/ares/internal/jenkins"
@@ -73,6 +74,54 @@ func TestValidateConfig(t *testing.T) {
 				t.Fatalf("Validate() error = %v, wantErr %v", err, test.wantErr)
 			}
 		})
+	}
+}
+
+func TestExecutorRefreshesSettingsBeforeExternalOperations(t *testing.T) {
+	const privateError = "database-password-must-not-leak"
+	acquires := 0
+	executor := &Executor{
+		acquire: func() jenkinsClient {
+			acquires++
+			return nil
+		},
+		ensureCurrent: func(context.Context) error { return errors.New(privateError) },
+	}
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{name: "availability", run: func() error { return executor.Available(context.Background()) }},
+		{name: "start", run: func() error {
+			_, err := executor.Start(context.Background(), workflow.StartRequest{Config: json.RawMessage(`{"job":"demo"}`)})
+			return err
+		}},
+		{name: "reconcile", run: func() error {
+			_, err := executor.Reconcile(context.Background(), workflow.ReconcileRequest{
+				ExternalReference: json.RawMessage(`{"integration":"jenkins/default","address":"https://jenkins.example","job":"demo","build_id":1}`),
+			})
+			return err
+		}},
+		{name: "logs", run: func() error {
+			_, err := executor.ReadLogs(context.Background(), workflow.LogRequest{
+				ExternalReference: json.RawMessage(`{"integration":"jenkins/default","address":"https://jenkins.example","job":"demo","build_id":1}`),
+			})
+			return err
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.run()
+			if !errors.Is(err, workflow.ErrExecutorUnavailable) {
+				t.Fatalf("error = %v, want ErrExecutorUnavailable", err)
+			}
+			if strings.Contains(err.Error(), privateError) {
+				t.Fatalf("private refresh error leaked: %v", err)
+			}
+		})
+	}
+	if acquires != 0 {
+		t.Fatalf("runtime acquired %d times before settings refresh succeeded", acquires)
 	}
 }
 
@@ -263,6 +312,47 @@ func TestReconcileDoesNotExposeJenkinsQueueReason(t *testing.T) {
 	}
 	if result.State != workflow.ResultRunning || result.Message != "Jenkins 任务仍在队列中" {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestReconcileClassifiesProviderReadFailuresAsRetryableWithoutLeakingDetails(t *testing.T) {
+	const privateError = "https://private-jenkins.example Authorization=must-not-leak"
+	for _, test := range []struct {
+		name      string
+		reference json.RawMessage
+		client    *fakeJenkinsClient
+	}{
+		{
+			name:      "queue",
+			reference: json.RawMessage(`{"integration":"jenkins/default","address":"https://jenkins.example","job":"demo-ci","queue_id":42}`),
+			client: &fakeJenkinsClient{
+				address: "https://jenkins.example",
+				queue: func(context.Context, int64) (jenkins.QueueBuildState, error) {
+					return jenkins.QueueBuildState{}, errors.New(privateError)
+				},
+			},
+		},
+		{
+			name:      "build",
+			reference: json.RawMessage(`{"integration":"jenkins/default","address":"https://jenkins.example","job":"demo-ci","build_id":42}`),
+			client: &fakeJenkinsClient{
+				address: "https://jenkins.example",
+				status:  func(context.Context, string, int64) (string, error) { return "", errors.New(privateError) },
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			executor := &Executor{acquire: func() jenkinsClient { return test.client }}
+			_, err := executor.Reconcile(context.Background(), workflow.ReconcileRequest{
+				ExternalReference: test.reference,
+			})
+			if !errors.Is(err, workflow.ErrExecutorUnavailable) {
+				t.Fatalf("Reconcile() error = %v, want ErrExecutorUnavailable", err)
+			}
+			if strings.Contains(err.Error(), privateError) {
+				t.Fatalf("provider error leaked: %v", err)
+			}
+		})
 	}
 }
 

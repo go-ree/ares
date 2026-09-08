@@ -113,8 +113,8 @@ func TestMySQL84Migrations(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertCompatibleStatus(t, status)
-		if got := harness.tableCount(t, databaseName); got != len(epoch6SemanticSchemaManifest.tables)+1 {
-			t.Fatalf("table count after migrate up = %d, want %d", got, len(epoch6SemanticSchemaManifest.tables)+1)
+		if got := harness.tableCount(t, databaseName); got != len(epoch7SemanticSchemaManifest.tables)+1 {
+			t.Fatalf("table count after migrate up = %d, want %d", got, len(epoch7SemanticSchemaManifest.tables)+1)
 		}
 
 		database := openIntegrationDatabase(t, dsn)
@@ -140,6 +140,129 @@ func TestMySQL84Migrations(t *testing.T) {
 		after := readLedgerStamps(t, database)
 		if !reflect.DeepEqual(after, before) {
 			t.Fatalf("idempotent migrate up changed the ledger\nbefore=%+v\nafter=%+v", before, after)
+		}
+	})
+
+	t.Run("epoch seven backfills only active v2 tasks and initializes integration revisions", func(t *testing.T) {
+		dsn, _ := harness.newDatabase(t)
+		database := migrateDatabaseToEpoch(t, dsn, 6)
+		if _, err := database.Exec(`INSERT INTO task_record
+			(task_id, app_name, branch, env, publisher, status, engine_version, deleted_at)
+			VALUES
+			(71001, 'queued-v2', 'main', 'dev', 'migration-test', 'queued', 2, NULL),
+			(71002, 'running-v2', 'main', 'dev', 'migration-test', 'running', 2, NULL),
+			(71003, 'terminal-v2', 'main', 'dev', 'migration-test', 'succeeded', 2, NULL),
+			(71004, 'queued-v1', 'main', 'dev', 'migration-test', 'queued', 1, NULL),
+			(71005, 'deleted-v2', 'main', 'dev', 'migration-test', 'queued', 2, UTC_TIMESTAMP())`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`INSERT INTO integration_settings (provider, config_data)
+			VALUES ('epoch-seven-provider', '{"enabled":true}')`); err != nil {
+			t.Fatal(err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		status, err := MigrateUp(ctx, dsn, "", 45*time.Second, 10*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertCompatibleStatus(t, status)
+
+		var scheduled, unscheduled, cleanLeaseState int
+		if err := database.QueryRow(`SELECT
+			SUM(task_id IN (71001, 71002) AND next_poll_at IS NOT NULL),
+			SUM(task_id IN (71003, 71004, 71005) AND next_poll_at IS NULL),
+			SUM(lease_owner IS NULL AND lease_expires_at IS NULL
+				AND lease_fencing_token = 0 AND poll_failure_count = 0)
+			FROM task_record WHERE task_id BETWEEN 71001 AND 71005`).Scan(
+			&scheduled, &unscheduled, &cleanLeaseState); err != nil {
+			t.Fatal(err)
+		}
+		if scheduled != 2 || unscheduled != 3 || cleanLeaseState != 5 {
+			t.Fatalf("epoch-seven task backfill = scheduled:%d unscheduled:%d clean:%d, want 2/3/5",
+				scheduled, unscheduled, cleanLeaseState)
+		}
+		var revision uint64
+		if err := database.QueryRow(`SELECT revision FROM integration_settings
+			WHERE provider = 'epoch-seven-provider'`).Scan(&revision); err != nil {
+			t.Fatal(err)
+		}
+		if revision != 1 {
+			t.Fatalf("existing integration revision = %d, want 1", revision)
+		}
+		var providerFenceRows int
+		if err := database.QueryRow(`SELECT COUNT(*) FROM integration_settings
+			WHERE provider IN ('jenkins', 'kubernetes') AND revision = 1`).Scan(&providerFenceRows); err != nil {
+			t.Fatal(err)
+		}
+		if providerFenceRows != 2 {
+			t.Fatalf("built-in provider fence rows = %d, want 2", providerFenceRows)
+		}
+		var dueIndexes int
+		if err := database.QueryRow(`SELECT COUNT(*) FROM (
+			SELECT INDEX_NAME
+			FROM information_schema.STATISTICS
+			WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'task_record' AND NON_UNIQUE = 1
+			GROUP BY INDEX_NAME
+			HAVING GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX SEPARATOR ',') =
+				'engine_version,deleted_at,next_poll_at,task_id'
+		) matching_due_indexes`).Scan(&dueIndexes); err != nil {
+			t.Fatal(err)
+		}
+		if dueIndexes != 1 {
+			t.Fatalf("epoch-seven due indexes = %d, want 1", dueIndexes)
+		}
+		if _, err := database.Exec(`ALTER TABLE task_record
+			RENAME INDEX idx_task_worker_due TO operator_task_worker_due`); err != nil {
+			t.Fatal(err)
+		}
+		renamed, err := InspectSchema(ctx, dsn, 45*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertCompatibleStatus(t, renamed)
+
+		if _, err := database.Exec(`UPDATE task_record SET next_poll_at = NULL
+			WHERE task_id = 71001`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`UPDATE task_record SET next_poll_at = UTC_TIMESTAMP(6)
+			WHERE task_id = 71004`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`UPDATE task_record
+			SET lease_owner = X'01', lease_expires_at = NULL, poll_failure_count = 32
+			WHERE task_id = 71002`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`UPDATE integration_settings SET revision = 0
+			WHERE provider = 'epoch-seven-provider'`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`DELETE FROM integration_settings
+			WHERE provider = 'jenkins'`); err != nil {
+			t.Fatal(err)
+		}
+		invalid, err := InspectSchema(ctx, dsn, 45*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if invalid.Compatible() {
+			t.Fatal("malformed epoch-seven scheduling rows unexpectedly passed inspection")
+		}
+		for _, want := range []string{
+			"active v2 tasks must have a next poll time",
+			"must not be scheduled or leased",
+			"owner and expiry must both be null or both be present",
+			"must have an owner, fencing token, and matching next poll time",
+			"poll failure count exceeds its saturation limit",
+			"integration setting revisions must start at one",
+			"built-in integration provider fence rows must exist",
+		} {
+			if !containsProblem(invalid.ManifestDiffs, want) {
+				t.Errorf("malformed epoch-seven data does not report %q: %v", want, invalid.ManifestDiffs)
+			}
 		}
 	})
 
@@ -1824,8 +1947,8 @@ func TestMySQL84Migrations(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !before.Initialized || !before.NeedsAdoption || len(before.Applied) != 3 || len(before.Pending) != 3 {
-			t.Fatalf("legacy status = %+v, want three adopted candidates and three pending migrations", before)
+		if !before.Initialized || !before.NeedsAdoption || len(before.Applied) != 3 || len(before.Pending) != 4 {
+			t.Fatalf("legacy status = %+v, want three adopted candidates and four pending migrations", before)
 		}
 
 		status, err := MigrateUp(ctx, dsn, "", 45*time.Second, 10*time.Second)
@@ -1838,12 +1961,12 @@ func TestMySQL84Migrations(t *testing.T) {
 		var adopted, native int
 		if err := database.QueryRow(`SELECT
 			SUM(epoch <= 3 AND legacy_adopted = 1),
-			SUM(epoch IN (4, 5, 6) AND legacy_adopted = 0)
+			SUM(epoch IN (4, 5, 6, 7) AND legacy_adopted = 0)
 			FROM schema_migrations`).Scan(&adopted, &native); err != nil {
 			t.Fatal(err)
 		}
-		if adopted != 3 || native != 3 {
-			t.Fatalf("ledger adoption counts = adopted:%d native:%d, want 3 and 3", adopted, native)
+		if adopted != 3 || native != 4 {
+			t.Fatalf("ledger adoption counts = adopted:%d native:%d, want 3 and 4", adopted, native)
 		}
 		var appName, environment, packagePath string
 		if err := database.QueryRow(`SELECT a.app_name, c.env, c.code_package_path
@@ -2428,6 +2551,84 @@ func TestMySQL84Migrations(t *testing.T) {
 		}
 		if receiptTables != 0 {
 			t.Fatalf("refused split boundary created %d receipt tables", receiptTables)
+		}
+	})
+
+	t.Run("epoch seven dirty resume accepts every atomic DDL boundary and repeats backfill", func(t *testing.T) {
+		boundaries := []struct {
+			name       string
+			statements []string
+		}{
+			{name: "task lease shape", statements: []string{workerLeaseTaskDDL}},
+			{name: "integration revision", statements: []string{
+				workerLeaseTaskDDL, workerLeaseIntegrationDDL,
+			}},
+		}
+		for index, boundary := range boundaries {
+			t.Run(boundary.name, func(t *testing.T) {
+				dsn, _ := harness.newDatabase(t)
+				database := migrateDatabaseToEpoch(t, dsn, 6)
+				if _, err := database.Exec(`INSERT INTO task_record
+					(task_id, app_name, branch, env, publisher, status, engine_version)
+					VALUES (?, 'epoch-seven-resume', 'main', 'dev', 'migration-test', 'queued', 2)`,
+					72000+index); err != nil {
+					t.Fatal(err)
+				}
+				migration := schemaMigrations[6]
+				insertDirtyMigrationRow(t, database, migration)
+				for _, statement := range boundary.statements {
+					if _, err := database.Exec(statement); err != nil {
+						t.Fatal(err)
+					}
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+				defer cancel()
+				status, err := MigrateUp(ctx, dsn, migration.version, 45*time.Second, 10*time.Second)
+				if err != nil {
+					t.Fatal(err)
+				}
+				assertCompatibleStatus(t, status)
+				var nextPoll sql.NullTime
+				if err := database.QueryRow(`SELECT next_poll_at FROM task_record WHERE task_id = ?`,
+					72000+index).Scan(&nextPoll); err != nil {
+					t.Fatal(err)
+				}
+				if !nextPoll.Valid {
+					t.Fatal("resumed epoch-seven migration did not repeat the active-task backfill")
+				}
+			})
+		}
+	})
+
+	t.Run("epoch seven dirty resume rejects split and out-of-order DDL boundaries", func(t *testing.T) {
+		cases := []struct {
+			name      string
+			statement string
+		}{
+			{
+				name: "split task lease shape",
+				statement: `ALTER TABLE task_record
+					ADD COLUMN next_poll_at DATETIME(6) NULL DEFAULT NULL`,
+			},
+			{name: "integration revision before task lease shape", statement: workerLeaseIntegrationDDL},
+		}
+		for _, test := range cases {
+			t.Run(test.name, func(t *testing.T) {
+				dsn, _ := harness.newDatabase(t)
+				database := migrateDatabaseToEpoch(t, dsn, 6)
+				migration := schemaMigrations[6]
+				insertDirtyMigrationRow(t, database, migration)
+				if _, err := database.Exec(test.statement); err != nil {
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				defer cancel()
+				status, err := MigrateUp(ctx, dsn, migration.version, 45*time.Second, 10*time.Second)
+				assertSchemaStateError(t, err)
+				if len(status.ManifestDiffs) == 0 {
+					t.Fatal("invalid epoch-seven resume boundary has no manifest diagnostics")
+				}
+			})
 		}
 	})
 
@@ -3574,7 +3775,7 @@ func (h *mysqlIntegrationHarness) newRuntimeUser(t *testing.T, targetDSN, databa
 		"GRANT SELECT ON `%s`.* TO %s", grantPattern, account)); err != nil {
 		t.Fatal(err)
 	}
-	for _, tableName := range sortedStringKeys(epoch6SemanticSchemaManifest.tables) {
+	for _, tableName := range sortedStringKeys(epoch7SemanticSchemaManifest.tables) {
 		privileges := expectedRuntimeDMLPrivileges(tableName)
 		if privileges == "" {
 			continue

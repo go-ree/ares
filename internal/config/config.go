@@ -29,9 +29,12 @@ type Config struct {
 		SchemaMigrationTimeout string `yaml:"schema_migration_timeout"`
 		MigrationLockTimeout   string `yaml:"migration_lock_timeout"`
 	} `yaml:"db"`
+	// Job is retained only so existing configuration files remain parseable.
+	// Background task scheduling no longer consults these cron expressions.
 	Job map[string]struct {
 		Cron string `yaml:"cron"`
 	} `yaml:"job"`
+	Worker   WorkerConfig `yaml:"worker"`
 	DemoData struct {
 		Enabled bool `yaml:"enabled"`
 	} `yaml:"demo_data"`
@@ -46,7 +49,13 @@ type Config struct {
 	resolvedSecrets resolvedSecrets
 }
 
-var Main = &Config{}
+func newDefaultConfig() *Config {
+	cfg := &Config{}
+	cfg.Worker.Enabled = true
+	return cfg
+}
+
+var Main = newDefaultConfig()
 
 func Init(configPath string) error {
 	slog.Info("config load start", "path", configPath)
@@ -56,7 +65,7 @@ func Init(configPath string) error {
 		return err
 	}
 
-	loaded := &Config{}
+	loaded := newDefaultConfig()
 	decoder := yaml.NewDecoder(bytes.NewReader(yamlData))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(loaded); err != nil {
@@ -194,10 +203,16 @@ func applyEnvironmentOverrides(cfg *Config) error {
 	if err := overrideOptionalBool("ARES_DEMO_DATA_ENABLED", &cfg.DemoData.Enabled); err != nil {
 		return err
 	}
+	if err := applyWorkerEnvironmentOverrides(&cfg.Worker); err != nil {
+		return err
+	}
 	if _, err := parsePositiveDuration("db.schema_migration_timeout", cfg.DB.SchemaMigrationTimeout, 2*time.Minute); err != nil {
 		return err
 	}
 	if _, err := parsePositiveDuration("db.migration_lock_timeout", cfg.DB.MigrationLockTimeout, 30*time.Second); err != nil {
+		return err
+	}
+	if err := normalizeAndValidateWorkerConfig(&cfg.Worker); err != nil {
 		return err
 	}
 	return normalizeAndValidateSecurityConfig(cfg)

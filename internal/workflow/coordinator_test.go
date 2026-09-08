@@ -26,7 +26,7 @@ func (m *memoryExecutionStore) CreateTaskSnapshot(context.Context, int, Workflow
 	return errors.New("not used")
 }
 
-func (m *memoryExecutionStore) GetTaskReleaseContext(context.Context, int) (ReleaseContext, error) {
+func (m *memoryExecutionStore) GetTaskReleaseContext(context.Context, TaskLease) (ReleaseContext, error) {
 	return m.release, nil
 }
 
@@ -38,7 +38,29 @@ func (m *memoryExecutionStore) ListTaskSteps(context.Context, int) ([]entity.Tas
 	return rows, nil
 }
 
-func (m *memoryExecutionStore) ClaimStep(_ context.Context, id int64) (bool, error) {
+func (m *memoryExecutionStore) ListTaskStepsForLease(ctx context.Context, lease TaskLease) ([]entity.TaskStepRecord, error) {
+	return m.ListTaskSteps(ctx, lease.TaskID)
+}
+
+func (m *memoryExecutionStore) StepTimeRemaining(_ context.Context, _ TaskLease, id int64, timeoutSeconds int) (time.Duration, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.steps {
+		if m.steps[i].StepRecordID == id {
+			if m.steps[i].StartedTime == nil {
+				return time.Duration(timeoutSeconds) * time.Second, nil
+			}
+			remaining := time.Duration(timeoutSeconds)*time.Second - time.Since(*m.steps[i].StartedTime)
+			if remaining < 0 {
+				remaining = 0
+			}
+			return remaining, nil
+		}
+	}
+	return 0, ErrNotFound
+}
+
+func (m *memoryExecutionStore) ClaimStep(_ context.Context, _ TaskLease, id int64) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.steps {
@@ -52,7 +74,7 @@ func (m *memoryExecutionStore) ClaimStep(_ context.Context, id int64) (bool, err
 	return false, nil
 }
 
-func (m *memoryExecutionStore) ReleaseStep(_ context.Context, id int64, message string) (bool, error) {
+func (m *memoryExecutionStore) ReleaseStep(_ context.Context, _ TaskLease, id int64, message string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.steps {
@@ -66,7 +88,7 @@ func (m *memoryExecutionStore) ReleaseStep(_ context.Context, id int64, message 
 	return false, nil
 }
 
-func (m *memoryExecutionStore) SaveStepResult(_ context.Context, id int64, result Result) (bool, error) {
+func (m *memoryExecutionStore) SaveStepResult(_ context.Context, _ TaskLease, id int64, result Result) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.steps {
@@ -86,7 +108,7 @@ func (m *memoryExecutionStore) SaveStepResult(_ context.Context, id int64, resul
 	return false, nil
 }
 
-func (m *memoryExecutionStore) SkipPendingSteps(_ context.Context, _ int, message string) error {
+func (m *memoryExecutionStore) SkipPendingSteps(_ context.Context, _ TaskLease, message string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.steps {
@@ -98,12 +120,16 @@ func (m *memoryExecutionStore) SkipPendingSteps(_ context.Context, _ int, messag
 	return nil
 }
 
-func (m *memoryExecutionStore) SetTaskStatus(_ context.Context, _ int, status, message string) error {
+func (m *memoryExecutionStore) SetTaskStatus(_ context.Context, _ TaskLease, status, message string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.taskStatus = status
 	m.taskMessage = message
 	return nil
+}
+
+func testLease(taskID int) TaskLease {
+	return TaskLease{TaskID: taskID, Owner: "test-worker", FencingToken: 1}
 }
 
 func noopStep(id int64, key, outcome, onFailure string) entity.TaskStepRecord {
@@ -129,7 +155,7 @@ func TestCoordinatorRunsArbitraryStepsAndContinuePolicy(t *testing.T) {
 		noopStep(3, "notify", ResultSucceeded, FailureStop),
 	}}
 	coordinator := NewCoordinator(store, DefaultRegistry())
-	result, err := coordinator.RunUntilBlocked(context.Background(), 8, 10)
+	result, err := coordinator.RunUntilBlocked(context.Background(), testLease(8), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +174,7 @@ func TestCoordinatorStopsAndSkipsRemainingSteps(t *testing.T) {
 		noopStep(1, "fail", ResultFailed, FailureStop),
 		noopStep(2, "never", ResultSucceeded, FailureStop),
 	}}
-	result, err := NewCoordinator(store, DefaultRegistry()).RunUntilBlocked(context.Background(), 9, 10)
+	result, err := NewCoordinator(store, DefaultRegistry()).RunUntilBlocked(context.Background(), testLease(9), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,9 +202,10 @@ func (rawErrorExecutor) Descriptor() Descriptor {
 }
 
 type unavailableStartExecutor struct {
-	available        atomic.Bool
-	startUnavailable atomic.Bool
-	starts           atomic.Int32
+	available            atomic.Bool
+	startUnavailable     atomic.Bool
+	reconcileUnavailable atomic.Bool
+	starts               atomic.Int32
 }
 
 func (e *unavailableStartExecutor) Descriptor() Descriptor {
@@ -213,7 +240,7 @@ func TestCoordinatorReleasesClaimWhenRuntimeDisappearsBeforeStart(t *testing.T) 
 		Status: StepPending, Attempt: 1,
 	}}}
 	coordinator := NewCoordinator(store, registry)
-	blocked, err := coordinator.RunUntilBlocked(context.Background(), 16, 10)
+	blocked, err := coordinator.RunUntilBlocked(context.Background(), testLease(16), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +249,7 @@ func TestCoordinatorReleasesClaimWhenRuntimeDisappearsBeforeStart(t *testing.T) 
 	}
 
 	executor.startUnavailable.Store(false)
-	completed, err := coordinator.RunUntilBlocked(context.Background(), 16, 10)
+	completed, err := coordinator.RunUntilBlocked(context.Background(), testLease(16), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +258,33 @@ func TestCoordinatorReleasesClaimWhenRuntimeDisappearsBeforeStart(t *testing.T) 
 	}
 }
 func (e *unavailableStartExecutor) Reconcile(context.Context, ReconcileRequest) (Result, error) {
+	if e.reconcileUnavailable.Load() {
+		return Result{}, fmt.Errorf("%w: revision refresh failed", ErrExecutorUnavailable)
+	}
 	return Result{State: ResultSucceeded}, nil
+}
+
+func TestCoordinatorBacksOffRunningStepWhenExecutorIsUnavailable(t *testing.T) {
+	executor := &unavailableStartExecutor{}
+	executor.reconcileUnavailable.Store(true)
+	registry := NewRegistry()
+	if err := registry.Register(executor); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	store := &memoryExecutionStore{steps: []entity.TaskStepRecord{{
+		StepRecordID: 1, StepKey: "jenkins", Name: "jenkins", Uses: "test.startup-loading@v1",
+		Config: json.RawMessage(`{}`), TimeoutSeconds: 60, OnFailure: FailureStop,
+		Status: StepRunning, Attempt: 1, StartedTime: &started,
+		ExternalRef: json.RawMessage(`{"build_id":1}`),
+	}}}
+	result, err := NewCoordinator(store, registry).Advance(context.Background(), testLease(19))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Blocked || !result.PollBackoff || result.Terminal || store.steps[0].Status != StepRunning {
+		t.Fatalf("result=%#v step=%#v", result, store.steps[0])
+	}
 }
 
 func TestCoordinatorLeavesPendingStepUnclaimedWhileIntegrationLoads(t *testing.T) {
@@ -246,7 +299,7 @@ func TestCoordinatorLeavesPendingStepUnclaimedWhileIntegrationLoads(t *testing.T
 		Status: StepPending, Attempt: 1,
 	}}}
 	coordinator := NewCoordinator(store, registry)
-	blocked, err := coordinator.RunUntilBlocked(context.Background(), 15, 10)
+	blocked, err := coordinator.RunUntilBlocked(context.Background(), testLease(15), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +308,7 @@ func TestCoordinatorLeavesPendingStepUnclaimedWhileIntegrationLoads(t *testing.T
 	}
 
 	executor.available.Store(true)
-	completed, err := coordinator.RunUntilBlocked(context.Background(), 15, 10)
+	completed, err := coordinator.RunUntilBlocked(context.Background(), testLease(15), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +334,7 @@ func TestCoordinatorDoesNotPersistRawExecutorErrors(t *testing.T) {
 		Config: json.RawMessage(`{}`), TimeoutSeconds: 60, OnFailure: FailureStop,
 		Status: StepPending, Attempt: 1,
 	}}}
-	result, err := NewCoordinator(store, registry).RunUntilBlocked(context.Background(), 14, 10)
+	result, err := NewCoordinator(store, registry).RunUntilBlocked(context.Background(), testLease(14), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +353,7 @@ func TestCoordinatorDoesNotReturnOrLogRawReconcileErrors(t *testing.T) {
 		Config: json.RawMessage(`{}`), ExternalRef: json.RawMessage(`{"run_id":"42"}`),
 		TimeoutSeconds: 60, OnFailure: FailureStop, Status: StepRunning, Attempt: 1,
 	}}}
-	result, err := NewCoordinator(store, registry).RunUntilBlocked(context.Background(), 18, 10)
+	result, err := NewCoordinator(store, registry).RunUntilBlocked(context.Background(), testLease(18), 10)
 	if err != nil {
 		t.Fatalf("raw reconcile error escaped coordinator: %v", err)
 	}
@@ -326,7 +379,7 @@ func TestCoordinatorRejectsSensitiveExecutorOutputBeforePersistence(t *testing.T
 		Config: json.RawMessage(`{}`), TimeoutSeconds: 60, OnFailure: FailureStop,
 		Status: StepPending, Attempt: 1,
 	}}}
-	result, err := NewCoordinator(store, registry).RunUntilBlocked(context.Background(), 13, 10)
+	result, err := NewCoordinator(store, registry).RunUntilBlocked(context.Background(), testLease(13), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +400,7 @@ func TestCoordinatorPreservesExternalReferenceWhenExecutorReturnsInvalidState(t 
 		StepRecordID: 1, StepKey: "invalid", Name: "invalid", Uses: NoopUses,
 		Status: StepRunning, OnFailure: FailureStop,
 	}}}
-	result, err := NewCoordinator(store, DefaultRegistry()).applyResult(context.Background(), 17, store.steps[0], Result{
+	result, err := NewCoordinator(store, DefaultRegistry()).applyResult(context.Background(), testLease(17), store.steps[0], Result{
 		State:             "not-a-valid-state",
 		Output:            json.RawMessage(`{"discarded":true}`),
 		ExternalReference: reference,
@@ -363,6 +416,81 @@ func TestCoordinatorPreservesExternalReferenceWhenExecutorReturnsInvalidState(t 
 	}
 	if len(store.steps[0].Output) != 0 {
 		t.Fatalf("invalid executor output persisted: %s", store.steps[0].Output)
+	}
+}
+
+type deadlineIgnoringResultExecutor struct {
+	starts     atomic.Int32
+	reconciles atomic.Int32
+}
+
+func (e *deadlineIgnoringResultExecutor) Descriptor() Descriptor {
+	return Descriptor{
+		Uses: "test.deadline-result@v1", Name: "deadline result",
+		ConfigSchema: json.RawMessage(`{"type":"object"}`),
+	}
+}
+
+func (e *deadlineIgnoringResultExecutor) Validate(json.RawMessage) error { return nil }
+
+func (e *deadlineIgnoringResultExecutor) Start(ctx context.Context, _ StartRequest) (Result, error) {
+	e.starts.Add(1)
+	<-ctx.Done()
+	// A broken adapter may report success after its deadline. The coordinator
+	// must not persist that late result.
+	return Result{State: ResultSucceeded, Message: "late start success"}, nil
+}
+
+func (e *deadlineIgnoringResultExecutor) Reconcile(ctx context.Context, _ ReconcileRequest) (Result, error) {
+	e.reconciles.Add(1)
+	<-ctx.Done()
+	return Result{State: ResultSucceeded, Message: "late reconcile success"}, nil
+}
+
+func TestCoordinatorRejectsSuccessfulResultsReturnedAfterStepDeadline(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		step entity.TaskStepRecord
+	}{
+		{
+			name: "start",
+			step: entity.TaskStepRecord{
+				StepRecordID: 1, StepKey: "deadline", Name: "deadline", Uses: "test.deadline-result@v1",
+				Config: json.RawMessage(`{}`), TimeoutSeconds: 1, OnFailure: FailureStop,
+				Status: StepPending, Attempt: 1,
+			},
+		},
+		{
+			name: "reconcile uses database remaining time",
+			step: func() entity.TaskStepRecord {
+				started := time.Now().Add(-900 * time.Millisecond)
+				return entity.TaskStepRecord{
+					StepRecordID: 1, StepKey: "deadline", Name: "deadline", Uses: "test.deadline-result@v1",
+					Config: json.RawMessage(`{}`), TimeoutSeconds: 1, OnFailure: FailureStop,
+					Status: StepRunning, Attempt: 1, StartedTime: &started,
+					ExternalRef: json.RawMessage(`{"run_id":"42"}`),
+				}
+			}(),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			executor := &deadlineIgnoringResultExecutor{}
+			registry := NewRegistry()
+			if err := registry.Register(executor); err != nil {
+				t.Fatal(err)
+			}
+			store := &memoryExecutionStore{steps: []entity.TaskStepRecord{test.step}}
+			result, err := NewCoordinator(store, registry).RunUntilBlocked(context.Background(), testLease(27), 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !result.Terminal || result.TaskStatus != TaskFailed || store.steps[0].Status != StepFailed {
+				t.Fatalf("late deadline result persisted: result=%#v step=%#v", result, store.steps[0])
+			}
+			if strings.Contains(store.steps[0].Message, "late") {
+				t.Fatalf("late executor message persisted: %q", store.steps[0].Message)
+			}
+		})
 	}
 }
 
@@ -395,11 +523,11 @@ func TestCoordinatorCASStartsStepOnce(t *testing.T) {
 	coordinator := NewCoordinator(store, registry)
 	firstDone := make(chan error, 1)
 	go func() {
-		_, err := coordinator.Advance(context.Background(), 10)
+		_, err := coordinator.Advance(context.Background(), testLease(10))
 		firstDone <- err
 	}()
 	<-executor.started
-	second, err := coordinator.Advance(context.Background(), 10)
+	second, err := coordinator.Advance(context.Background(), testLease(10))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,15 +558,16 @@ func TestHasJSONValueTreatsBlankAndNullAsEmpty(t *testing.T) {
 
 func TestCoordinatorDoesNotReconcileJSONNullReference(t *testing.T) {
 	store := &memoryExecutionStore{steps: []entity.TaskStepRecord{{
-		StepRecordID: 1,
-		TaskID:       12,
-		StepKey:      "waiting-for-start",
-		Name:         "waiting-for-start",
-		Uses:         NoopUses,
-		Status:       StepRunning,
-		ExternalRef:  json.RawMessage(" \n null\t"),
+		StepRecordID:   1,
+		TaskID:         12,
+		StepKey:        "waiting-for-start",
+		Name:           "waiting-for-start",
+		Uses:           NoopUses,
+		Status:         StepRunning,
+		TimeoutSeconds: 60,
+		ExternalRef:    json.RawMessage(" \n null\t"),
 	}}}
-	result, err := NewCoordinator(store, DefaultRegistry()).Advance(context.Background(), 12)
+	result, err := NewCoordinator(store, DefaultRegistry()).Advance(context.Background(), testLease(12))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-ree/ares/internal/entity"
 	"github.com/go-ree/ares/internal/workflow"
@@ -84,18 +85,27 @@ func TestComposePublishDataPreservesServerOwnedActor(t *testing.T) {
 }
 
 func TestTaskRecordDoesNotSerializeInternalPipelineInputs(t *testing.T) {
+	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
 	record := entity.TaskRecord{
-		TaskId:         1,
-		AppName:        "demo",
-		PipelineParam:  json.RawMessage(`{"deploy_token":"must-not-leak"}`),
-		JenkinsAddress: "https://internal-jenkins.example",
+		TaskId:            1,
+		AppName:           "demo",
+		PipelineParam:     json.RawMessage(`{"deploy_token":"must-not-leak"}`),
+		JenkinsAddress:    "https://internal-jenkins.example",
+		NextPollAt:        &now,
+		LeaseOwner:        []byte("internal-worker-owner"),
+		LeaseExpiresAt:    &now,
+		LeaseFencingToken: 42,
+		PollFailureCount:  3,
 	}
 	encoded, err := json.Marshal(record)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(encoded), "pipeline_param") || strings.Contains(string(encoded), "must-not-leak") ||
-		strings.Contains(string(encoded), "jenkins_address") || strings.Contains(string(encoded), "internal-jenkins") {
+		strings.Contains(string(encoded), "jenkins_address") || strings.Contains(string(encoded), "internal-jenkins") ||
+		strings.Contains(string(encoded), "next_poll_at") || strings.Contains(string(encoded), "lease_owner") ||
+		strings.Contains(string(encoded), "lease_expires_at") || strings.Contains(string(encoded), "lease_fencing_token") ||
+		strings.Contains(string(encoded), "poll_failure_count") || strings.Contains(string(encoded), "internal-worker-owner") {
 		t.Fatalf("internal pipeline inputs leaked through JSON: %s", encoded)
 	}
 }

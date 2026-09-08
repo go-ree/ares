@@ -30,6 +30,11 @@ type TaskRecord struct {
 	Products          string           `xorm:"VARCHAR(255) null 'products'" json:"products"`
 	EngineVersion     int              `xorm:"INT notnull DEFAULT 1 'engine_version'" json:"engine_version"`
 	WorkflowVersionID int64            `xorm:"BIGINT notnull DEFAULT 0 'workflow_version_id'" json:"workflow_version_id"`
+	NextPollAt        *time.Time       `xorm:"DATETIME(6) null 'next_poll_at'" json:"-"`
+	LeaseOwner        []byte           `xorm:"VARBINARY(64) null 'lease_owner'" json:"-"`
+	LeaseExpiresAt    *time.Time       `xorm:"DATETIME(6) null 'lease_expires_at'" json:"-"`
+	LeaseFencingToken uint64           `xorm:"BIGINT UNSIGNED notnull DEFAULT 0 'lease_fencing_token'" json:"-"`
+	PollFailureCount  uint32           `xorm:"INT UNSIGNED notnull DEFAULT 0 'poll_failure_count'" json:"-"`
 	Steps             []TaskStepRecord `xorm:"-" json:"steps,omitempty"`
 	AppletImages      []AppletImage    `xorm:"-" json:"applet_images"` // 新增：任务图片（仅对外返回）
 	CreatedTime       time.Time        `xorm:"timestamp created notnull DEFAULT CURRENT_TIMESTAMP 'created_at'" json:"created_at" swaggertype:"string" format:"date-time"`

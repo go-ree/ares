@@ -14,22 +14,22 @@ import (
 )
 
 type Coordinator struct {
-	store    ExecutionStore
+	store    LeasedExecutionStore
 	registry *Registry
-	now      func() time.Time
 }
 
 type AdvanceResult struct {
-	TaskID     int    `json:"task_id"`
-	TaskStatus string `json:"task_status"`
-	StepKey    string `json:"step_key,omitempty"`
-	StepStatus string `json:"step_status,omitempty"`
-	Blocked    bool   `json:"blocked"`
-	Terminal   bool   `json:"terminal"`
+	TaskID      int    `json:"task_id"`
+	TaskStatus  string `json:"task_status"`
+	StepKey     string `json:"step_key,omitempty"`
+	StepStatus  string `json:"step_status,omitempty"`
+	Blocked     bool   `json:"blocked"`
+	Terminal    bool   `json:"terminal"`
+	PollBackoff bool   `json:"-"`
 }
 
-func NewCoordinator(store ExecutionStore, registry *Registry) *Coordinator {
-	return &Coordinator{store: store, registry: registry, now: time.Now}
+func NewCoordinator(store LeasedExecutionStore, registry *Registry) *Coordinator {
+	return &Coordinator{store: store, registry: registry}
 }
 
 func (c *Coordinator) ListTaskSteps(ctx context.Context, taskID int) ([]entity.TaskStepRecord, error) {
@@ -61,10 +61,13 @@ func (c *Coordinator) TaskStepViews(steps []entity.TaskStepRecord) []TaskStepVie
 	return views
 }
 
-// Advance performs at most one executor call. Database CAS in ClaimStep makes
-// concurrent workers safe: losers observe claimed=false and do no external IO.
-func (c *Coordinator) Advance(ctx context.Context, taskID int) (AdvanceResult, error) {
-	steps, err := c.store.ListTaskSteps(ctx, taskID)
+// Advance performs at most one executor call while holding one immutable task
+// lease generation. Every read and write is fenced by the store; losing a
+// lease stops this coordinator pass without converting cancellation into a
+// business failure.
+func (c *Coordinator) Advance(ctx context.Context, lease TaskLease) (AdvanceResult, error) {
+	taskID := lease.TaskID
+	steps, err := c.store.ListTaskStepsForLease(ctx, lease)
 	if err != nil {
 		return AdvanceResult{}, err
 	}
@@ -80,28 +83,30 @@ func (c *Coordinator) Advance(ctx context.Context, taskID int) (AdvanceResult, e
 	}
 	if len(running) > 1 {
 		message := "检测到多个同时运行的串行步骤"
-		_ = c.store.SetTaskStatus(ctx, taskID, TaskFailed, message)
-		return AdvanceResult{}, fmt.Errorf("任务 %d 状态损坏：%s", taskID, message)
+		if err := c.store.SetTaskStatus(ctx, lease, TaskFailed, message); err != nil {
+			return AdvanceResult{}, err
+		}
+		return AdvanceResult{TaskID: taskID, TaskStatus: TaskFailed, Terminal: true}, nil
 	}
 	if len(running) == 1 {
-		return c.reconcile(ctx, taskID, running[0])
+		return c.reconcile(ctx, lease, running[0])
 	}
 
 	for _, step := range steps {
 		if step.Status == StepFailed && step.OnFailure == FailureStop {
-			if err := c.store.SkipPendingSteps(ctx, taskID, "前置步骤失败，流程已停止"); err != nil {
+			if err := c.store.SkipPendingSteps(ctx, lease, "前置步骤失败，流程已停止"); err != nil {
 				return AdvanceResult{}, err
 			}
-			if err := c.store.SetTaskStatus(ctx, taskID, TaskFailed, step.Message); err != nil {
+			if err := c.store.SetTaskStatus(ctx, lease, TaskFailed, step.Message); err != nil {
 				return AdvanceResult{}, err
 			}
 			return AdvanceResult{TaskID: taskID, TaskStatus: TaskFailed, Terminal: true}, nil
 		}
 		if step.Status == StepCancelled {
-			if err := c.store.SkipPendingSteps(ctx, taskID, "流程已取消"); err != nil {
+			if err := c.store.SkipPendingSteps(ctx, lease, "流程已取消"); err != nil {
 				return AdvanceResult{}, err
 			}
-			if err := c.store.SetTaskStatus(ctx, taskID, TaskCancelled, step.Message); err != nil {
+			if err := c.store.SetTaskStatus(ctx, lease, TaskCancelled, step.Message); err != nil {
 				return AdvanceResult{}, err
 			}
 			return AdvanceResult{TaskID: taskID, TaskStatus: TaskCancelled, Terminal: true}, nil
@@ -121,25 +126,20 @@ func (c *Coordinator) Advance(ctx context.Context, taskID int) (AdvanceResult, e
 				if err := checker.Available(ctx); err != nil {
 					return AdvanceResult{
 						TaskID: taskID, TaskStatus: TaskQueued, StepKey: step.StepKey,
-						StepStatus: StepPending, Blocked: true,
+						StepStatus: StepPending, Blocked: true, PollBackoff: true,
 					}, nil
 				}
 			}
 		}
-		claimed, err := c.store.ClaimStep(ctx, step.StepRecordID)
+		claimed, err := c.store.ClaimStep(ctx, lease, step.StepRecordID)
 		if err != nil {
 			return AdvanceResult{}, err
 		}
 		if !claimed {
 			return AdvanceResult{TaskID: taskID, TaskStatus: TaskRunning, Blocked: true}, nil
 		}
-		if err := c.store.SetTaskStatus(ctx, taskID, TaskRunning, ""); err != nil {
-			return AdvanceResult{}, err
-		}
 		step.Status = StepRunning
-		now := c.now()
-		step.StartedTime = &now
-		return c.start(ctx, taskID, step, steps)
+		return c.start(ctx, lease, step, steps)
 	}
 
 	status := TaskSucceeded
@@ -151,25 +151,26 @@ func (c *Coordinator) Advance(ctx context.Context, taskID int) (AdvanceResult, e
 			break
 		}
 	}
-	if err := c.store.SetTaskStatus(ctx, taskID, status, message); err != nil {
+	if err := c.store.SetTaskStatus(ctx, lease, status, message); err != nil {
 		return AdvanceResult{}, err
 	}
 	return AdvanceResult{TaskID: taskID, TaskStatus: status, Terminal: true}, nil
 }
 
-func (c *Coordinator) start(ctx context.Context, taskID int, step entity.TaskStepRecord, all []entity.TaskStepRecord) (AdvanceResult, error) {
+func (c *Coordinator) start(ctx context.Context, lease TaskLease, step entity.TaskStepRecord, all []entity.TaskStepRecord) (AdvanceResult, error) {
+	taskID := lease.TaskID
 	executor, found := c.registry.Get(step.Uses)
 	if !found {
-		return c.finishExecutorError(ctx, taskID, step, fmt.Errorf("执行器未注册：%s", step.Uses))
+		return c.finishExecutorError(ctx, lease, step, fmt.Errorf("执行器未注册：%s", step.Uses))
 	}
 	if checker, ok := executor.(AvailabilityChecker); ok {
 		if err := checker.Available(ctx); err != nil {
-			return c.releaseUnavailableStep(ctx, taskID, step)
+			return c.releaseUnavailableStep(ctx, lease, step)
 		}
 	}
-	release, err := c.store.GetTaskReleaseContext(ctx, taskID)
+	release, err := c.store.GetTaskReleaseContext(ctx, lease)
 	if err != nil {
-		return c.finishExecutorError(ctx, taskID, step, err)
+		return AdvanceResult{}, err
 	}
 	previous := make(map[string]json.RawMessage)
 	for _, candidate := range all {
@@ -192,16 +193,29 @@ func (c *Coordinator) start(ctx context.Context, taskID int, step entity.TaskSte
 		PreviousOutput: previous,
 	})
 	if err != nil {
-		if errors.Is(err, ErrExecutorUnavailable) {
-			return c.releaseUnavailableStep(ctx, taskID, step)
+		if ctx.Err() != nil {
+			return AdvanceResult{}, ctx.Err()
 		}
-		return c.finishExecutorError(ctx, taskID, step, err)
+		if callCtx.Err() != nil {
+			return c.finishExecutorError(ctx, lease, step, callCtx.Err())
+		}
+		if errors.Is(err, ErrExecutorUnavailable) {
+			return c.releaseUnavailableStep(ctx, lease, step)
+		}
+		return c.finishExecutorError(ctx, lease, step, err)
 	}
-	return c.applyResult(ctx, taskID, step, result)
+	if err := ctx.Err(); err != nil {
+		return AdvanceResult{}, err
+	}
+	if err := callCtx.Err(); err != nil {
+		return c.finishExecutorError(ctx, lease, step, err)
+	}
+	return c.applyResult(ctx, lease, step, result)
 }
 
-func (c *Coordinator) releaseUnavailableStep(ctx context.Context, taskID int, step entity.TaskStepRecord) (AdvanceResult, error) {
-	released, err := c.store.ReleaseStep(ctx, step.StepRecordID, "执行器暂不可用，等待重试")
+func (c *Coordinator) releaseUnavailableStep(ctx context.Context, lease TaskLease, step entity.TaskStepRecord) (AdvanceResult, error) {
+	taskID := lease.TaskID
+	released, err := c.store.ReleaseStep(ctx, lease, step.StepRecordID, "执行器暂不可用，等待重试")
 	if err != nil {
 		return AdvanceResult{}, err
 	}
@@ -211,13 +225,18 @@ func (c *Coordinator) releaseUnavailableStep(ctx context.Context, taskID int, st
 	}
 	return AdvanceResult{
 		TaskID: taskID, TaskStatus: TaskRunning, StepKey: step.StepKey,
-		StepStatus: stepStatus, Blocked: true,
+		StepStatus: stepStatus, Blocked: true, PollBackoff: true,
 	}, nil
 }
 
-func (c *Coordinator) reconcile(ctx context.Context, taskID int, step entity.TaskStepRecord) (AdvanceResult, error) {
-	if step.StartedTime != nil && step.TimeoutSeconds > 0 && c.now().After(step.StartedTime.Add(time.Duration(step.TimeoutSeconds)*time.Second)) {
-		return c.finishExecutorError(ctx, taskID, step, fmt.Errorf("步骤执行超时"))
+func (c *Coordinator) reconcile(ctx context.Context, lease TaskLease, step entity.TaskStepRecord) (AdvanceResult, error) {
+	taskID := lease.TaskID
+	remaining, err := c.store.StepTimeRemaining(ctx, lease, step.StepRecordID, step.TimeoutSeconds)
+	if err != nil {
+		return AdvanceResult{}, err
+	}
+	if remaining <= 0 {
+		return c.finishExecutorError(ctx, lease, step, fmt.Errorf("步骤执行超时"))
 	}
 	// A worker may observe the CAS claim while the winning worker is still in
 	// Start. Until Start persists an opaque reference there is nothing safe to
@@ -230,13 +249,15 @@ func (c *Coordinator) reconcile(ctx context.Context, taskID int, step entity.Tas
 	}
 	executor, found := c.registry.Get(step.Uses)
 	if !found {
-		return c.finishExecutorError(ctx, taskID, step, fmt.Errorf("执行器未注册：%s", step.Uses))
+		return c.finishExecutorError(ctx, lease, step, fmt.Errorf("执行器未注册：%s", step.Uses))
 	}
-	release, err := c.store.GetTaskReleaseContext(ctx, taskID)
+	release, err := c.store.GetTaskReleaseContext(ctx, lease)
 	if err != nil {
 		return AdvanceResult{}, err
 	}
-	result, err := executor.Reconcile(ctx, ReconcileRequest{
+	callCtx, cancel := context.WithTimeout(ctx, remaining)
+	defer cancel()
+	result, err := executor.Reconcile(callCtx, ReconcileRequest{
 		TaskID:            taskID,
 		StepKey:           step.StepKey,
 		Attempt:           step.Attempt,
@@ -246,20 +267,40 @@ func (c *Coordinator) reconcile(ctx context.Context, taskID int, step entity.Tas
 		Release:           release,
 	})
 	if err != nil {
-		return c.finishExecutorError(ctx, taskID, step, err)
+		if ctx.Err() != nil {
+			return AdvanceResult{}, ctx.Err()
+		}
+		if callCtx.Err() != nil {
+			return c.finishExecutorError(ctx, lease, step, callCtx.Err())
+		}
+		if errors.Is(err, ErrExecutorUnavailable) {
+			return AdvanceResult{
+				TaskID: taskID, TaskStatus: TaskRunning, StepKey: step.StepKey,
+				StepStatus: StepRunning, Blocked: true, PollBackoff: true,
+			}, nil
+		}
+		return c.finishExecutorError(ctx, lease, step, err)
 	}
-	return c.applyResult(ctx, taskID, step, result)
+	if err := ctx.Err(); err != nil {
+		return AdvanceResult{}, err
+	}
+	if err := callCtx.Err(); err != nil {
+		return c.finishExecutorError(ctx, lease, step, err)
+	}
+	return c.applyResult(ctx, lease, step, result)
 }
 
-func (c *Coordinator) finishExecutorError(ctx context.Context, taskID int, step entity.TaskStepRecord, executorErr error) (AdvanceResult, error) {
+func (c *Coordinator) finishExecutorError(ctx context.Context, lease TaskLease, step entity.TaskStepRecord, executorErr error) (AdvanceResult, error) {
+	taskID := lease.TaskID
 	// Executor errors may contain internal URLs or untrusted upstream response
 	// text. Keep public task history stable and free from raw provider details.
 	slog.Warn("执行器调用失败", "task_id", taskID, "step_key", step.StepKey, "uses", step.Uses, "error_type", fmt.Sprintf("%T", executorErr))
 	result := Result{State: ResultFailed, Message: "执行器调用失败，请检查服务端运行状态"}
-	return c.applyResult(ctx, taskID, step, result)
+	return c.applyResult(ctx, lease, step, result)
 }
 
-func (c *Coordinator) applyResult(ctx context.Context, taskID int, step entity.TaskStepRecord, result Result) (AdvanceResult, error) {
+func (c *Coordinator) applyResult(ctx context.Context, lease TaskLease, step entity.TaskStepRecord, result Result) (AdvanceResult, error) {
+	taskID := lease.TaskID
 	if !validResultState(result.State) {
 		// A misbehaving executor may already have created an external resource.
 		// Preserve its opaque reference for audit/log lookup while rejecting the
@@ -280,7 +321,7 @@ func (c *Coordinator) applyResult(ctx context.Context, taskID int, step entity.T
 	if !hasJSONValue(result.ExternalReference) && hasJSONValue(step.ExternalRef) {
 		result.ExternalReference = append(json.RawMessage(nil), step.ExternalRef...)
 	}
-	saved, err := c.store.SaveStepResult(ctx, step.StepRecordID, result)
+	saved, err := c.store.SaveStepResult(ctx, lease, step.StepRecordID, result)
 	if err != nil {
 		return AdvanceResult{}, err
 	}
@@ -297,20 +338,20 @@ func (c *Coordinator) applyResult(ctx context.Context, taskID int, step entity.T
 		return response, nil
 	}
 	if stepStatus == StepFailed && step.OnFailure == FailureStop {
-		if err := c.store.SkipPendingSteps(ctx, taskID, "前置步骤失败，流程已停止"); err != nil {
+		if err := c.store.SkipPendingSteps(ctx, lease, "前置步骤失败，流程已停止"); err != nil {
 			return AdvanceResult{}, err
 		}
-		if err := c.store.SetTaskStatus(ctx, taskID, TaskFailed, result.Message); err != nil {
+		if err := c.store.SetTaskStatus(ctx, lease, TaskFailed, result.Message); err != nil {
 			return AdvanceResult{}, err
 		}
 		response.TaskStatus = TaskFailed
 		response.Terminal = true
 	}
 	if stepStatus == StepCancelled {
-		if err := c.store.SkipPendingSteps(ctx, taskID, "流程已取消"); err != nil {
+		if err := c.store.SkipPendingSteps(ctx, lease, "流程已取消"); err != nil {
 			return AdvanceResult{}, err
 		}
-		if err := c.store.SetTaskStatus(ctx, taskID, TaskCancelled, result.Message); err != nil {
+		if err := c.store.SetTaskStatus(ctx, lease, TaskCancelled, result.Message); err != nil {
 			return AdvanceResult{}, err
 		}
 		response.TaskStatus = TaskCancelled
@@ -327,14 +368,15 @@ func hasJSONValue(raw json.RawMessage) bool {
 // RunUntilBlocked advances synchronous steps until the task reaches an async
 // boundary or a terminal state. The bound prevents a faulty store/executor from
 // causing an unbounded loop.
-func (c *Coordinator) RunUntilBlocked(ctx context.Context, taskID, maxTransitions int) (AdvanceResult, error) {
+func (c *Coordinator) RunUntilBlocked(ctx context.Context, lease TaskLease, maxTransitions int) (AdvanceResult, error) {
+	taskID := lease.TaskID
 	if maxTransitions <= 0 {
 		maxTransitions = 101
 	}
 	var result AdvanceResult
 	for i := 0; i < maxTransitions; i++ {
 		var err error
-		result, err = c.Advance(ctx, taskID)
+		result, err = c.Advance(ctx, lease)
 		if err != nil {
 			return AdvanceResult{}, err
 		}

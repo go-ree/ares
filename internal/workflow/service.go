@@ -57,7 +57,7 @@ func (s *Service) Save(ctx context.Context, configID, revision int, actor string
 
 // SnapshotTask upgrades an already inserted legacy TaskRecord with a workflow
 // snapshot. New v2 publishing code should use CreateTask for full atomicity.
-func (s *Service) SnapshotTask(ctx context.Context, executionStore ExecutionStore, taskID, configID int) (WorkflowView, error) {
+func (s *Service) SnapshotTask(ctx context.Context, executionStore TaskSnapshotStore, taskID, configID int) (WorkflowView, error) {
 	workflow, err := s.runnableWorkflow(ctx, configID)
 	if err != nil {
 		return WorkflowView{}, err
@@ -70,7 +70,7 @@ func (s *Service) SnapshotTask(ctx context.Context, executionStore ExecutionStor
 
 // CreateTask is the normal v2 publishing entry point. It inserts TaskRecord
 // and every TaskStepRecord in one database transaction.
-func (s *Service) CreateTask(ctx context.Context, executionStore ExecutionStore, configID int, task *entity.TaskRecord) (WorkflowView, error) {
+func (s *Service) CreateTask(ctx context.Context, executionStore TaskSnapshotStore, configID int, task *entity.TaskRecord) (WorkflowView, error) {
 	if task == nil {
 		return WorkflowView{}, fmt.Errorf("任务不能为空")
 	}

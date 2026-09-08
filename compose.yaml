@@ -149,11 +149,24 @@ services:
     command: ["serve"]
     restart: unless-stopped
     init: true
+    stop_grace_period: ${ARES_CONTAINER_STOP_GRACE_PERIOD:-30s}
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       ARES_DB_CONN_STR: "${MYSQL_RUNTIME_USER:-ares_runtime}:${MYSQL_RUNTIME_PASSWORD:-ares-runtime-demo-password}@tcp(mysql:3306)/${MYSQL_DATABASE:-ares}?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai&timeout=5s&readTimeout=10s&writeTimeout=10s"
       ARES_DB_SCHEMA_MIGRATION_TIMEOUT: ${ARES_DB_SCHEMA_MIGRATION_TIMEOUT:-2m}
       ARES_DEMO_DATA_ENABLED: ${ARES_DEMO_DATA_ENABLED:-true}
+      ARES_WORKER_ENABLED: "${ARES_WORKER_ENABLED:-true}"
+      ARES_WORKER_CONCURRENCY: "${ARES_WORKER_CONCURRENCY:-8}"
+      ARES_WORKER_CLAIM_BATCH_SIZE: "${ARES_WORKER_CLAIM_BATCH_SIZE:-8}"
+      ARES_WORKER_SCAN_INTERVAL: "${ARES_WORKER_SCAN_INTERVAL:-1s}"
+      ARES_WORKER_LEASE_DURATION: "${ARES_WORKER_LEASE_DURATION:-30s}"
+      ARES_WORKER_RENEW_INTERVAL: "${ARES_WORKER_RENEW_INTERVAL:-10s}"
+      ARES_WORKER_NORMAL_POLL_INTERVAL: "${ARES_WORKER_NORMAL_POLL_INTERVAL:-5s}"
+      ARES_WORKER_BACKOFF_MIN: "${ARES_WORKER_BACKOFF_MIN:-2s}"
+      ARES_WORKER_BACKOFF_MAX: "${ARES_WORKER_BACKOFF_MAX:-2m}"
+      ARES_WORKER_DRAIN_TIMEOUT: "${ARES_WORKER_DRAIN_TIMEOUT:-20s}"
+      ARES_WORKER_INTEGRATION_SYNC_INTERVAL: "${ARES_WORKER_INTEGRATION_SYNC_INTERVAL:-15s}"
+      ARES_WORKER_LEGACY_POLL_INTERVAL: "${ARES_WORKER_LEGACY_POLL_INTERVAL:-10s}"
       ARES_WEB_PUBLIC_URL: http://localhost:${ARES_HTTP_PORT:-8080}
       # The bundled proxy has a fixed address so client-keyed authentication
       # limits can trust exactly one hop instead of collapsing every browser
@@ -175,8 +188,6 @@ services:
         condition: service_completed_successfully
     expose:
       - "8080"
-    ports:
-      - "127.0.0.1:${ARES_API_PORT:-8081}:8080"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health/ready | grep -q '^OK$'"]
       interval: 5s
