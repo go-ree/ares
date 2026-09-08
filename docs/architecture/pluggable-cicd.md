@@ -14,6 +14,9 @@ Ares 的历史实现围绕应用管理发布，但发布链路把“流水线”
 发布命令的一致性与重试协议由
 [ADR-0004：以 AppConfig 为目标的原子幂等发布](decisions/0004-appconfig-idempotent-releases.md)
 固定。
+多副本任务推进的交付语义、数据库租约与故障接管由
+[ADR-0005：多副本 Worker 的任务租约与 fencing](decisions/0005-multi-replica-worker-leases.md)
+固定。
 
 ## 2. 目标与非目标
 
