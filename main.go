@@ -19,7 +19,10 @@ import (
 	"github.com/go-ree/ares/internal/integration"
 	"github.com/go-ree/ares/internal/job"
 	"github.com/go-ree/ares/internal/logger"
+	"github.com/go-ree/ares/internal/publish"
+	"github.com/go-ree/ares/internal/release"
 	"github.com/go-ree/ares/internal/webserver"
+	"github.com/go-ree/ares/internal/workflow"
 )
 
 const (
@@ -94,6 +97,46 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
+type backgroundJobStarter interface {
+	Start(context.Context) error
+}
+
+type preparedHTTPServer interface {
+	Serve(context.Context) error
+	Close() error
+}
+
+func prepareHTTPAndStartJobs(
+	ctx context.Context,
+	jobs backgroundJobStarter,
+	prepare func() (preparedHTTPServer, error),
+) (preparedHTTPServer, error) {
+	if ctx == nil {
+		return nil, errors.New("service context is nil")
+	}
+	if jobs == nil {
+		return nil, errors.New("background job manager is nil")
+	}
+	if prepare == nil {
+		return nil, errors.New("HTTP server preparer is nil")
+	}
+	httpServer, err := prepare()
+	if err != nil {
+		return nil, err
+	}
+	if httpServer == nil {
+		return nil, errors.New("prepared HTTP server is nil")
+	}
+	if err := jobs.Start(ctx); err != nil {
+		closeErr := httpServer.Close()
+		if closeErr != nil {
+			return nil, errors.Join(err, fmt.Errorf("close prepared HTTP listener: %w", closeErr))
+		}
+		return nil, err
+	}
+	return httpServer, nil
+}
+
 func runServer(ctx context.Context, stderr io.Writer) int {
 	config.InitSwagger()
 	if err := db.Init(); err != nil {
@@ -108,18 +151,82 @@ func runServer(ctx context.Context, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "初始化身份与权限服务失败：%v\n", err)
 		return exitOperational
 	}
-	if err := integration.Initialize(config.SettingsEncryptionKey()); err != nil {
+	if err := integration.InitializeContext(ctx, config.SettingsEncryptionKey()); err != nil {
 		_, _ = fmt.Fprintf(stderr, "初始化外部集成失败：%v\n", err)
 		return exitOperational
 	}
-	if err := job.Init(); err != nil {
+	workerSettings := config.WorkerSettings()
+	var workflowRunner job.Runner
+	var legacyRunner job.LegacyRunner
+	if workerSettings.Enabled {
+		runtime := release.Shared()
+		worker, err := workflow.NewWorker(runtime.Store, runtime.Coordinator, workflowWorkerOptions(workerSettings))
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "初始化工作流 Worker 失败：%v\n", err)
+			return exitOperational
+		}
+		workflowRunner = worker
+		legacyRunner = publish.NewTaskManager()
+	}
+	integrationRunner := job.RunnerFunc(func(runCtx context.Context) error {
+		integration.RunSynchronizer(runCtx, workerSettings.IntegrationSyncInterval)
+		return nil
+	})
+	jobManager, err := job.NewManager(workflowRunner, integrationRunner, legacyRunner, job.Options{
+		LegacyPollInterval: workerSettings.LegacyPollInterval,
+		DrainTimeout:       workerSettings.DrainTimeout,
+	})
+	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "初始化后台任务失败：%v\n", err)
 		return exitOperational
 	}
-	webserver.Run(ctx, func(router gin.IRouter) {
-		api.RouterWithRuntime(router, authRuntime)
+	serviceCtx, cancelService := context.WithCancel(ctx)
+	defer cancelService()
+	httpServer, err := prepareHTTPAndStartJobs(serviceCtx, jobManager, func() (preparedHTTPServer, error) {
+		return webserver.Prepare(func(router gin.IRouter) {
+			api.RouterWithRuntime(router, authRuntime)
+		})
 	})
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "启动 HTTP 服务或后台任务失败：%v\n", err)
+		return exitOperational
+	}
+	defer func() { _ = httpServer.Close() }()
+	go func() {
+		<-jobManager.Stopping()
+		cancelService()
+	}()
+	webErr := httpServer.Serve(serviceCtx)
+	// Whether shutdown was signal-driven or the listener failed, stop every
+	// background component and honor its drain boundary before returning an
+	// operational failure to main.
+	cancelService()
+	jobManager.Stop()
+	jobErr := jobManager.Wait()
+	if webErr != nil {
+		_, _ = fmt.Fprintf(stderr, "HTTP 服务运行失败：%v\n", webErr)
+	}
+	if jobErr != nil {
+		_, _ = fmt.Fprintf(stderr, "停止后台任务失败：%v\n", jobErr)
+	}
+	if webErr != nil || jobErr != nil {
+		return exitOperational
+	}
 	return exitSuccess
+}
+
+func workflowWorkerOptions(settings config.WorkerRuntimeConfig) workflow.WorkerOptions {
+	return workflow.WorkerOptions{
+		Concurrency:        settings.Concurrency,
+		ClaimBatchSize:     settings.ClaimBatchSize,
+		ScanInterval:       settings.ScanInterval,
+		LeaseDuration:      settings.LeaseDuration,
+		RenewInterval:      settings.RenewInterval,
+		NormalPollInterval: settings.NormalPollInterval,
+		BackoffMin:         settings.BackoffMin,
+		BackoffMax:         settings.BackoffMax,
+		DrainTimeout:       settings.DrainTimeout,
+	}
 }
 
 func initializeAuthRuntime(ctx context.Context) (api.Runtime, error) {

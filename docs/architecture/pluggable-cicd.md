@@ -14,6 +14,9 @@ Ares 的历史实现围绕应用管理发布，但发布链路把“流水线”
 发布命令的一致性与重试协议由
 [ADR-0004：以 AppConfig 为目标的原子幂等发布](decisions/0004-appconfig-idempotent-releases.md)
 固定。
+多副本任务推进的交付语义、数据库租约与故障接管由
+[ADR-0005：多副本 Worker 的任务租约与 fencing](decisions/0005-multi-replica-worker-leases.md)
+固定。
 
 ## 2. 目标与非目标
 
@@ -132,14 +135,15 @@ Kubernetes 集成按环境代码动态建立运行时客户端映射，不预分
 | `release_workflows` | 流程身份和说明 |
 | `release_workflow_versions` | 不可变规范、版本、校验和、审计信息 |
 | `app_config_workflows` | AppConfig 到当前版本的原子绑定 |
-| `task_record` | 发布运行主记录和兼容字段 |
+| `task_record` | 发布运行主记录、内部 Worker 租约/调度状态和兼容字段 |
 | `task_step_records` | 任务的步骤快照、当前状态和外部引用 |
 | `release_idempotency_records` | 按服务端主体和语义操作保存发布命令摘要 |
 | `release_idempotency_items` | 按原请求顺序保存任务或稳定业务失败结果 |
 
 `task_record` 保留旧 `ci_*`、`cd_*` 字段用于兼容查询，但通用步骤记录是新引擎的事实源。W05
 新增的 `app_config_id` 是新任务的稳定目标，历史任务允许为空；应用名、环境名仍作为运行快照展示，
-不能再用于 canonical 创建定位。
+不能再用于 canonical 创建定位。W06 新增的 next poll、lease owner/expiry、fencing token 和失败
+计数只用于内部调度，不能进入公共 Task JSON、审计资源或日志。
 
 ## 6. 执行器边界
 
@@ -202,7 +206,15 @@ pending -> running -> succeeded
 Canonical 发布以 `config_id` 定位目标。任务创建时在一个数据库事务中锁定并重新校验 AppConfig、
 应用、环境、域名和当前工作流，把客户端请求摘要、任务、发布上下文、所有步骤快照及有序结果一起
 提交。单发重试只重放已提交任务；批量的全部成功任务和业务失败项也形成一个原子 receipt，不再由
-多个 goroutine 分别提交。Worker 使用条件更新/CAS 认领待执行步骤；不得依赖“最近三小时”窗口。
+多个 goroutine 分别提交。W06 Worker 先按数据库 `next_poll_at/task_id` 公平领取整个 v2 任务，
+每次领取生成单调 fencing token；任务/步骤读取、Start、running Reconcile、结果保存、终态和释放
+都校验相同 owner/token 及数据库时间内仍有效的租约。旧持有者即使在取消后晚返回，也不能覆盖新
+结果。不得依赖“最近三小时”或更新 `updated_at` 轮转任务。
+
+多个副本共享 MySQL 事实源，不要求 Redis 或 RabbitMQ。每个在途任务独立续租；续租失败会取消本地
+执行 context，租约到期后由其他实例接管。SIGTERM 立即停止新领取，并在有界 drain 内完成或取消
+在途任务。集成配置以数据库 revision/CAS 自动收敛，v1 遗留轮询器则只允许 MySQL named leader
+lock 持有者访问旧 Jenkins。
 
 客户端创建 key 的唯一作用域是稳定用户 ID、版本化语义操作与 key SHA-256 摘要。请求摘要覆盖
 `config_id/ref/inputs/expected_workflow_version_id`，使用保留精确 JSON 数值的规范化编码；时间戳、
@@ -262,6 +274,9 @@ Jenkins Adapter 将它作为构建参数传递。客户端 `Idempotency-Key` 只
 7. Epoch 6 为 `task_record` 扩展可空 `app_config_id`，不猜测回填历史任务；新增两张只增幂等表，
    不从旧请求或任务推导 receipt。
 8. W05 后所有 canonical 任务写稳定目标和原子 receipt；旧发布接口只在 adapter 层保留一个版本。
+9. Epoch 7 为 `task_record` 增加调度时间、任务租约、单调 fencing token、失败计数与公平扫描
+   索引，并为 `integration_settings` 增加 revision。epoch 6/7 不能滚动混写；先停止全部旧副本、
+   备份并迁移，再启动新副本。
 
 结构迁移采用前向兼容策略，但升级后的数据库不能由旧版 Xorm 进程继续写入。旧同步逻辑会删除它不认识的新索引，却保留迁移版本标记；因此回退必须使用 schema/Worker 兼容镜像，或恢复升级前数据库备份，不能只替换为旧二进制。
 
@@ -277,7 +292,11 @@ Jenkins Adapter 将它作为构建参数传递。客户端 `Idempotency-Key` 只
 - 环境、流程、发布、任务和日志均使用 ADR-0002 的服务端细粒度 RBAC；前端按钮和 capabilities 只用于体验，不是授权边界。
 - `Idempotency-Key` 原文、key/request digest 和 inputs 不进入日志、审计、响应或执行器；发布人和幂等作用域只来自服务端 `Principal`。
 - 批量发布最多 100 个不重复目标、2000 个步骤快照，在单个有界数据库事务中按稳定锁顺序创建；HTTP 事务不并发调用执行器。
-- Jenkins 步骤的外部引用绑定实例地址；已绑定的在途 v1/v2 任务存在时禁止换址，运行时切换与步骤 Start/Reconcile 通过读写门闩串行化。历史未绑定 v1 任务不猜测归属、不访问 Jenkins，并进入明确失败终态。
+- Jenkins 步骤的外部引用绑定实例地址；当前设置 enabled 且存在已绑定在途 v1/v2 任务时，地址、
+  username、Token、timeout 或停用等任何 generation 变化都被 provider 事务 fence 拒绝，并结合
+  revision CAS 防止并发发布越过检查。当前设置已经 disabled 时允许重新启用以恢复可证明归属的
+  running 任务，外呼前仍严格匹配 external reference 地址。历史未绑定 v1 任务不猜测归属、不访问
+  Jenkins，并进入明确失败终态。
 
 ## 11. 架构验收
 
@@ -285,7 +304,10 @@ Jenkins Adapter 将它作为构建参数传递。客户端 `Idempotency-Key` 只
 - 同一应用的 `dev` 和 `prod-blue` 可以拥有不同数量、不同类型和不同顺序的步骤。
 - 不配置 Jenkins 时，服务健康、环境/流程 API 可用，Noop Demo 可完整成功。
 - 一个包含三个以上步骤的任务能逐步推进、失败即停，并正确返回每步状态。
-- 两个 Worker 同时扫描时，一个步骤只被一个 Worker 认领。
+- 三个 Worker 同时扫描时，每个 v2 任务只有一个未过期合法租约；只有当前 fencing token 可以读取
+  执行快照并提交步骤或任务结果，故障后可以到期接管且陈旧持有者写入被拒绝。
+- 三个副本会自动收敛 integration revision；v1 遗留循环只有 named leader 持有者可以访问 Jenkins，
+  持锁连接断开后可由另一副本接管。
 - 修改流程后，已开始和历史任务仍展示原始步骤快照。
 - 同一用户跨 session、进程和重启重放相同发布 key 只得到原任务；改变目标、ref、inputs 或预期工作流版本得到稳定冲突。
 - 批量混合业务结果保持请求顺序并可整体重放；任一数据库故障不会留下部分 receipt、任务或步骤。

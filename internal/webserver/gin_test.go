@@ -2,7 +2,9 @@ package webserver
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -34,6 +36,76 @@ func TestHTTPServerUsesFiniteConfiguredBoundaries(t *testing.T) {
 	}
 	if server.MaxHeaderBytes != 32768 {
 		t.Fatalf("MaxHeaderBytes = %d", server.MaxHeaderBytes)
+	}
+}
+
+func TestRunReturnsListenFailure(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	original := config.Main
+	t.Cleanup(func() { config.Main = original })
+	config.Main = &config.Config{}
+	config.Main.Web.Address = listener.Addr().String()
+
+	err = Run(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "listen HTTP server") {
+		t.Fatalf("Run() error = %v, want listen failure", err)
+	}
+}
+
+func TestPrepareBindsBeforeServeAndCloseReleasesListener(t *testing.T) {
+	original := config.Main
+	t.Cleanup(func() { config.Main = original })
+	config.Main = &config.Config{}
+	config.Main.Web.Address = "127.0.0.1:0"
+
+	prepared, err := Prepare(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := prepared.listener.Addr().String()
+	competing, err := net.Listen("tcp", address)
+	if err == nil {
+		competing.Close()
+		t.Fatal("Prepare() did not bind the listener synchronously")
+	}
+	if err := prepared.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	rebound, err := net.Listen("tcp", address)
+	if err != nil {
+		t.Fatalf("listener was not released after Close(): %v", err)
+	}
+	rebound.Close()
+}
+
+func TestRunReturnsAfterContextCancellation(t *testing.T) {
+	original := config.Main
+	t.Cleanup(func() { config.Main = original })
+	config.Main = &config.Config{}
+	config.Main.Web.Address = "127.0.0.1:0"
+
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() { result <- Run(ctx, nil) }()
+	cancel()
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run() did not return after context cancellation")
+	}
+}
+
+func TestRunRejectsNilContext(t *testing.T) {
+	if err := Run(nil, nil); err == nil {
+		t.Fatal("Run(nil) succeeded")
 	}
 }
 

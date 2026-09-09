@@ -1,10 +1,13 @@
 package workflow
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -258,6 +261,11 @@ func InsertTaskWithSnapshotInSession(ctx context.Context, session *xorm.Session,
 	task.WorkflowVersionID = workflow.WorkflowVersionID
 	task.Status = TaskQueued
 	task.Message = ""
+	task.NextPollAt = nil
+	task.LeaseOwner = nil
+	task.LeaseExpiresAt = nil
+	task.LeaseFencingToken = 0
+	task.PollFailureCount = 0
 
 	omit := []string{"message"}
 	if task.CiJobName == "" {
@@ -274,6 +282,20 @@ func InsertTaskWithSnapshotInSession(ctx context.Context, session *xorm.Session,
 	}
 	if task.TaskId <= 0 {
 		return fmt.Errorf("数据库未返回 task_id")
+	}
+	result, err := session.Context(ctx).Exec(`UPDATE task_record
+		SET next_poll_at = UTC_TIMESTAMP(6)
+		WHERE task_id = ? AND engine_version = ? AND deleted_at IS NULL
+			AND status IN (?, ?)`, task.TaskId, 2, TaskQueued, TaskRunning)
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated != 1 {
+		return fmt.Errorf("初始化任务调度时间失败，task_id=%d", task.TaskId)
 	}
 	return insertTaskStepSnapshots(ctx, session, task.TaskId, workflow)
 }
@@ -314,11 +336,15 @@ func (s *XORMStore) CreateTaskSnapshot(ctx context.Context, taskID int, workflow
 		return err
 	}
 	updated, err := session.Context(ctx).Table(new(entity.TaskRecord)).ID(taskID).
+		SetExpr("next_poll_at", "UTC_TIMESTAMP(6)").
 		Update(map[string]any{
 			"engine_version":      2,
 			"workflow_version_id": workflow.WorkflowVersionID,
 			"status":              TaskQueued,
 			"message":             nil,
+			"lease_owner":         nil,
+			"lease_expires_at":    nil,
+			"poll_failure_count":  0,
 		})
 	if err != nil {
 		return err
@@ -354,22 +380,101 @@ func insertTaskStepSnapshots(ctx context.Context, session *xorm.Session, taskID 
 	return nil
 }
 
-func (s *XORMStore) GetTaskReleaseContext(ctx context.Context, taskID int) (ReleaseContext, error) {
-	var task entity.TaskRecord
-	has, err := s.engine.Context(ctx).ID(taskID).Get(&task)
-	if err != nil {
-		return ReleaseContext{}, err
+type lockedTaskLeaseRow struct {
+	TaskID            int        `xorm:"'task_id'"`
+	EngineVersion     int        `xorm:"'engine_version'"`
+	Status            string     `xorm:"'status'"`
+	DeletedAt         *time.Time `xorm:"'deleted_at'"`
+	LeaseOwner        []byte     `xorm:"'lease_owner'"`
+	LeaseExpiresAt    *time.Time `xorm:"'lease_expires_at'"`
+	LeaseFencingToken uint64     `xorm:"'lease_fencing_token'"`
+	DatabaseNow       time.Time  `xorm:"'database_now'"`
+}
+
+func validateTaskLeaseHandle(lease TaskLease) error {
+	if lease.TaskID <= 0 || lease.FencingToken == 0 {
+		return ErrLeaseLost
 	}
-	if !has {
-		return ReleaseContext{}, ErrNotFound
+	if len(lease.Owner) == 0 || len(lease.Owner) > MaxLeaseOwnerBytes {
+		return ErrLeaseLost
 	}
-	return ReleaseContext{
-		AppName:   task.AppName,
-		Env:       task.Env,
-		Ref:       task.Branch,
-		Publisher: task.Publisher,
-		Inputs:    append(json.RawMessage(nil), task.PipelineParam...),
-	}, nil
+	for index := 0; index < len(lease.Owner); index++ {
+		if lease.Owner[index] < 0x21 || lease.Owner[index] > 0x7e {
+			return ErrLeaseLost
+		}
+	}
+	return nil
+}
+
+func (s *XORMStore) withValidTaskLease(
+	ctx context.Context,
+	lease TaskLease,
+	operation func(*xorm.Session) error,
+) (err error) {
+	if s == nil || s.engine == nil {
+		return fmt.Errorf("数据库未初始化")
+	}
+	if err := validateTaskLeaseHandle(lease); err != nil {
+		return err
+	}
+	session := s.engine.NewSession()
+	defer session.Close()
+	session.Context(ctx)
+	if err = session.Begin(); err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = session.Rollback()
+		}
+	}()
+
+	var locked lockedTaskLeaseRow
+	has, queryErr := session.Context(ctx).SQL(`SELECT
+			task_id, engine_version, status, deleted_at, lease_owner,
+			lease_expires_at, lease_fencing_token, UTC_TIMESTAMP(6) AS database_now
+		FROM task_record WHERE task_id = ? FOR UPDATE`, lease.TaskID).Get(&locked)
+	if queryErr != nil {
+		return queryErr
+	}
+	if !has || locked.EngineVersion != 2 || locked.DeletedAt != nil ||
+		(locked.Status != TaskQueued && locked.Status != TaskRunning) ||
+		locked.LeaseExpiresAt == nil || !locked.LeaseExpiresAt.After(locked.DatabaseNow) ||
+		locked.LeaseFencingToken != lease.FencingToken ||
+		!bytes.Equal(locked.LeaseOwner, []byte(lease.Owner)) {
+		return ErrLeaseLost
+	}
+	if err = operation(session); err != nil {
+		return err
+	}
+	if err = session.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
+}
+
+func (s *XORMStore) GetTaskReleaseContext(ctx context.Context, lease TaskLease) (release ReleaseContext, err error) {
+	err = s.withValidTaskLease(ctx, lease, func(session *xorm.Session) error {
+		var task entity.TaskRecord
+		has, queryErr := session.Context(ctx).ID(lease.TaskID).Get(&task)
+		if queryErr != nil {
+			return queryErr
+		}
+		if !has {
+			return ErrLeaseLost
+		}
+		release = ReleaseContext{
+			AppName:   task.AppName,
+			Env:       task.Env,
+			Ref:       task.Branch,
+			Publisher: task.Publisher,
+			Inputs:    append(json.RawMessage(nil), task.PipelineParam...),
+		}
+		return nil
+	})
+	return release, err
 }
 
 func (s *XORMStore) ListTaskSteps(ctx context.Context, taskID int) ([]entity.TaskStepRecord, error) {
@@ -385,6 +490,52 @@ func (s *XORMStore) ListTaskSteps(ctx context.Context, taskID int) ([]entity.Tas
 		return nil, err
 	}
 	return rows, nil
+}
+
+func (s *XORMStore) ListTaskStepsForLease(ctx context.Context, lease TaskLease) (rows []entity.TaskStepRecord, err error) {
+	err = s.withValidTaskLease(ctx, lease, func(session *xorm.Session) error {
+		return session.Context(ctx).Where("task_id = ?", lease.TaskID).Asc("position").Find(&rows)
+	})
+	return rows, err
+}
+
+func (s *XORMStore) StepTimeRemaining(
+	ctx context.Context,
+	lease TaskLease,
+	stepRecordID int64,
+	timeoutSeconds int,
+) (remaining time.Duration, err error) {
+	if stepRecordID <= 0 || timeoutSeconds <= 0 {
+		return 0, fmt.Errorf("步骤超时参数无效")
+	}
+	err = s.withValidTaskLease(ctx, lease, func(session *xorm.Session) error {
+		var row struct {
+			RemainingMicroseconds int64 `xorm:"'remaining_microseconds'"`
+		}
+		has, queryErr := session.Context(ctx).SQL(`SELECT
+			TIMESTAMPDIFF(MICROSECOND, CURRENT_TIMESTAMP(6),
+				TIMESTAMPADD(SECOND, ?, COALESCE(started_at, updated_at, created_at)))
+				AS remaining_microseconds
+			FROM task_step_records
+			WHERE step_record_id = ? AND task_id = ?`, timeoutSeconds, stepRecordID, lease.TaskID).Get(&row)
+		if queryErr != nil {
+			return queryErr
+		}
+		if !has {
+			return fmt.Errorf("任务步骤不存在: %w", ErrNotFound)
+		}
+		if row.RemainingMicroseconds <= 0 {
+			remaining = 0
+			return nil
+		}
+		remaining = time.Duration(row.RemainingMicroseconds) * time.Microsecond
+		maximum := time.Duration(timeoutSeconds) * time.Second
+		if remaining > maximum {
+			remaining = maximum
+		}
+		return nil
+	})
+	return remaining, err
 }
 
 func (s *XORMStore) GetTaskStepLogSource(ctx context.Context, taskID int, stepKey string) (TaskStepLogSource, error) {
@@ -427,80 +578,394 @@ func (s *XORMStore) GetTaskStepLogSource(ctx context.Context, taskID int, stepKe
 	}, nil
 }
 
-func (s *XORMStore) ClaimStep(ctx context.Context, stepRecordID int64) (bool, error) {
-	now := time.Now()
-	updated, err := s.engine.Context(ctx).
-		Where("step_record_id = ? AND status = ?", stepRecordID, StepPending).
-		Cols("status", "started_at").
-		Update(&entity.TaskStepRecord{Status: StepRunning, StartedTime: &now})
-	return updated == 1, err
+func (s *XORMStore) ClaimStep(ctx context.Context, lease TaskLease, stepRecordID int64) (claimed bool, err error) {
+	if stepRecordID <= 0 {
+		return false, fmt.Errorf("step_record_id 必须大于 0")
+	}
+	err = s.withValidTaskLease(ctx, lease, func(session *xorm.Session) error {
+		// Every provider update takes an exclusive lock on its stable settings
+		// row. Taking shared locks here makes the pending -> running transition
+		// ordered with cross-replica configuration commits without coupling the
+		// workflow core to a specific executor. The epoch-7 data contract ensures
+		// both built-in fence rows always exist.
+		fences, lockErr := session.Context(ctx).Query(`SELECT provider, revision
+			FROM integration_settings
+			WHERE provider IN ('jenkins', 'kubernetes')
+			ORDER BY provider FOR SHARE`)
+		if lockErr != nil {
+			return lockErr
+		}
+		if len(fences) != 2 {
+			return errors.New("集成配置事务围栏不可用")
+		}
+		result, updateErr := session.Context(ctx).Exec(`UPDATE task_step_records
+			SET status = ?, started_at = CURRENT_TIMESTAMP(6), message = NULL
+			WHERE step_record_id = ? AND task_id = ? AND status = ?`,
+			StepRunning, stepRecordID, lease.TaskID, StepPending)
+		if updateErr != nil {
+			return updateErr
+		}
+		updated, rowsErr := result.RowsAffected()
+		if rowsErr != nil {
+			return rowsErr
+		}
+		claimed = updated == 1
+		if !claimed {
+			return nil
+		}
+		_, updateErr = session.Context(ctx).Exec(`UPDATE task_record
+			SET status = ?, message = NULL, updated_at = CURRENT_TIMESTAMP
+			WHERE task_id = ?`, TaskRunning, lease.TaskID)
+		return updateErr
+	})
+	return claimed, err
 }
 
-func (s *XORMStore) ReleaseStep(ctx context.Context, stepRecordID int64, message string) (bool, error) {
-	updated, err := s.engine.Context(ctx).Table(new(entity.TaskStepRecord)).
-		Where("step_record_id = ? AND status = ? AND external_ref IS NULL", stepRecordID, StepRunning).
-		Update(map[string]any{
-			"status": StepPending, "started_at": nil, "message": nullableText(truncateRunes(message, 1000)),
-		})
-	return updated == 1, err
+func (s *XORMStore) ReleaseStep(
+	ctx context.Context,
+	lease TaskLease,
+	stepRecordID int64,
+	message string,
+) (released bool, err error) {
+	if stepRecordID <= 0 {
+		return false, fmt.Errorf("step_record_id 必须大于 0")
+	}
+	err = s.withValidTaskLease(ctx, lease, func(session *xorm.Session) error {
+		result, updateErr := session.Context(ctx).Exec(`UPDATE task_step_records
+			SET status = ?, started_at = NULL, message = ?
+			WHERE step_record_id = ? AND task_id = ? AND status = ? AND external_ref IS NULL`,
+			StepPending, nullableText(truncateRunes(message, 1000)), stepRecordID, lease.TaskID, StepRunning)
+		if updateErr != nil {
+			return updateErr
+		}
+		updated, rowsErr := result.RowsAffected()
+		if rowsErr != nil {
+			return rowsErr
+		}
+		released = updated == 1
+		return nil
+	})
+	return released, err
 }
 
-func (s *XORMStore) SaveStepResult(ctx context.Context, stepRecordID int64, result Result) (bool, error) {
-	status := result.State
+func (s *XORMStore) SaveStepResult(
+	ctx context.Context,
+	lease TaskLease,
+	stepRecordID int64,
+	stepResult Result,
+) (saved bool, err error) {
+	if stepRecordID <= 0 {
+		return false, fmt.Errorf("step_record_id 必须大于 0")
+	}
+	status := stepResult.State
 	if status == ResultUnknown {
 		status = StepRunning
 	}
-	updates := map[string]any{
-		"status":       status,
-		"external_ref": nullableJSON(result.ExternalReference),
-		"output":       nullableJSON(result.Output),
-		"message":      nullableText(truncateRunes(result.Message, 1000)),
-	}
-	if status != StepRunning {
-		now := time.Now()
-		updates["finished_at"] = now
-	}
-	updated, err := s.engine.Context(ctx).
-		Where("step_record_id = ? AND status = ?", stepRecordID, StepRunning).
-		Table(new(entity.TaskStepRecord)).Update(updates)
-	return updated == 1, err
+	err = s.withValidTaskLease(ctx, lease, func(session *xorm.Session) error {
+		finishedExpression := "NULL"
+		if status != StepRunning {
+			finishedExpression = "CURRENT_TIMESTAMP(6)"
+		}
+		query := fmt.Sprintf(`UPDATE task_step_records
+			SET status = ?, external_ref = ?, output = ?, message = ?, finished_at = %s
+			WHERE step_record_id = ? AND task_id = ? AND status = ?`, finishedExpression)
+		result, updateErr := session.Context(ctx).Exec(query,
+			status, nullableJSON(stepResult.ExternalReference), nullableJSON(stepResult.Output),
+			nullableText(truncateRunes(stepResult.Message, 1000)), stepRecordID, lease.TaskID, StepRunning)
+		if updateErr != nil {
+			return updateErr
+		}
+		updated, rowsErr := result.RowsAffected()
+		if rowsErr != nil {
+			return rowsErr
+		}
+		saved = updated == 1
+		return nil
+	})
+	return saved, err
 }
 
-func (s *XORMStore) SkipPendingSteps(ctx context.Context, taskID int, message string) error {
-	now := time.Now()
-	_, err := s.engine.Context(ctx).Table(new(entity.TaskStepRecord)).
-		Where("task_id = ? AND status = ?", taskID, StepPending).
-		Update(map[string]any{
-			"status": StepSkipped, "message": nullableText(truncateRunes(message, 1000)), "finished_at": now,
+func (s *XORMStore) SkipPendingSteps(ctx context.Context, lease TaskLease, message string) error {
+	return s.withValidTaskLease(ctx, lease, func(session *xorm.Session) error {
+		_, err := session.Context(ctx).Exec(`UPDATE task_step_records
+			SET status = ?, message = ?, finished_at = CURRENT_TIMESTAMP(6)
+			WHERE task_id = ? AND status = ?`,
+			StepSkipped, nullableText(truncateRunes(message, 1000)), lease.TaskID, StepPending)
+		return err
+	})
+}
+
+func (s *XORMStore) SetTaskStatus(ctx context.Context, lease TaskLease, status, message string) error {
+	if !validTaskStatus(status) {
+		return fmt.Errorf("无效任务状态 %q", status)
+	}
+	return s.withValidTaskLease(ctx, lease, func(session *xorm.Session) error {
+		var storedMessage any
+		if message != "" {
+			storedMessage = truncateRunes(message, 255)
+		}
+		query := `UPDATE task_record
+			SET status = ?, message = ?, updated_at = CURRENT_TIMESTAMP WHERE task_id = ?`
+		if terminalTaskStatus(status) {
+			query = `UPDATE task_record
+				SET status = ?, message = ?, next_poll_at = NULL,
+					lease_owner = NULL, lease_expires_at = NULL, poll_failure_count = 0,
+					updated_at = CURRENT_TIMESTAMP
+				WHERE task_id = ?`
+		}
+		_, err := session.Context(ctx).Exec(query, status, storedMessage, lease.TaskID)
+		return err
+	})
+}
+
+func validTaskStatus(status string) bool {
+	switch status {
+	case TaskQueued, TaskRunning, TaskSucceeded, TaskFailed, TaskCancelled, TaskSucceededWithWarnings:
+		return true
+	default:
+		return false
+	}
+}
+
+func terminalTaskStatus(status string) bool {
+	switch status {
+	case TaskSucceeded, TaskFailed, TaskCancelled, TaskSucceededWithWarnings:
+		return true
+	default:
+		return false
+	}
+}
+
+const (
+	maxTaskLeaseBatch = 64
+	maxWorkerDelay    = 24 * time.Hour
+)
+
+func (s *XORMStore) AcquireTaskLeases(
+	ctx context.Context,
+	owner string,
+	limit int,
+	leaseDuration time.Duration,
+) ([]TaskLease, error) {
+	if s == nil || s.engine == nil {
+		return nil, fmt.Errorf("数据库未初始化")
+	}
+	if !validLeaseOwner(owner) {
+		return nil, fmt.Errorf("worker owner 无效")
+	}
+	if limit < 1 || limit > maxTaskLeaseBatch {
+		return nil, fmt.Errorf("任务租约领取数量必须在 1 到 %d 之间", maxTaskLeaseBatch)
+	}
+	leaseMicroseconds, err := workerDurationMicroseconds("任务租期", leaseDuration, false)
+	if err != nil {
+		return nil, err
+	}
+
+	transaction, err := s.engine.DB().DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	query := fmt.Sprintf(`SELECT task_id, lease_fencing_token, poll_failure_count
+		FROM task_record
+		WHERE engine_version = 2 AND deleted_at IS NULL
+			AND status IN (?, ?) AND next_poll_at IS NOT NULL
+			AND next_poll_at <= UTC_TIMESTAMP(6)
+			AND (lease_owner IS NULL OR lease_expires_at <= UTC_TIMESTAMP(6))
+			AND lease_fencing_token < 18446744073709551615
+		ORDER BY next_poll_at ASC, task_id ASC
+		LIMIT %d FOR UPDATE SKIP LOCKED`, limit)
+	rows, err := transaction.QueryContext(ctx, query, TaskQueued, TaskRunning)
+	if err != nil {
+		return nil, err
+	}
+	type leaseCandidate struct {
+		taskID       int
+		fencingToken uint64
+		failureCount uint32
+	}
+	candidates := make([]leaseCandidate, 0, limit)
+	for rows.Next() {
+		var candidate leaseCandidate
+		if err := rows.Scan(&candidate.taskID, &candidate.fencingToken, &candidate.failureCount); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		if candidate.failureCount > MaxPollFailureCount {
+			_ = rows.Close()
+			return nil, fmt.Errorf("任务调度失败计数超出允许范围，task_id=%d", candidate.taskID)
+		}
+		candidates = append(candidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	leases := make([]TaskLease, 0, len(candidates))
+	for _, candidate := range candidates {
+		result, updateErr := transaction.ExecContext(ctx, `UPDATE task_record
+			SET lease_owner = ?,
+				lease_expires_at = TIMESTAMPADD(MICROSECOND, ?, UTC_TIMESTAMP(6)),
+				next_poll_at = TIMESTAMPADD(MICROSECOND, ?, UTC_TIMESTAMP(6)),
+				lease_fencing_token = lease_fencing_token + 1
+			WHERE task_id = ? AND engine_version = 2 AND deleted_at IS NULL
+				AND status IN (?, ?) AND next_poll_at IS NOT NULL
+				AND next_poll_at <= UTC_TIMESTAMP(6)
+				AND (lease_owner IS NULL OR lease_expires_at <= UTC_TIMESTAMP(6))
+				AND lease_fencing_token = ?
+				AND lease_fencing_token < 18446744073709551615`,
+			[]byte(owner), leaseMicroseconds, leaseMicroseconds, candidate.taskID,
+			TaskQueued, TaskRunning, candidate.fencingToken)
+		if updateErr != nil {
+			return nil, updateErr
+		}
+		updated, rowsErr := result.RowsAffected()
+		if rowsErr != nil {
+			return nil, rowsErr
+		}
+		if updated != 1 {
+			return nil, ErrLeaseLost
+		}
+		leases = append(leases, TaskLease{
+			TaskID:       candidate.taskID,
+			Owner:        owner,
+			FencingToken: candidate.fencingToken + 1,
+			FailureCount: candidate.failureCount,
 		})
-	return err
+	}
+	if err := transaction.Commit(); err != nil {
+		return nil, err
+	}
+	return leases, nil
 }
 
-func (s *XORMStore) SetTaskStatus(ctx context.Context, taskID int, status, message string) error {
-	var storedMessage any
-	if message != "" {
-		storedMessage = truncateRunes(message, 255)
+func (s *XORMStore) RenewTaskLease(ctx context.Context, lease TaskLease, leaseDuration time.Duration) error {
+	if s == nil || s.engine == nil {
+		return fmt.Errorf("数据库未初始化")
 	}
-	updated, err := s.engine.Context(ctx).Table(new(entity.TaskRecord)).ID(taskID).
-		Update(map[string]any{"status": status, "message": storedMessage})
+	if err := validateTaskLeaseHandle(lease); err != nil {
+		return err
+	}
+	leaseMicroseconds, err := workerDurationMicroseconds("任务租期", leaseDuration, false)
+	if err != nil {
+		return err
+	}
+	result, err := s.engine.DB().DB.ExecContext(ctx, `UPDATE task_record
+		SET lease_expires_at = TIMESTAMPADD(MICROSECOND, ?, UTC_TIMESTAMP(6)),
+			next_poll_at = TIMESTAMPADD(MICROSECOND, ?, UTC_TIMESTAMP(6))
+		WHERE task_id = ? AND engine_version = 2 AND deleted_at IS NULL
+			AND status IN (?, ?) AND lease_owner = ?
+			AND lease_fencing_token = ?
+			AND lease_expires_at > UTC_TIMESTAMP(6)`,
+		leaseMicroseconds, leaseMicroseconds, lease.TaskID, TaskQueued, TaskRunning,
+		[]byte(lease.Owner), lease.FencingToken)
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}
 	if updated == 1 {
 		return nil
 	}
-	// MySQL reports zero affected rows when the requested status/message are
-	// already stored. That is a successful idempotent update, not a missing
-	// task. This commonly happens when a synchronous workflow starts its next
-	// step within the same coordinator pass and the task is already running.
-	exists, err := s.engine.Context(ctx).ID(taskID).Where("deleted_at IS NULL").Exist(new(entity.TaskRecord))
+	if updated > 1 {
+		return fmt.Errorf("续租更新了意外数量的任务")
+	}
+	valid, err := s.taskLeaseStillValid(ctx, lease)
 	if err != nil {
 		return err
 	}
-	if !exists {
-		return fmt.Errorf("任务不存在，task_id=%d: %w", taskID, ErrNotFound)
+	if valid {
+		return nil
+	}
+	return ErrLeaseLost
+}
+
+func (s *XORMStore) ReleaseTaskLease(
+	ctx context.Context,
+	lease TaskLease,
+	delay time.Duration,
+	pollFailed bool,
+) error {
+	if s == nil || s.engine == nil {
+		return fmt.Errorf("数据库未初始化")
+	}
+	if err := validateTaskLeaseHandle(lease); err != nil {
+		return err
+	}
+	delayMicroseconds, err := workerDurationMicroseconds("下次调度延迟", delay, true)
+	if err != nil {
+		return err
+	}
+	failureExpression := "0"
+	if pollFailed {
+		failureExpression = fmt.Sprintf("LEAST(%d, poll_failure_count + 1)", MaxPollFailureCount)
+	}
+	query := fmt.Sprintf(`UPDATE task_record
+		SET next_poll_at = TIMESTAMPADD(MICROSECOND, ?, UTC_TIMESTAMP(6)),
+			lease_owner = NULL, lease_expires_at = NULL,
+			poll_failure_count = %s
+		WHERE task_id = ? AND engine_version = 2 AND deleted_at IS NULL
+			AND status IN (?, ?) AND lease_owner = ?
+			AND lease_fencing_token = ?
+			AND lease_expires_at > UTC_TIMESTAMP(6)`, failureExpression)
+	result, err := s.engine.DB().DB.ExecContext(ctx, query, delayMicroseconds, lease.TaskID,
+		TaskQueued, TaskRunning, []byte(lease.Owner), lease.FencingToken)
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated != 1 {
+		return ErrLeaseLost
 	}
 	return nil
+}
+
+func (s *XORMStore) taskLeaseStillValid(ctx context.Context, lease TaskLease) (bool, error) {
+	var valid bool
+	err := s.engine.DB().DB.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM task_record
+		WHERE task_id = ? AND engine_version = 2 AND deleted_at IS NULL
+			AND status IN (?, ?) AND lease_owner = ?
+			AND lease_fencing_token = ?
+			AND lease_expires_at > UTC_TIMESTAMP(6)
+	)`, lease.TaskID, TaskQueued, TaskRunning, []byte(lease.Owner), lease.FencingToken).Scan(&valid)
+	return valid, err
+}
+
+func validLeaseOwner(owner string) bool {
+	if len(owner) == 0 || len(owner) > MaxLeaseOwnerBytes {
+		return false
+	}
+	for index := 0; index < len(owner); index++ {
+		if owner[index] < 0x21 || owner[index] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
+func workerDurationMicroseconds(name string, value time.Duration, allowZero bool) (int64, error) {
+	if value < 0 || (!allowZero && value == 0) || value > maxWorkerDelay {
+		return 0, fmt.Errorf("%s 超出允许范围", name)
+	}
+	if value == 0 {
+		return 0, nil
+	}
+	microseconds := value / time.Microsecond
+	if microseconds == 0 {
+		return 0, fmt.Errorf("%s 不能小于 1 微秒", name)
+	}
+	return int64(microseconds), nil
 }
 
 func nullableJSON(raw json.RawMessage) any {

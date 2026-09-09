@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/go-ree/ares/internal/integration"
 	"github.com/go-ree/ares/internal/jenkins"
 	"github.com/go-ree/ares/internal/security"
 	"github.com/go-ree/ares/internal/workflow"
@@ -58,6 +59,7 @@ type jenkinsLogClient interface {
 type Executor struct {
 	acquire          func() jenkinsClient
 	acquireOperation func() (jenkinsClient, func())
+	ensureCurrent    func(context.Context) error
 }
 
 func New() *Executor {
@@ -76,6 +78,7 @@ func New() *Executor {
 			}
 			return snapshot, release
 		},
+		ensureCurrent: integration.EnsureJenkinsCurrent,
 	}
 }
 
@@ -99,9 +102,25 @@ func (e *Executor) Descriptor() workflow.Descriptor {
 	}
 }
 
-func (e *Executor) Available(_ context.Context) error {
+func (e *Executor) Available(ctx context.Context) error {
+	if err := e.ensureRuntimeCurrent(ctx); err != nil {
+		return err
+	}
 	if e == nil || e.acquire == nil || e.acquire() == nil {
 		return errors.New("Jenkins 集成未配置或未连接")
+	}
+	return nil
+}
+
+func (e *Executor) ensureRuntimeCurrent(ctx context.Context) error {
+	if e == nil || e.ensureCurrent == nil {
+		return nil
+	}
+	if err := e.ensureCurrent(ctx); err != nil {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("%w：Jenkins 集成设置暂不可用", workflow.ErrExecutorUnavailable)
 	}
 	return nil
 }
@@ -148,6 +167,9 @@ func decodeConfig(raw json.RawMessage) (Config, error) {
 func (e *Executor) Start(ctx context.Context, request workflow.StartRequest) (workflow.Result, error) {
 	config, err := decodeConfig(request.Config)
 	if err != nil {
+		return workflow.Result{}, err
+	}
+	if err := e.ensureRuntimeCurrent(ctx); err != nil {
 		return workflow.Result{}, err
 	}
 	// Pin one immutable runtime snapshot for the whole operation. Calling
@@ -197,12 +219,15 @@ func (e *Executor) Reconcile(ctx context.Context, request workflow.ReconcileRequ
 	if referenceErr != nil {
 		return invalidReferenceResult(request.ExternalReference, referenceErr.Error()), nil
 	}
+	if err := e.ensureRuntimeCurrent(ctx); err != nil {
+		return workflow.Result{}, err
+	}
 	// Reconciliation must query through the same immutable snapshot that was
 	// checked against the persisted external reference below.
 	client, release := e.operationClient()
 	defer release()
 	if client == nil {
-		return workflow.Result{}, errors.New("Jenkins 集成未配置或未连接")
+		return workflow.Result{}, fmt.Errorf("%w：Jenkins 集成未配置或未连接", workflow.ErrExecutorUnavailable)
 	}
 	if client.Address() != reference.Address {
 		return workflow.Result{
@@ -214,7 +239,7 @@ func (e *Executor) Reconcile(ctx context.Context, request workflow.ReconcileRequ
 	if reference.BuildID <= 0 {
 		queueState, err := client.GetQueueBuildStateContext(ctx, reference.QueueID)
 		if err != nil {
-			return workflow.Result{}, fmt.Errorf("查询 Jenkins 队列任务 %d: %w", reference.QueueID, err)
+			return workflow.Result{}, fmt.Errorf("%w：Jenkins 队列状态暂不可用", workflow.ErrExecutorUnavailable)
 		}
 		if queueState.Cancelled {
 			return workflow.Result{
@@ -237,7 +262,7 @@ func (e *Executor) Reconcile(ctx context.Context, request workflow.ReconcileRequ
 	}
 	status, err := client.GetBuildStatusContext(ctx, reference.Job, reference.BuildID)
 	if err != nil {
-		return workflow.Result{}, fmt.Errorf("查询 Jenkins Job %s #%d: %w", reference.Job, reference.BuildID, err)
+		return workflow.Result{}, fmt.Errorf("%w：Jenkins 构建状态暂不可用", workflow.ErrExecutorUnavailable)
 	}
 	result := workflow.Result{ExternalReference: append(json.RawMessage(nil), request.ExternalReference...)}
 	switch status {
@@ -271,6 +296,9 @@ func (e *Executor) ReadLogs(ctx context.Context, request workflow.LogRequest) (w
 	}
 	start, err := parseLogCursor(request.Cursor)
 	if err != nil {
+		return workflow.LogChunk{}, err
+	}
+	if err := e.ensureRuntimeCurrent(ctx); err != nil {
 		return workflow.LogChunk{}, err
 	}
 	client, release := e.operationClient()

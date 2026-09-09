@@ -16,9 +16,19 @@ log:
   accessLogfile: "stdout"
   runtimeLogfile: "stderr"
 
-job:
-  taskManager:
-    cron: "@every 10s"
+worker:
+  enabled: true
+  concurrency: 8
+  claim_batch_size: 8
+  scan_interval: "1s"
+  lease_duration: "30s"
+  renew_interval: "10s"
+  normal_poll_interval: "5s"
+  backoff_min: "2s"
+  backoff_max: "2m"
+  drain_timeout: "20s"
+  integration_sync_interval: "15s"
+  legacy_poll_interval: "10s"
 
 demo_data:
   enabled: true

@@ -42,6 +42,18 @@ func TestApplyEnvironmentOverrides(t *testing.T) {
 	t.Setenv("ARES_AUTH_BOOTSTRAP_TOKEN", strings.Repeat("b", 32))
 	t.Setenv("ARES_AUTH_OIDC_HTTP_TIMEOUT", "8s")
 	t.Setenv("ARES_AUTH_OIDC_MAX_CLOCK_SKEW", "45s")
+	t.Setenv("ARES_WORKER_ENABLED", "false")
+	t.Setenv("ARES_WORKER_CONCURRENCY", "12")
+	t.Setenv("ARES_WORKER_CLAIM_BATCH_SIZE", "6")
+	t.Setenv("ARES_WORKER_SCAN_INTERVAL", "2s")
+	t.Setenv("ARES_WORKER_LEASE_DURATION", "45s")
+	t.Setenv("ARES_WORKER_RENEW_INTERVAL", "12s")
+	t.Setenv("ARES_WORKER_NORMAL_POLL_INTERVAL", "7s")
+	t.Setenv("ARES_WORKER_BACKOFF_MIN", "3s")
+	t.Setenv("ARES_WORKER_BACKOFF_MAX", "3m")
+	t.Setenv("ARES_WORKER_DRAIN_TIMEOUT", "25s")
+	t.Setenv("ARES_WORKER_INTEGRATION_SYNC_INTERVAL", "20s")
+	t.Setenv("ARES_WORKER_LEGACY_POLL_INTERVAL", "11s")
 
 	cfg := &Config{}
 	if err := applyEnvironmentOverrides(cfg); err != nil {
@@ -103,6 +115,93 @@ func TestApplyEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.Auth.OIDC.HTTPTimeout != "8s" || cfg.Auth.OIDC.MaxClockSkew != "45s" {
 		t.Fatalf("unexpected OIDC safety timeouts: %#v", cfg.Auth.OIDC)
+	}
+	if cfg.Worker.Enabled || cfg.Worker.Concurrency != 12 || cfg.Worker.ClaimBatchSize != 6 || cfg.Worker.ScanInterval != "2s" ||
+		cfg.Worker.LeaseDuration != "45s" || cfg.Worker.RenewInterval != "12s" ||
+		cfg.Worker.NormalPollInterval != "7s" || cfg.Worker.BackoffMin != "3s" ||
+		cfg.Worker.BackoffMax != "3m" || cfg.Worker.DrainTimeout != "25s" ||
+		cfg.Worker.IntegrationSyncInterval != "20s" || cfg.Worker.LegacyPollInterval != "11s" {
+		t.Fatalf("unexpected worker configuration: %#v", cfg.Worker)
+	}
+}
+
+func TestWorkerConfigurationDefaultsAndRuntimeSnapshot(t *testing.T) {
+	original := Main
+	t.Cleanup(func() { Main = original })
+
+	cfg := newDefaultConfig()
+	if err := applyEnvironmentOverrides(cfg); err != nil {
+		t.Fatalf("applyEnvironmentOverrides() error = %v", err)
+	}
+	Main = cfg
+	got := WorkerSettings()
+	if !got.Enabled || got.Concurrency != 8 || got.ClaimBatchSize != 8 || got.ScanInterval != time.Second ||
+		got.LeaseDuration != 30*time.Second || got.RenewInterval != 10*time.Second ||
+		got.NormalPollInterval != 5*time.Second || got.BackoffMin != 2*time.Second ||
+		got.BackoffMax != 2*time.Minute || got.DrainTimeout != 20*time.Second ||
+		got.IntegrationSyncInterval != 15*time.Second || got.LegacyPollInterval != 10*time.Second {
+		t.Fatalf("WorkerSettings() = %#v", got)
+	}
+}
+
+func TestWorkerClaimBatchDefaultIsBoundedByConcurrency(t *testing.T) {
+	worker := WorkerConfig{Concurrency: 3}
+	if err := normalizeAndValidateWorkerConfig(&worker); err != nil {
+		t.Fatal(err)
+	}
+	if worker.ClaimBatchSize != 3 {
+		t.Fatalf("default claim batch size = %d, want 3", worker.ClaimBatchSize)
+	}
+}
+
+func TestWorkerConfigurationFailsClosed(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func(*WorkerConfig)
+	}{
+		{name: "zero concurrency override", configure: func(worker *WorkerConfig) { worker.Concurrency = -1 }},
+		{name: "too much concurrency", configure: func(worker *WorkerConfig) { worker.Concurrency = 65 }},
+		{name: "batch exceeds concurrency", configure: func(worker *WorkerConfig) {
+			worker.Concurrency = 4
+			worker.ClaimBatchSize = 5
+		}},
+		{name: "invalid duration", configure: func(worker *WorkerConfig) { worker.ScanInterval = "soon" }},
+		{name: "scan too fast", configure: func(worker *WorkerConfig) { worker.ScanInterval = "10ms" }},
+		{name: "renew exceeds lease third", configure: func(worker *WorkerConfig) {
+			worker.LeaseDuration = "30s"
+			worker.RenewInterval = "11s"
+		}},
+		{name: "backoff bounds reversed", configure: func(worker *WorkerConfig) {
+			worker.BackoffMin = "20s"
+			worker.BackoffMax = "10s"
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			worker := WorkerConfig{}
+			test.configure(&worker)
+			if err := normalizeAndValidateWorkerConfig(&worker); err == nil {
+				t.Fatal("normalizeAndValidateWorkerConfig() succeeded, want error")
+			}
+		})
+	}
+}
+
+func TestWorkerEnvironmentOverridesRejectMalformedValues(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value string
+	}{
+		{name: "ARES_WORKER_ENABLED", value: "sometimes"},
+		{name: "ARES_WORKER_CONCURRENCY", value: "many"},
+		{name: "ARES_WORKER_CLAIM_BATCH_SIZE", value: "several"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(test.name, test.value)
+			if err := applyEnvironmentOverrides(newDefaultConfig()); err == nil {
+				t.Fatal("applyEnvironmentOverrides() succeeded, want error")
+			}
+		})
 	}
 }
 

@@ -3,10 +3,12 @@ package controller
 import (
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-ree/ares/internal/api/util"
+	"github.com/go-ree/ares/internal/integration"
 	"github.com/go-ree/ares/internal/k8s"
 )
 
@@ -14,11 +16,26 @@ type PodController struct {
 	podManager *k8s.PodManager
 }
 
+var ensureKubernetesRuntimeCurrent = integration.EnsureKubernetesCurrent
+
+func ensureK8sCurrent(c *gin.Context) bool {
+	if err := ensureKubernetesRuntimeCurrent(c.Request.Context()); err != nil {
+		c.JSON(http.StatusServiceUnavailable, util.ResponseFailure(
+			"Kubernetes 集成配置暂不可用", "kubernetes integration settings unavailable"))
+		return false
+	}
+	return true
+}
+
 func ensureK8sEnabled(c *gin.Context) bool {
+	if !ensureK8sCurrent(c) {
+		return false
+	}
 	if k8s.IsInitialized() {
 		return true
 	}
-	c.JSON(503, util.ResponseFailure("Kubernetes 集成未启用", "kubernetes integration is disabled"))
+	c.JSON(http.StatusServiceUnavailable, util.ResponseFailure(
+		"Kubernetes 集成未启用", "kubernetes integration is disabled"))
 	return false
 }
 
@@ -181,6 +198,9 @@ func (pc *PodController) GetAllPods(c *gin.Context) {
 // @Success 200 {object} util.ResponseTemplate{code=int,result=map[string]interface{}} "成功"
 // @Router	/api/v1/k8s/debug [get]
 func (pc *PodController) GetK8sDebugInfo(c *gin.Context) {
+	if !ensureK8sCurrent(c) {
+		return
+	}
 	debugInfo := make(map[string]interface{})
 	debugInfo["enabled"] = k8s.IsInitialized()
 

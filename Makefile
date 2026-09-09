@@ -23,7 +23,7 @@ NPM_VERSION ?= 11.19.1
 SYFT_VERSION ?= v1.51.1
 TRIVY_VERSION ?= v0.74.0
 GO_PACKAGES ?= . ./internal/...
-RACE_PACKAGES ?= ./internal/cli ./internal/config ./internal/db ./internal/workflow ./internal/executor/... ./internal/integration ./internal/jenkins ./internal/k8s ./internal/publish ./internal/environment ./internal/api/...
+RACE_PACKAGES ?= ./internal/cli ./internal/config ./internal/db ./internal/workflow ./internal/executor/... ./internal/integration ./internal/job ./internal/jenkins ./internal/k8s ./internal/publish ./internal/environment ./internal/api/...
 
 .PHONY: help all clean fmt-check mod-check test db-integration db-account-integration vet race vuln toolchain-check workflow-check backend-check frontend-install frontend-check frontend-audit swagger swagger-check compose-config build build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-windows-amd64 docker docker-build syft-version-check trivy-version-check sbom image-scan verify
 
@@ -60,7 +60,9 @@ test: ## 运行 Go 全量测试
 db-integration: ## 在 MySQL 8.4 上运行数据库迁移集成测试（需要 ARES_TEST_MYSQL_DSN）
 	@test -n "$$ARES_TEST_MYSQL_DSN" || { echo "请设置 MySQL 8.4 管理员 DSN：ARES_TEST_MYSQL_DSN"; exit 1; }
 	$(GO) test -count=1 -run '^(TestPreW04FixtureIsImmutable|TestMySQL84Migrations)$$' ./internal/db
-	$(GO) test -count=1 -run '^TestMySQL(IdempotentRelease|KeyedLegacyHistoricalReplay|CrossBatchLockOrder|DomainMutationsWaitForReleaseParentLock)$$' ./internal/publish
+	$(GO) test -count=1 -run '^TestMySQLWorkerLeases$$' ./internal/workflow
+	$(GO) test -count=1 -run '^TestMySQLJenkinsSettingsFence$$' ./internal/integration
+	$(GO) test -count=1 -run '^TestMySQL(IdempotentRelease|KeyedLegacyHistoricalReplay|CrossBatchLockOrder|DomainMutationsWaitForReleaseParentLock|LegacyLeaderSingleOwnerAndConnectionLossTakeover)$$' ./internal/publish
 	$(GO) test -count=1 -run '^(TestMigrationCLIExitCodesAndSafeOutput|TestServeRejectsEmptySchemaBeforeStartingRuntime)$$' .
 
 db-account-integration: ## 在 MySQL 8.4 容器中动态验证最小权限账号初始化
@@ -152,6 +154,7 @@ compose-config: ## 校验 Docker Compose 配置
 	bash -n deploy/compose/mysql/01-create-users.sh
 	bash -n deploy/compose/mysql/account-init-integration.sh
 	$(DOCKER) compose config --quiet
+	$(DOCKER) compose -f compose.yaml -f deploy/compose/api-debug.yaml config --quiet
 
 build: ## 构建当前平台二进制
 	mkdir -p "$(BUILD_DIR)"
