@@ -1,5 +1,7 @@
 # 可插拔 CI/CD 与动态环境架构
 
+> 本文描述已实现的 AppConfig 整条工作流模型及其历史设计。新产品方向见[CI、产出物与 CD 领域设计](ci-artifact-cd.md)和 [ADR-0007](decisions/0007-ci-artifact-cd-separation.md)：应用类型管理 CI 模板，应用发起构建，CD 按产出物和环境独立运行。新设计目前待评审，尚未替换现有 API；以下 AppConfig 全流程绑定仅作为兼容路径保留。
+
 ## 1. 背景
 
 Ares 的历史实现围绕应用管理发布，但发布链路把“流水线”等同于 Jenkins 的一组固定 CI/CD Job，把发布环境等同于 `dev`、`test`、`moni` 三个枚举。该模型能支撑既有场景，却会产生以下限制：
