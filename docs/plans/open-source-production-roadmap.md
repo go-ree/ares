@@ -1,8 +1,8 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W01 管理项阻塞；W02～W06、W07-A 已合并；W07-B 尝试历史与安全重试待验收；W07-C 未开始
-> - 基线版本：`main@5d4656d`，已合并 [PR #37](https://github.com/go-ree/ares/pull/37)
+> - 当前状态：W01 管理项阻塞；W02～W06、W07-A/B 已合并；W07-C 未开始；增加持续开发预览
+> - 基线版本：`main@875cbd7`，已合并 [PR #38](https://github.com/go-ree/ares/pull/38)
 > - 最后更新：2026-09-11
 
 本文承接 [可插拔 CI/CD 实施路线](pluggable-cicd-roadmap.md)。上一阶段已经完成动态环境、版本化工作流、通用串行编排和 Jenkins Adapter 的主链路；本计划负责把 Ares 从“可运行的开源 CI/CD 基础”推进到“可安全公开部署、可持续扩展、可进行生产化验证”的状态。
@@ -34,6 +34,7 @@
 4. 进入评审前，若不存在阻塞项，将状态更新为 `待验收`；存在阻塞项时维持 `阻塞` 并记录解除条件。只有完成定义全部满足后才能更新为 `已完成`。
 5. 若 PR 合并后文档状态仍未反映主线事实，下一个开发 PR 必须先校准状态再增加新内容。
 6. 范围、顺序或架构边界发生变化时，先更新本文的决策记录，再修改生产代码。
+7. 每次开发交付后按[持续开发预览约定](../operations/development-preview.md)更新固定 Docker 预览环境，保留数据和密钥，记录实际部署 commit 与验证结果；交付结束不停止服务，预览不代表合并授权。
 
 PR 描述至少包含：目标、范围、非目标、数据库影响、安全影响、兼容/回退方式、测试结果和本文对应的工作包编号。
 
@@ -81,7 +82,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 | W04    | 数据库迁移机制收敛           | W01                | `已完成` | [PR #22](https://github.com/go-ree/ares/pull/22) | 存量结构只由版本化 migration 改变               |
 | W05    | AppConfig 核心的幂等发布     | W02、W04           | `已完成` | [PR #35](https://github.com/go-ree/ares/pull/35) | 预检、`config_id` 发布、`Idempotency-Key`       |
 | W06    | 多副本 Worker 与租约         | W04、W05           | `已完成` | [PR #36](https://github.com/go-ree/ares/pull/36) | 已合入主线，关闭 R-003              |
-| W07    | 重试、取消、超时与尝试历史   | W03、W06           | `开发中` | A：[PR #37](https://github.com/go-ree/ares/pull/37)；B：[PR #38](https://github.com/go-ree/ares/pull/38) | A 已完成；B 待验收；C 未开始                  |
+| W07    | 重试、取消、超时与尝试历史   | W03、W06           | `开发中` | A：[PR #37](https://github.com/go-ree/ares/pull/37)；B：[PR #38](https://github.com/go-ree/ares/pull/38) | A/B 已完成；C 未开始                  |
 | W08    | Secret Resolver 与密钥轮换   | W02、W04           | `未开始` | 待创建                                           | 工作流只保存 Secret 引用，运行时按版本解析      |
 | W09    | 执行器开发套件与扩展生态     | W03、W07、W08      | `未开始` | 待创建                                           | 契约测试、模板及新增执行器                      |
 | W10    | 可观测性、正式发行与生产示例 | W01、W06、W07、W08 | `未开始` | 待创建                                           | 指标、告警、签名镜像、生产部署与升级工具        |
@@ -321,7 +322,7 @@ W02 与 W04 依赖 W01 已交付的仓库内质量基线，可以并行设计；
 | 增量 | 范围 | 状态 |
 | --- | --- | --- |
 | W07-A | 总时限、timed_out/outcome_unknown、查询退避、前端状态 | 已完成：[PR #37](https://github.com/go-ree/ares/pull/37) |
-| W07-B | 策略、attempt 迁移、有限自动/手动重试、尝试历史 | 待验收：[PR #38](https://github.com/go-ree/ares/pull/38) |
+| W07-B | 策略、attempt 迁移、有限自动/手动重试、尝试历史 | 已完成：[PR #38](https://github.com/go-ree/ares/pull/38) |
 | W07-C | 持久化取消、执行器确认协议、Jenkins 取消、Web 入口 | 未开始 |
 
 范围：
@@ -468,9 +469,17 @@ W07-A 已验证的子项（不代替上述完整范围）：
 
 ## 8. 下一步
 
-[PR #37](https://github.com/go-ree/ares/pull/37) 已合并，W07-A 为 `已完成`。本次 W07-B 尝试历史与安全重试进入待验收，随后按 [ADR-0006](../architecture/decisions/0006-task-lifecycle-recovery.md) 实现 W07-C 取消确认。W01 仓库管理项仍单独跟踪，不阻塞这些代码工作。
+[PR #37](https://github.com/go-ree/ares/pull/37) 已合并，W07-A 为 `已完成`。W07-B 尝试历史与安全重试已由 PR #38 合并，随后按 [ADR-0006](../architecture/decisions/0006-task-lifecycle-recovery.md) 实现 W07-C 取消确认。W01 仓库管理项仍单独跟踪，不阻塞这些代码工作。
 
 ## 9. 进度记录
+
+### 2026-09-11：W07-B 合并与持续预览启动
+
+- 已确认 PR #38 合并到 `main@875cbd7`，W07-B 标记已完成；W07-C 尚未开始。
+- 根据维护者要求建立固定本地 Docker 预览，项目名 `ares-preview`、入口 `http://localhost:8080`；后续每次开发交付后同步更新并保留数据，不再作为临时测试栈清理。
+- 当前部署业务代码为 `875cbd7`，使用独立随机数据库密码、持久化数据库与身份密钥；Jenkins/Kubernetes 无需启动。未引入定时拉取或自动合并。
+- 实测三个常驻服务 healthy、四个一次性任务退出 0，运行时检查 epoch 8 兼容；首页 200、readiness 为 OK、匿名 Swagger 401。空库已生成 3 个应用、4 个环境和 12 份应用环境配置；管理员留给使用者首次初始化。
+- 新增持续开发预览运维约定，并将更新预览纳入每次交付的强制文档同步规则。仅文档变更，不修改生产代码；评审链接待创建。
 
 ### 2026-09-11：W07-A 合并校准与 W07-B 交付
 
