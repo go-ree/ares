@@ -152,6 +152,7 @@ export interface StepTaskLogTarget {
   kind: 'step';
   taskId: number;
   stepKey: string;
+  attempt?: number;
   label: string;
 }
 
@@ -166,7 +167,7 @@ export type TaskLogTarget = StepTaskLogTarget | LegacyTaskLogTarget;
 
 export const taskLogTargetKey = (target: TaskLogTarget) =>
   target.kind === 'step'
-    ? `task:${target.taskId}:step:${target.stepKey}`
+    ? `task:${target.taskId}:step:${target.stepKey}${target.attempt ? `:attempt:${target.attempt}` : ''}`
     : `task:${target.taskId}:legacy:${target.legacyType}`;
 
 const hasLegacyReference = (jobName: unknown, buildId: unknown) =>
@@ -182,6 +183,7 @@ export const taskLogTargets = (task: TaskRecord): TaskLogTarget[] => {
         kind: 'step' as const,
         taskId: task.task_id,
         stepKey: step.step_key,
+        attempt: step.attempt,
         label: step.name || step.step_key,
       }));
   }
@@ -743,7 +745,12 @@ export function useLog(options: UseLogOptions = {}) {
     const generation = streamGeneration;
     const url =
       target.kind === 'step'
-        ? taskStepLogStreamUrl(target.taskId, target.stepKey, cache.cursor || undefined)
+        ? taskStepLogStreamUrl(
+            target.taskId,
+            target.stepKey,
+            cache.cursor || undefined,
+            target.attempt
+          )
         : legacyTaskLogStreamUrl(target.taskId, target.legacyType, cache.cursor || undefined);
     const source = target.kind === 'step' ? stepTransportFactory(url) : legacyTransportFactory(url);
     activeEventSource.value = source;

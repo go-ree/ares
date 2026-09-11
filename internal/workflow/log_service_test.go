@@ -154,7 +154,7 @@ func TestCoordinatorDerivesStepCapabilitiesWithoutSerializingPrivateFields(t *te
 		t.Fatal(err)
 	}
 	if !views[0].Capabilities.Logs || strings.Contains(string(encoded), "hidden") ||
-		!strings.Contains(string(encoded), `"capabilities":{"logs":true,"cancel":false}`) {
+		!strings.Contains(string(encoded), `"capabilities":{"retry":true,"logs":true,"cancel":false}`) {
 		t.Fatalf("public step = %s", encoded)
 	}
 }

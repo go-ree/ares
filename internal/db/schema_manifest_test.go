@@ -254,6 +254,7 @@ func TestPublishedEpochDataContractDigestsAreStable(t *testing.T) {
 		5: "15ad4d8623a474fbe0e025d06990443e0e79e862159186ec136ec2ff94b1fd58",
 		6: "3a8bbc9437bb32688db4deed08789fc724b342792329e995b98da1ce100a88e9",
 		7: "731d21452d61e3ebcb7d050edd10013a736d767214bee174f59180df56ec4c61",
+		8: "5951295b46892e8cff4f175eec20810fbae479b083ae3afc90aa7d1116905eff",
 	}
 	for epoch := uint64(1); epoch <= ApplicationSchemaEpoch; epoch++ {
 		got := stringListDigest(epochDataContractIDs(epoch))

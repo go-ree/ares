@@ -13,14 +13,15 @@ import (
 
 const NoopUses = "builtin.noop@v1"
 
-var noopSchema = json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"message":{"type":"string","maxLength":255},"outcome":{"type":"string","enum":["succeeded","failed"]},"output":{"type":"object"}}}`)
+var noopSchema = json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"message":{"type":"string","maxLength":255},"outcome":{"type":"string","enum":["succeeded","failed"]},"output":{"type":"object"},"fail_attempts":{"type":"integer","minimum":0,"maximum":4}}}`)
 
 type NoopExecutor struct{}
 
 type noopConfig struct {
-	Message string          `json:"message"`
-	Outcome string          `json:"outcome"`
-	Output  json.RawMessage `json:"output"`
+	FailAttempts int             `json:"fail_attempts"`
+	Message      string          `json:"message"`
+	Outcome      string          `json:"outcome"`
+	Output       json.RawMessage `json:"output"`
 }
 
 func NewNoopExecutor() *NoopExecutor { return &NoopExecutor{} }
@@ -31,7 +32,7 @@ func (n *NoopExecutor) Descriptor() Descriptor {
 		Name:         "内置 Noop",
 		Description:  "无外部依赖的同步步骤，供 Demo、验证和占位使用",
 		ConfigSchema: append(json.RawMessage(nil), noopSchema...),
-		Capabilities: Capabilities{},
+		Capabilities: Capabilities{Retry: true},
 	}
 }
 
@@ -51,6 +52,9 @@ func decodeNoopConfig(config json.RawMessage) (noopConfig, error) {
 	}
 	if len([]rune(value.Message)) > 255 {
 		return noopConfig{}, fmt.Errorf("message 不能超过 255 个字符")
+	}
+	if value.FailAttempts < 0 || value.FailAttempts > 4 {
+		return noopConfig{}, fmt.Errorf("fail_attempts 必须在 0-4 之间")
 	}
 	if value.Outcome == "" {
 		value.Outcome = ResultSucceeded
@@ -84,7 +88,15 @@ func (n *NoopExecutor) Start(_ context.Context, request StartRequest) (Result, e
 	if len(output) == 0 {
 		output = json.RawMessage(`{}`)
 	}
-	return Result{State: config.Outcome, Output: output, Message: config.Message}, nil
+	state := config.Outcome
+	if request.Attempt <= config.FailAttempts {
+		state = ResultFailed
+	}
+	result := Result{State: state, Output: output, Message: config.Message}
+	if state == ResultFailed {
+		result.RetryClass = RetryNoSideEffect
+	}
+	return result, nil
 }
 
 func (n *NoopExecutor) Reconcile(_ context.Context, _ ReconcileRequest) (Result, error) {

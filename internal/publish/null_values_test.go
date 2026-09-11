@@ -127,7 +127,7 @@ func TestTaskRecordViewUsesPublicStepProjection(t *testing.T) {
 	}
 	serialized := string(encoded)
 	if strings.Count(serialized, `"steps"`) != 1 ||
-		!strings.Contains(serialized, `"capabilities":{"logs":true,"cancel":false}`) {
+		!strings.Contains(serialized, `"capabilities":{"retry":false,"logs":true,"cancel":false}`) {
 		t.Fatalf("task view = %s", serialized)
 	}
 	for _, secret := range []string{"hidden-config", "hidden-address", "hidden-output"} {

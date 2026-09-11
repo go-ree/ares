@@ -95,6 +95,9 @@ func (c *Coordinator) Advance(ctx context.Context, lease TaskLease) (AdvanceResu
 		if isUncertainTerminal(step.Status) {
 			return c.stopUncertainTask(ctx, lease, step.StepKey, step.Status, step.Message)
 		}
+		if result, handled, err := c.advanceRetry(ctx, lease, step); handled || err != nil {
+			return result, err
+		}
 		if step.Status == StepFailed && step.OnFailure == FailureStop {
 			if err := c.store.SkipPendingSteps(ctx, lease, "前置步骤失败，流程已停止"); err != nil {
 				return AdvanceResult{}, err
@@ -355,6 +358,7 @@ func (c *Coordinator) applyResult(ctx context.Context, lease TaskLease, step ent
 	}
 	if hasJSONValue(result.Output) {
 		if err := security.ValidateJSONNoSensitiveKeys(result.Output, "executor.output"); err != nil {
+			result.RetryClass = ""
 			if result.State == ResultRunning || result.State == ResultUnknown {
 				result.State = ResultOutcomeUnknown
 			} else if !isUncertainTerminal(result.State) {
@@ -369,6 +373,7 @@ func (c *Coordinator) applyResult(ctx context.Context, lease TaskLease, step ent
 	if !hasJSONValue(result.ExternalReference) && hasJSONValue(step.ExternalRef) {
 		result.ExternalReference = append(json.RawMessage(nil), step.ExternalRef...)
 	}
+	c.classifyRetry(step.Uses, &result)
 	saved, err := c.store.SaveStepResult(ctx, lease, step.StepRecordID, result)
 	if err != nil {
 		return AdvanceResult{}, err
@@ -388,6 +393,13 @@ func (c *Coordinator) applyResult(ctx context.Context, lease TaskLease, step ent
 	}
 	if isUncertainTerminal(stepStatus) {
 		return c.stopUncertainTask(ctx, lease, step.StepKey, stepStatus, result.Message)
+	}
+	if stepStatus == StepFailed {
+		step.Status = StepFailed
+		step.RetryClass = result.RetryClass
+		if retried, handled, err := c.advanceRetry(ctx, lease, step); handled || err != nil {
+			return retried, err
+		}
 	}
 	if stepStatus == StepFailed && step.OnFailure == FailureStop {
 		if err := c.store.SkipPendingSteps(ctx, lease, "前置步骤失败，流程已停止"); err != nil {

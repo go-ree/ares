@@ -5298,6 +5298,56 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/tasks/{task_id}/steps/{step_key}/attempts": {
+            "get": {
+                "tags": [
+                    "Publish"
+                ],
+                "summary": "获取步骤执行尝试历史（不包含内部引用或输出）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "步骤标识",
+                        "name": "step_key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        },
+                                        "result": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/workflow.AttemptView"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/tasks/{task_id}/steps/{step_key}/logs/stream": {
             "get": {
                 "produces": [
@@ -5321,6 +5371,12 @@ const docTemplate = `{
                         "name": "step_key",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "尝试编号；省略时读取当前尝试",
+                        "name": "attempt",
+                        "in": "query"
                     },
                     {
                         "type": "string",
@@ -5470,6 +5526,77 @@ const docTemplate = `{
                     },
                     "503": {
                         "description": "步骤执行器不可用",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/tasks/{task_id}/steps/{step_key}/retry": {
+            "post": {
+                "tags": [
+                    "Publish"
+                ],
+                "summary": "请求安全重试失败步骤",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "步骤标识",
+                        "name": "step_key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "预期尝试编号",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.retryTaskStepRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "allOf": [
                                 {
@@ -5946,6 +6073,14 @@ const docTemplate = `{
                 },
                 "spec": {
                     "$ref": "#/definitions/workflow.WorkflowSpec"
+                }
+            }
+        },
+        "controller.retryTaskStepRequest": {
+            "type": "object",
+            "properties": {
+                "expected_attempt": {
+                    "type": "integer"
                 }
             }
         },
@@ -7197,6 +7332,26 @@ const docTemplate = `{
                 }
             }
         },
+        "workflow.AttemptView": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "workflow.Capabilities": {
             "type": "object",
             "properties": {
@@ -7204,6 +7359,9 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "logs": {
+                    "type": "boolean"
+                },
+                "retry": {
                     "type": "boolean"
                 }
             }
@@ -7234,6 +7392,23 @@ const docTemplate = `{
                 }
             }
         },
+        "workflow.RetryPolicy": {
+            "type": "object",
+            "properties": {
+                "initial_delay_seconds": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "max_delay_seconds": {
+                    "type": "integer"
+                },
+                "mode": {
+                    "type": "string"
+                }
+            }
+        },
         "workflow.StepSpec": {
             "type": "object",
             "properties": {
@@ -7248,6 +7423,9 @@ const docTemplate = `{
                 },
                 "on_failure": {
                     "type": "string"
+                },
+                "retry": {
+                    "$ref": "#/definitions/workflow.RetryPolicy"
                 },
                 "timeout_seconds": {
                     "type": "integer"
@@ -7278,6 +7456,9 @@ const docTemplate = `{
                 "finished_at": {
                     "type": "string"
                 },
+                "max_attempts": {
+                    "type": "integer"
+                },
                 "message": {
                     "type": "string"
                 },
@@ -7289,6 +7470,12 @@ const docTemplate = `{
                 },
                 "position": {
                     "type": "integer"
+                },
+                "retry_at": {
+                    "type": "string"
+                },
+                "retry_eligible": {
+                    "type": "boolean"
                 },
                 "started_at": {
                     "type": "string"

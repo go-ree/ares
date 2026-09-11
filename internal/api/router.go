@@ -62,6 +62,12 @@ func RouterWithRuntime(r gin.IRouter, runtime Runtime) {
 		ResourceQuery: "task_id", SensitiveRead: true, SSE: true,
 	}), controller.StreamJenkinsBuildLogHandler)
 	tasks := apiRouter.Group("/tasks")
+	tasks.GET("/:task_id/steps/:step_key/attempts", runtime.require(routePolicy{
+		Permission: auth.PermissionTasksRead, Action: "task.attempts.read", ResourceType: "task", ResourceParam: "task_id",
+	}), workflowController.GetTaskAttempts)
+	tasks.POST("/:task_id/steps/:step_key/retry", runtime.require(routePolicy{
+		Permission: auth.PermissionReleasesCreate, Action: "task.retry", ResourceType: "task", ResourceParam: "task_id",
+	}), workflowController.RetryTaskStep)
 	tasks.GET("/:task_id/steps/:step_key/logs/stream", runtime.require(routePolicy{
 		Permission: auth.PermissionLogsRead, Action: "task.step-log.read", ResourceType: "task-step-log",
 		ResourceParams: []string{"task_id", "step_key"}, SensitiveRead: true, SSE: true,

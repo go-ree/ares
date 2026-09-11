@@ -171,6 +171,65 @@ func positivePathID(c *gin.Context, name, label string) (int, bool) {
 	return value, true
 }
 
+// GetTaskAttempts
+// @Tags Publish
+// @Summary 获取步骤执行尝试历史（不包含内部引用或输出）
+// @Param task_id path int true "任务 ID"
+// @Param step_key path string true "步骤标识"
+// @Success 200 {object} util.ResponseTemplate{code=int,result=[]workflow.AttemptView}
+// @Router /api/v1/tasks/{task_id}/steps/{step_key}/attempts [get]
+func (wc *WorkflowController) GetTaskAttempts(c *gin.Context) {
+	taskID, ok := positivePathID(c, "task_id", "任务ID")
+	if !ok {
+		return
+	}
+	key := c.Param("step_key")
+	if !workflow.ValidStepKey(key) {
+		c.JSON(http.StatusBadRequest, util.ResponseFailure("步骤标识无效", "invalid_request"))
+		return
+	}
+	rows, err := wc.coordinator.ListAttempts(c.Request.Context(), taskID, key)
+	if err != nil {
+		writeWorkflowError(c, "查询尝试历史失败", err)
+		return
+	}
+	c.JSON(http.StatusOK, util.ResponseSuccessful("查询成功", rows))
+}
+
+type retryTaskStepRequest struct {
+	ExpectedAttempt int `json:"expected_attempt"`
+}
+
+// RetryTaskStep
+// @Tags Publish
+// @Summary 请求安全重试失败步骤
+// @Param task_id path int true "任务 ID"
+// @Param step_key path string true "步骤标识"
+// @Param request body retryTaskStepRequest true "预期尝试编号"
+// @Success 202 {object} util.ResponseTemplate{code=int}
+// @Failure 409 {object} util.ResponseTemplate{code=int}
+// @Router /api/v1/tasks/{task_id}/steps/{step_key}/retry [post]
+func (wc *WorkflowController) RetryTaskStep(c *gin.Context) {
+	taskID, ok := positivePathID(c, "task_id", "任务ID")
+	if !ok {
+		return
+	}
+	key := c.Param("step_key")
+	var request retryTaskStepRequest
+	if !BindJSON(c, &request, 1024) {
+		return
+	}
+	if !workflow.ValidStepKey(key) || request.ExpectedAttempt < 1 || request.ExpectedAttempt >= 5 {
+		c.JSON(http.StatusBadRequest, util.ResponseFailure("重试参数无效", "invalid_request"))
+		return
+	}
+	if err := wc.coordinator.RequestRetry(c.Request.Context(), taskID, key, request.ExpectedAttempt); err != nil {
+		writeWorkflowError(c, "无法重试步骤", err)
+		return
+	}
+	c.JSON(http.StatusAccepted, util.ResponseSuccessful("已进入重试等待", nil))
+}
+
 func writeWorkflowError(c *gin.Context, message string, err error) {
 	var validation *workflow.ValidationError
 	switch {
@@ -178,6 +237,10 @@ func writeWorkflowError(c *gin.Context, message string, err error) {
 		c.JSON(http.StatusNotFound, util.ResponseFailure(message, workflow.ErrNotFound.Error()))
 	case errors.Is(err, workflow.ErrRevisionConflict):
 		c.JSON(http.StatusConflict, util.ResponseFailure(message, workflow.ErrRevisionConflict.Error()))
+	case errors.Is(err, workflow.ErrRetryConflict):
+		c.JSON(http.StatusConflict, util.ResponseFailure(message, workflow.ErrRetryConflict.Error()))
+	case errors.Is(err, workflow.ErrLegacyTask):
+		c.JSON(http.StatusConflict, util.ResponseFailure(message, workflow.ErrLegacyTask.Error()))
 	case errors.As(err, &validation):
 		c.JSON(http.StatusUnprocessableEntity, util.ResponseFailure(message, validation.Error()))
 	default:

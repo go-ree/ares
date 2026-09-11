@@ -121,7 +121,62 @@
                 <span v-else class="steps-hint">不支持</span>
               </template>
             </el-table-column>
+            <el-table-column label="尝试" width="160">
+              <template #default="{ row }">
+                <el-button class="attempt-history-button" link @click="loadAttempts(row)"
+                  >第 {{ row.attempt }} 次 · 历史</el-button
+                >
+                <el-button
+                  v-if="
+                    taskRecord?.status === 'failed' &&
+                    row.retry_eligible &&
+                    authStore.can(PERMISSIONS.RELEASES_CREATE)
+                  "
+                  class="step-retry-button"
+                  link
+                  type="primary"
+                  :disabled="retryBusy"
+                  @click="requestRetry(row)"
+                  >安全重试</el-button
+                >
+                <span v-if="row.retry_at">等待至 {{ formatDateTime(row.retry_at) }}</span>
+              </template>
+            </el-table-column>
           </el-table>
+
+          <div v-if="historyStep">
+            <h4>{{ historyStep.name }} · 尝试历史</h4>
+            <el-alert v-if="historyError" :title="historyError" type="error" :closable="false" />
+            <el-table v-loading="historyBusy" :data="attempts" empty-text="该步骤尚无执行尝试">
+              <el-table-column prop="attempt" label="尝试编号" />
+              <el-table-column label="状态"
+                ><template #default="{ row }">{{
+                  stepStatusLabel(row.status)
+                }}</template></el-table-column
+              >
+              <el-table-column label="开始"
+                ><template #default="{ row }">{{
+                  formatDateTime(row.started_at)
+                }}</template></el-table-column
+              >
+              <el-table-column label="结束"
+                ><template #default="{ row }">{{
+                  formatDateTime(row.finished_at)
+                }}</template></el-table-column
+              >
+              <el-table-column prop="message" label="消息" />
+              <el-table-column label="日志"
+                ><template #default="{ row }"
+                  ><el-button
+                    v-if="historyStep.capabilities?.logs && canReadTaskLogs"
+                    link
+                    @click="viewAttemptLog(row.attempt)"
+                    >查看本次日志</el-button
+                  ></template
+                ></el-table-column
+              >
+            </el-table>
+          </div>
 
           <div v-if="isLegacyTask && logTargets.length > 0" class="legacy-log-actions">
             <el-alert
@@ -191,9 +246,9 @@
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { Loading } from '@element-plus/icons-vue';
 import { taskLogTargetKey, taskLogTargets, useLog, type TaskLogTarget } from '@/composables/useLog';
-import type { TaskRecord, TaskStepRecord } from '@/models/deploy';
+import type { TaskRecord, TaskStepRecord, TaskAttempt } from '@/models/deploy';
 import type { DeployingService } from '@/types/deploy';
-import { getTaskDetail } from '@/services/deploy';
+import { getTaskDetail, getTaskAttempts, retryTaskStep } from '@/services/deploy';
 import { useAuthStore } from '@/stores/auth';
 import { PERMISSIONS } from '@/types/auth';
 
@@ -224,6 +279,7 @@ const {
   logContainer,
   canReadTaskLogs,
   getStatusType,
+  getDeployStatus,
   getEnvLabel,
   scrollToBottom,
   getDisplayLog,
@@ -243,6 +299,62 @@ const taskSteps = ref<TaskStepRecord[]>([]);
 const logTargets = ref<TaskLogTarget[]>([]);
 const taskDetailsLoading = ref(false);
 const taskDetailsError = ref('');
+const historyStep = ref<TaskStepRecord | null>(null);
+const attempts = ref<TaskAttempt[]>([]);
+const historyBusy = ref(false);
+const historyError = ref('');
+const retryBusy = ref(false);
+let historyVersion = 0;
+
+const loadAttempts = async (step: TaskStepRecord) => {
+  const version = ++historyVersion;
+  historyStep.value = step;
+  attempts.value = [];
+  historyError.value = '';
+  historyBusy.value = true;
+  try {
+    const response = await getTaskAttempts(step.task_id, step.step_key);
+    if (version !== historyVersion) return;
+    if (response.data.code !== 1) throw new Error('获取尝试历史失败');
+    attempts.value = response.data.result || [];
+  } catch {
+    if (version === historyVersion) historyError.value = '获取尝试历史失败，请刷新后重试';
+  } finally {
+    if (version === historyVersion) historyBusy.value = false;
+  }
+};
+
+const requestRetry = async (step: TaskStepRecord) => {
+  if (retryBusy.value) return;
+  retryBusy.value = true;
+  const taskId = step.task_id;
+  try {
+    await retryTaskStep(taskId, step.step_key, step.attempt);
+    if (currentLog.value.taskId !== taskId || !logDialogVisible.value) return;
+    await loadTaskDetails(taskId);
+    await loadAttempts(step);
+  } catch {
+    if (currentLog.value.taskId === taskId && logDialogVisible.value)
+      taskDetailsError.value = '重试未被接受，请刷新任务状态确认（超时请求可能已成功）';
+  } finally {
+    retryBusy.value = false;
+  }
+};
+
+const viewAttemptLog = (attempt: number) => {
+  const step = historyStep.value;
+  if (!step) return;
+  const target: TaskLogTarget = {
+    kind: 'step',
+    taskId: step.task_id,
+    stepKey: step.step_key,
+    attempt,
+    label: `${step.name} · 第 ${attempt} 次`,
+  };
+  if (!logTargets.value.some(item => targetKey(item) === targetKey(target)))
+    logTargets.value.push(target);
+  viewLogTarget(target);
+};
 let taskDetailsRequestVersion = 0;
 
 const targetKey = taskLogTargetKey;
@@ -269,6 +381,7 @@ const loadTaskDetails = async (taskId: number) => {
       throw new Error(response.data.error || response.data.message || '获取任务详情失败');
     }
     taskRecord.value = response.data.result;
+    currentLog.value.status = getDeployStatus(taskRecord.value.status);
     taskSteps.value = [...(taskRecord.value.steps || [])].sort(
       (left, right) => left.position - right.position
     );
@@ -308,6 +421,7 @@ const viewStepLog = (stepKey: string) => {
 const stepStatusLabel = (status: string) =>
   ({
     pending: '等待中',
+    retry_wait: '等待重试',
     running: '执行中',
     succeeded: '成功',
     failed: '失败',
@@ -339,6 +453,8 @@ watch(
   () => props.visible,
   visible => {
     if (!visible) {
+      historyVersion += 1;
+      historyStep.value = null;
       taskDetailsRequestVersion += 1;
       taskDetailsLoading.value = false;
       logDialogVisible.value = false;
@@ -350,6 +466,8 @@ watch(
     const taskChanged = currentLog.value.taskId !== props.logData.taskId;
     setCurrentLog(props.logData);
     if (taskChanged) {
+      historyVersion += 1;
+      historyStep.value = null;
       taskRecord.value = null;
       taskSteps.value = [];
       logTargets.value = [];
@@ -391,6 +509,7 @@ watch(canReadTaskLogs, allowed => {
 });
 
 onUnmounted(() => {
+  historyVersion += 1;
   taskDetailsRequestVersion += 1;
   cleanupLogsAndConnections();
 });

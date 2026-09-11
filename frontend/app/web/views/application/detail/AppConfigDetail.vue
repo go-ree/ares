@@ -380,6 +380,45 @@
                     placeholder='步骤配置 JSON，例如 {"message":"done"}'
                     :disabled="!canWriteWorkflows"
                   />
+                  <div
+                    v-if="
+                      pipelineStepTypes.find(type => type.uses === step.uses)?.capabilities
+                        ?.retry || step.maxAttempts > 1
+                    "
+                  >
+                    <span>总尝试次数（含首次）</span>
+                    <el-input-number
+                      v-model="step.maxAttempts"
+                      :min="1"
+                      :max="5"
+                      :disabled="!canWriteWorkflows"
+                    />
+                    <template v-if="step.maxAttempts > 1">
+                      <el-select
+                        v-model="step.retryMode"
+                        :disabled="!canWriteWorkflows"
+                        style="width: 140px"
+                      >
+                        <el-option label="自动重试" value="automatic" />
+                        <el-option label="手动重试" value="manual" />
+                      </el-select>
+                      <span>首次等待（秒）</span>
+                      <el-input-number
+                        v-model="step.retryDelay"
+                        :min="1"
+                        :max="3600"
+                        :disabled="!canWriteWorkflows"
+                      />
+                      <span>等待上限（秒）</span>
+                      <el-input-number
+                        v-model="step.retryMaxDelay"
+                        :min="step.retryDelay"
+                        :max="3600"
+                        :disabled="!canWriteWorkflows"
+                      />
+                      <p>仅在执行器确认可安全重试后生效。手动重试需要“失败即停”。</p>
+                    </template>
+                  </div>
                 </div>
               </div>
             </template>
@@ -460,6 +499,10 @@ const originalFormsByEnv = reactive<Record<AppEnv, UpdateAppConfigRequest>>({});
 const isEditingByEnv = reactive<Record<AppEnv, boolean>>({});
 
 interface WorkflowStepForm {
+  maxAttempts: number;
+  retryMode: 'automatic' | 'manual';
+  retryDelay: number;
+  retryMaxDelay: number;
   key: string;
   name: string;
   uses: string;
@@ -764,6 +807,10 @@ const loadStepTypes = async () => {
 const specToDraft = (spec?: WorkflowSpec | null): WorkflowDraft => ({
   name: spec?.name || '',
   steps: (spec?.steps || []).map(step => ({
+    maxAttempts: step.retry?.max_attempts || 1,
+    retryMode: step.retry?.mode || 'automatic',
+    retryDelay: step.retry?.initial_delay_seconds || 1,
+    retryMaxDelay: step.retry?.max_delay_seconds || 60,
     key: step.key,
     name: step.name,
     uses: step.uses,
@@ -804,6 +851,10 @@ const addWorkflowStep = (env: AppEnv) => {
     pipelineStepTypes.value.find(item => item.available !== false) || pipelineStepTypes.value[0];
   const index = workflowDraftsByEnv[env].steps.length + 1;
   workflowDraftsByEnv[env].steps.push({
+    maxAttempts: 1,
+    retryMode: 'automatic',
+    retryDelay: 1,
+    retryMaxDelay: 60,
     key: `step-${index}`,
     name: type?.name || `步骤 ${index}`,
     uses: type?.uses || '',
@@ -856,6 +907,16 @@ const saveWorkflow = async (env: AppEnv) => {
         with: config,
         ...(step.timeout_seconds ? { timeout_seconds: step.timeout_seconds } : {}),
         on_failure: step.on_failure,
+        ...(step.maxAttempts > 1
+          ? {
+              retry: {
+                max_attempts: step.maxAttempts,
+                mode: step.retryMode,
+                initial_delay_seconds: step.retryDelay,
+                max_delay_seconds: step.retryMaxDelay,
+              },
+            }
+          : {}),
       };
     });
     workflowSaving.value = true;

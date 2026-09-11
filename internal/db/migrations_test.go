@@ -22,6 +22,7 @@ func TestPublishedMigrationChecksumsAreStable(t *testing.T) {
 		5: "5fdb78c86cb338613d32e6e05c9ad38e652ba30fe83bf02564d0e110574aef0a",
 		6: "55fade2745e43396c5b7e031e225dc18d38d523627e2469feac9a362aa0ac3ed",
 		7: "c861661da96b99252a356c3d8c703760c8d6610af3c6e61384cebe293ba70582",
+		8: "3d96237a751e4399f427bb410ae88337161d59da74b12764dd375c36b5c5ae39",
 	}
 	for _, migration := range schemaMigrations {
 		if got := migration.checksum(); got != want[migration.epoch] {
@@ -40,6 +41,7 @@ func TestPublishedMigrationImplementationFingerprintsAreStable(t *testing.T) {
 		5: {"pluggable_cicd_migration.go", "auth_rbac_migration.go", "../canonicaljson/canonical.go"},
 		6: {"idempotent_release_migration.go"},
 		7: {"worker_lease_migration.go"},
+		8: {"task_attempt_migration.go"},
 	}
 	for _, migration := range schemaMigrations {
 		got := sourceFingerprint(t, filesByEpoch[migration.epoch])
@@ -69,7 +71,7 @@ func TestPersistentEntitySourcesAreStable(t *testing.T) {
 		"../entity/task_record_images.go",
 		"../entity/workflow.go",
 	}
-	const expected = "fcc46bc090f28ab9c396033ab760e39ee926d900310f90ffdc36118e4ffc5030"
+	const expected = "1412090c5938f52de9a3a0503f7f73c08370b5c2201b9aec76e2bc2f4bf33486"
 	if got := sourceFingerprint(t, files); got != expected {
 		t.Errorf("persistent entity fingerprint = %s, want %s; entity changes require a migration and manifest review", got, expected)
 	}
@@ -261,7 +263,7 @@ func TestComposeRuntimeGrantsCoverManagedTablesWithLeastPrivilege(t *testing.T) 
 		t.Fatal(err)
 	}
 	content := string(script)
-	for _, tableName := range sortedStringKeys(epoch7SemanticSchemaManifest.tables) {
+	for _, tableName := range sortedStringKeys(epoch8SemanticSchemaManifest.tables) {
 		privilege := expectedRuntimeDMLPrivileges(tableName)
 		if privilege == "" {
 			needle := ".\\`" + tableName + "\\` TO '${MYSQL_RUNTIME_USER}'@'%'"

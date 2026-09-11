@@ -146,7 +146,9 @@ describe('task log target contract', () => {
       })
     );
 
-    expect(targets).toEqual([{ kind: 'step', taskId: 7, stepKey: 'deploy', label: 'Step deploy' }]);
+    expect(targets).toEqual([
+      { kind: 'step', taskId: 7, stepKey: 'deploy', attempt: 1, label: 'Step deploy' },
+    ]);
   });
 
   it('isolates v1 CI/CD compatibility without exposing Jenkins references in targets', () => {

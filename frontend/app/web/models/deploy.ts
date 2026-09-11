@@ -37,6 +37,9 @@ export interface TaskStepRecord {
   on_failure: 'stop' | 'continue';
   status: string;
   attempt: number;
+  max_attempts?: number;
+  retry_at?: string;
+  retry_eligible?: boolean;
   capabilities?: TaskStepCapabilities;
   message?: string;
   started_at?: string | null;
@@ -46,8 +49,17 @@ export interface TaskStepRecord {
 }
 
 export interface TaskStepCapabilities {
+  retry?: boolean;
   logs: boolean;
   cancel: boolean;
+}
+
+export interface TaskAttempt {
+  attempt: number;
+  status: string;
+  message?: string;
+  started_at?: string;
+  finished_at?: string;
 }
 
 export interface ApiResponse<T> {

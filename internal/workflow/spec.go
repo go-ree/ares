@@ -109,6 +109,17 @@ func NormalizeAndValidate(spec WorkflowSpec, registry *Registry) (WorkflowSpec, 
 		if step.OnFailure != FailureStop && step.OnFailure != FailureContinue {
 			problems = append(problems, prefix+".on_failure 只支持 stop 或 continue")
 		}
+		if step.Retry != nil {
+			policy := normalizeRetry(step.Retry)
+			step.Retry = &policy
+			if policy.MaxAttempts < 1 || policy.MaxAttempts > 5 || policy.InitialDelaySeconds < 1 || policy.MaxDelaySeconds > 3600 || policy.MaxDelaySeconds < policy.InitialDelaySeconds || (policy.Mode != "automatic" && policy.Mode != "manual") || (policy.Mode == "manual" && step.OnFailure != FailureStop) {
+				problems = append(problems, prefix+".retry 策略无效（最多 5 次，退避 1-3600 秒，manual 需要 stop）")
+			}
+			caps, _ := registry.Capabilities(step.Uses)
+			if policy.MaxAttempts > 1 && !caps.Retry {
+				problems = append(problems, prefix+".retry 执行器未声明安全重试能力")
+			}
+		}
 		if len(step.With) == 0 || string(step.With) == "null" {
 			step.With = json.RawMessage(`{}`)
 		}

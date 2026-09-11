@@ -813,6 +813,7 @@ tables=(
 	release_workflow_versions
 	app_config_workflows
 	task_step_records
+	task_step_attempts
 	auth_users
 	auth_identities
 	auth_sessions
@@ -916,12 +917,12 @@ assert_query_equals 0 \
 			'apps', 'app_configs', 'app_config_domains', 'task_record', 'task_record_images',
 			'env_configs', 'integration_settings',
 			'dev_language_rules', 'release_workflows', 'release_workflow_versions',
-			'app_config_workflows', 'task_step_records', 'auth_users', 'auth_identities',
+			'app_config_workflows', 'task_step_records', 'task_step_attempts', 'auth_users', 'auth_identities',
 			'auth_sessions', 'auth_oidc_flows', 'auth_bootstrap_state', 'audit_events',
 			'release_idempotency_records', 'release_idempotency_items'
 		)" \
 	'runtime DML 表白名单不匹配'
-assert_query_equals $'20\t36\tDELETE,INSERT,UPDATE' \
+assert_query_equals $'21\t39\tDELETE,INSERT,UPDATE' \
 	"SELECT COUNT(DISTINCT TABLE_NAME), COUNT(*),
 		COALESCE(GROUP_CONCAT(DISTINCT PRIVILEGE_TYPE ORDER BY PRIVILEGE_TYPE SEPARATOR ','), '')
 	FROM information_schema.TABLE_PRIVILEGES
@@ -941,6 +942,7 @@ for table_privileges in \
 	'release_workflow_versions:INSERT' \
 	'app_config_workflows:INSERT,UPDATE' \
 	'task_step_records:INSERT,UPDATE' \
+	'task_step_attempts:DELETE,INSERT,UPDATE' \
 	'auth_users:INSERT,UPDATE' \
 	'auth_identities:INSERT' \
 	'auth_sessions:DELETE,INSERT,UPDATE' \

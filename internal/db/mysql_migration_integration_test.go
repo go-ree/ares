@@ -113,8 +113,8 @@ func TestMySQL84Migrations(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertCompatibleStatus(t, status)
-		if got := harness.tableCount(t, databaseName); got != len(epoch7SemanticSchemaManifest.tables)+1 {
-			t.Fatalf("table count after migrate up = %d, want %d", got, len(epoch7SemanticSchemaManifest.tables)+1)
+		if got := harness.tableCount(t, databaseName); got != len(epoch8SemanticSchemaManifest.tables)+1 {
+			t.Fatalf("table count after migrate up = %d, want %d", got, len(epoch8SemanticSchemaManifest.tables)+1)
 		}
 
 		database := openIntegrationDatabase(t, dsn)
@@ -1947,8 +1947,8 @@ func TestMySQL84Migrations(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !before.Initialized || !before.NeedsAdoption || len(before.Applied) != 3 || len(before.Pending) != 4 {
-			t.Fatalf("legacy status = %+v, want three adopted candidates and four pending migrations", before)
+		if !before.Initialized || !before.NeedsAdoption || len(before.Applied) != 3 || len(before.Pending) != 5 {
+			t.Fatalf("legacy status = %+v, want three adopted candidates and five pending migrations", before)
 		}
 
 		status, err := MigrateUp(ctx, dsn, "", 45*time.Second, 10*time.Second)
@@ -1961,12 +1961,12 @@ func TestMySQL84Migrations(t *testing.T) {
 		var adopted, native int
 		if err := database.QueryRow(`SELECT
 			SUM(epoch <= 3 AND legacy_adopted = 1),
-			SUM(epoch IN (4, 5, 6, 7) AND legacy_adopted = 0)
+			SUM(epoch IN (4, 5, 6, 7, 8) AND legacy_adopted = 0)
 			FROM schema_migrations`).Scan(&adopted, &native); err != nil {
 			t.Fatal(err)
 		}
-		if adopted != 3 || native != 4 {
-			t.Fatalf("ledger adoption counts = adopted:%d native:%d, want 3 and 4", adopted, native)
+		if adopted != 3 || native != 5 {
+			t.Fatalf("ledger adoption counts = adopted:%d native:%d, want 3 and 5", adopted, native)
 		}
 		var appName, environment, packagePath string
 		if err := database.QueryRow(`SELECT a.app_name, c.env, c.code_package_path
@@ -3775,7 +3775,7 @@ func (h *mysqlIntegrationHarness) newRuntimeUser(t *testing.T, targetDSN, databa
 		"GRANT SELECT ON `%s`.* TO %s", grantPattern, account)); err != nil {
 		t.Fatal(err)
 	}
-	for _, tableName := range sortedStringKeys(epoch7SemanticSchemaManifest.tables) {
+	for _, tableName := range sortedStringKeys(epoch8SemanticSchemaManifest.tables) {
 		privileges := expectedRuntimeDMLPrivileges(tableName)
 		if privileges == "" {
 			continue

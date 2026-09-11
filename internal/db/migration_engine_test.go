@@ -36,7 +36,7 @@ func TestNormalizedAresMySQLDSNEnablesTimeParsing(t *testing.T) {
 }
 
 func TestMigrationEngineFingerprintIsStable(t *testing.T) {
-	const expected = "57a8fe8a050a334438ed93492824a5a69e981959e6fc723ea4398b891f5ce9ea"
+	const expected = "dfc62e13416c9698822a2f00c082bba4dca0bf47e20e12a75f229a7dcf0d60df"
 	files := []string{
 		"migrations.go",
 		"guarded_migrations.go",

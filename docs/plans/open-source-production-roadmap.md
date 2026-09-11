@@ -1,8 +1,8 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W01 仓库实现已合并、管理项阻塞；W02～W06 已合并；W07-A [PR #37](https://github.com/go-ree/ares/pull/37) 待验收；W07-B/C 未开始
-> - 基线版本：`main@b890145`，已合并 [PR #36](https://github.com/go-ree/ares/pull/36)
+> - 当前状态：W01 管理项阻塞；W02～W06、W07-A 已合并；W07-B 尝试历史与安全重试待验收；W07-C 未开始
+> - 基线版本：`main@5d4656d`，已合并 [PR #37](https://github.com/go-ree/ares/pull/37)
 > - 最后更新：2026-09-11
 
 本文承接 [可插拔 CI/CD 实施路线](pluggable-cicd-roadmap.md)。上一阶段已经完成动态环境、版本化工作流、通用串行编排和 Jenkins Adapter 的主链路；本计划负责把 Ares 从“可运行的开源 CI/CD 基础”推进到“可安全公开部署、可持续扩展、可进行生产化验证”的状态。
@@ -81,7 +81,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 | W04    | 数据库迁移机制收敛           | W01                | `已完成` | [PR #22](https://github.com/go-ree/ares/pull/22) | 存量结构只由版本化 migration 改变               |
 | W05    | AppConfig 核心的幂等发布     | W02、W04           | `已完成` | [PR #35](https://github.com/go-ree/ares/pull/35) | 预检、`config_id` 发布、`Idempotency-Key`       |
 | W06    | 多副本 Worker 与租约         | W04、W05           | `已完成` | [PR #36](https://github.com/go-ree/ares/pull/36) | 已合入主线，关闭 R-003              |
-| W07    | 重试、取消、超时与尝试历史   | W03、W06           | `开发中` | A：[PR #37](https://github.com/go-ree/ares/pull/37) | A 待验收；B/C 未开始                  |
+| W07    | 重试、取消、超时与尝试历史   | W03、W06           | `开发中` | A：[PR #37](https://github.com/go-ree/ares/pull/37)；B：[PR #38](https://github.com/go-ree/ares/pull/38) | A 已完成；B 待验收；C 未开始                  |
 | W08    | Secret Resolver 与密钥轮换   | W02、W04           | `未开始` | 待创建                                           | 工作流只保存 Secret 引用，运行时按版本解析      |
 | W09    | 执行器开发套件与扩展生态     | W03、W07、W08      | `未开始` | 待创建                                           | 契约测试、模板及新增执行器                      |
 | W10    | 可观测性、正式发行与生产示例 | W01、W06、W07、W08 | `未开始` | 待创建                                           | 指标、告警、签名镜像、生产部署与升级工具        |
@@ -320,18 +320,20 @@ W02 与 W04 依赖 W01 已交付的仓库内质量基线，可以并行设计；
 
 | 增量 | 范围 | 状态 |
 | --- | --- | --- |
-| W07-A | 总时限、timed_out/outcome_unknown、查询退避、前端状态 | 待验收：[PR #37](https://github.com/go-ree/ares/pull/37) |
-| W07-B | 策略、attempt 迁移、有限自动/手动重试、尝试历史 | 未开始 |
+| W07-A | 总时限、timed_out/outcome_unknown、查询退避、前端状态 | 已完成：[PR #37](https://github.com/go-ree/ares/pull/37) |
+| W07-B | 策略、attempt 迁移、有限自动/手动重试、尝试历史 | 待验收：[PR #38](https://github.com/go-ree/ares/pull/38) |
 | W07-C | 持久化取消、执行器确认协议、Jenkins 取消、Web 入口 | 未开始 |
 
 范围：
 
-- [ ] 为步骤规范增加有限重试、退避、可重试错误类型和超时策略。
-- [ ] 建立 attempt 历史记录；每次尝试拥有独立状态、时间、外部引用和稳定幂等键。
-- [ ] 增加 `retry_wait`、`timed_out` 等明确状态及合法状态转换。
+- [x] 为步骤规范增加有限重试、退避、可重试错误类型和超时策略。
+- [x] 建立 attempt 历史记录；每次尝试拥有独立状态、时间、外部引用和稳定幂等键。
+- [x] 增加 `retry_wait`、`timed_out` 等明确状态及合法状态转换。
 - [ ] 实现任务取消 API 和执行器 `Canceller`；Jenkins Adapter 支持安全取消 Queue/Build。
-- [ ] 区分“明确未产生副作用”“已有外部引用”和“请求结果不明确”，禁止不安全自动重试。
+- [x] 区分“明确未产生副作用”“已有外部引用”和“请求结果不明确”，禁止不安全自动重试。
 - [ ] 前端按执行器能力和任务状态展示取消/重试入口，并显示尝试历史。
+
+W07-B 已交付重试入口、历史记录与按 attempt 绑定的日志；上项保留未完成，仅因取消入口属于 W07-C。
 
 W07-A 已验证的子项（不代替上述完整范围）：
 
@@ -466,9 +468,19 @@ W07-A 已验证的子项（不代替上述完整范围）：
 
 ## 8. 下一步
 
-[PR #36](https://github.com/go-ree/ares/pull/36) 已合并，W06 为 `已完成`，R-003 已关闭。当前推进 W07-A 的超时和不明确结果处理，随后按 [ADR-0006](../architecture/decisions/0006-task-lifecycle-recovery.md) 实现 W07-B 尝试历史与安全重试、W07-C 取消确认。W01 仓库管理项仍单独跟踪，不阻塞这些代码工作。
+[PR #37](https://github.com/go-ree/ares/pull/37) 已合并，W07-A 为 `已完成`。本次 W07-B 尝试历史与安全重试进入待验收，随后按 [ADR-0006](../architecture/decisions/0006-task-lifecycle-recovery.md) 实现 W07-C 取消确认。W01 仓库管理项仍单独跟踪，不阻塞这些代码工作。
 
 ## 9. 进度记录
+
+### 2026-09-11：W07-A 合并校准与 W07-B 交付
+
+- 基线：确认 PR #37 已合并，从 `main@5d4656d` 创建独立分支开发；本次继续仅提交中文 PR，不直接合并。
+- 策略与安全：步骤可配置 1～5 次尝试、有限指数退避、自动/手动模式。执行器能力与结果安全分类双重约束；Noop 提供确定性失败演练，Jenkins 不开放重试，超时和结果不明确禁止重试。
+- 持久化：epoch 8 新增 `task_step_attempts` 和策略快照，历史任务默认一次；领取、结果与历史写入受同一 lease/fencing 事务保护，重启保留等待期限与预算。手动重试使用 expected_attempt 并发校验，只恢复尚未执行的后续步骤。
+- Web/API：工作流策略编辑、最近五次尝试历史、具备发布权限的手动重试入口，以及按 attempt 固定引用的历史日志。公开响应不返回幂等键、外部引用或输出快照。
+- 验证：后端单测、Vet、Race；前端 191 项测试、类型检查、Lint、生产构建；MySQL 8.4.11 全量迁移/中断恢复/租约/重试及最小权限账号矩阵通过。另通过工作流、Compose 配置、Go 模块与漏洞检查。未声称浏览器端到端验收。
+- 部署：必须停止全部旧 Worker，备份后迁移至 epoch 8，再刷新运行时账号授权；当前为 23 张受管表，其中 21 张获得按用途限制的 DML。不可仅降级镜像回退。
+- 范围：[PR #38](https://github.com/go-ree/ares/pull/38) 已创建，W07-B 待验收；W07-C 持久化取消与执行器确认协议未开始，因此 W07 整体仍为开发中。云端检查以 PR 实时状态为准。
 
 ### 2026-09-11：W06 合并校准与 W07-A 开发
 
