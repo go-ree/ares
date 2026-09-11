@@ -1,13 +1,21 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W01 管理项阻塞；W02～W06、W07-A/B、W11-A1 已合并；优先清理 Rundeck AppName；A2/A3 未开始；W07-C 暂缓
-> - 基线版本：`main@5ea0461`，已合并 [PR #42](https://github.com/go-ree/ares/pull/42)
+> - 当前状态：W01 管理项阻塞；W02～W06、W07-A/B、W11-A1 与 Rundeck 清理已合并；W11-A2a 开发中；A2b/A3 未开始；W07-C 暂缓
+> - 基线版本：`main@0c891b6`，已合并 [PR #43](https://github.com/go-ree/ares/pull/43)
 > - 最后更新：2026-09-11
 
-## 本次优先修复：移除 Rundeck AppName
+## 当前增量：W11-A2a 类型与模板 schema
 
-- 状态：待验收；按维护者要求优先于 W11-A2。
+- 状态：开发中。A2 拆为 A2a schema/迁移/权限与 A2b 事务存储/CAS；本轮不交付管理 API、UI 或新运行流程。
+- 追加 epoch 9，新增 application_types、pipeline_templates、pipeline_template_versions；Java/Python 只补缺失种子，不推断旧应用类型、不复制旧工作流。
+- 精确结构/外键/数据契约与不可变版本最小权限见 [存储契约](../development/template-storage.md)。既有 epoch 1～8 保持不变。
+- 验证中：逐 DDL 恢复、存量种子保护、未知字段/归属/版本摘要/序号校验、最小权限及完整历史集成矩阵。
+- 预览升级前必须停止旧 Worker、备份并在隔离库验证恢复；越过 epoch 9 后不得只降级镜像。
+
+## 已合并修复：移除 Rundeck AppName
+
+- 状态：已合并 [PR #43](https://github.com/go-ree/ares/pull/43)；按维护者要求优先于 W11-A2。
 - 范围：移除应用详情/编辑、前端类型、后端 DTO/实体映射、别名校验与查询分支、发布快照旧字段、无用 NULL 指针工具；同步 Swagger 与接口说明。
 - 兼容变化：JSON 请求中的旧字段返回 400；应用及任务响应不再包含旧字段。现有应用使用唯一的 `app_name`。
 - 数据库：不修改已发布迁移、schema manifest 或历史 NULL 治理测试；旧可空列保持原样，不清空历史数据。实体指纹经审查更新，schema 仍为 epoch 8。
@@ -98,7 +106,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 | W08    | Secret Resolver 与密钥轮换   | W02、W04           | `未开始` | 待创建                                           | 工作流只保存 Secret 引用，运行时按版本解析      |
 | W09    | 执行器开发套件与扩展生态     | W03、W07、W08、W11-F      | `未开始` | 待创建                                           | 契约测试、模板及新增执行器                      |
 | W10    | 可观测性、正式发行与生产示例 | W01、W06、W07、W08、W11-F | `未开始` | 待创建                                           | 指标、告警、签名镜像、生产部署与升级工具        |
-| W11    | 应用类型 CI、产出物与独立 CD | W02～W06、W07-A/B；真实接入另需 W07-C/W08 | `开发中` | [PR #40](https://github.com/go-ree/ares/pull/40) | 设计已合并；A1 结构契约本次交付，A2/A3 未开始 |
+| W11    | 应用类型 CI、产出物与独立 CD | W02～W06、W07-A/B；真实接入另需 W07-C/W08 | `开发中` | [PR #42](https://github.com/go-ree/ares/pull/42) | A1 已合并；A2a schema 本次交付，A2b/A3 未开始 |
 
 依赖关系如下：
 
@@ -491,7 +499,7 @@ W07-A 已验证的子项（不代替上述完整范围）：
 
 W11 的完整工作包明细与验收矩阵单独维护在 [CI、产出物与 CD 解耦实施计划](ci-artifact-cd-roadmap.md)。设计决策 D-010 处于待评审状态：[ADR-0007](../architecture/decisions/0007-ci-artifact-cd-separation.md)，涉及 W11 及 W07-C/W08 的顺序调整；不把已有 AppConfig 全流程文档当成新模型接口约定。
 
-PR #40/#41/#42 已合并。本次先移除 Rundeck AppName 前后端兼容操作；完成后继续 W11-A2 应用类型及模板版本持久化，再由 A3 补管理接口。W07-C 暂缓至新模型稳定；W01 管理项继续独立跟踪。完整 W11-A 和构建部署能力均未完成。
+PR #40/#41/#42/#43 已合并。本次交付 W11-A2a schema 与迁移；后续 A2b 实现事务存储和 CAS，再由 A3 补管理接口。W07-C 暂缓至新模型稳定；W01 管理项继续独立跟踪。完整 W11-A 和构建部署能力均未完成。
 
 ## 9. 进度记录
 

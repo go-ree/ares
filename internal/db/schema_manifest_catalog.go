@@ -182,6 +182,7 @@ var (
 	epoch6SemanticSchemaManifest semanticSchemaManifest
 	epoch7SemanticSchemaManifest semanticSchemaManifest
 	epoch8SemanticSchemaManifest semanticSchemaManifest
+	epoch9SemanticSchemaManifest semanticSchemaManifest
 )
 
 const (
@@ -204,6 +205,7 @@ var epochDataContractCatalog = map[uint64][]string{
 	6: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID, idempotentReleaseDataContractID},
 	7: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID, idempotentReleaseDataContractID, workerLeaseDataContractID},
 	8: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID, idempotentReleaseDataContractID, workerLeaseDataContractID, "task-attempts-v1"},
+	9: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID, idempotentReleaseDataContractID, workerLeaseDataContractID, "task-attempts-v1", "pipeline-templates-v1"},
 }
 
 func epochDataContractIDs(epoch uint64) []string {
@@ -245,6 +247,10 @@ func (s *migrationSession) verifyEpochDataContracts(epoch uint64) error {
 			if err := s.verifyTaskAttemptRows(); err != nil {
 				return err
 			}
+		case "pipeline-templates-v1":
+			if err := s.verifyPipelineTemplateRows(); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("epoch %d declares unknown data contract %q", epoch, contractID)
 		}
@@ -276,6 +282,7 @@ func init() {
 	initializeEpoch6SemanticSchemaManifest()
 	initializeEpoch7SemanticSchemaManifest()
 	initializeEpoch8SemanticSchemaManifest()
+	initializeEpoch9SemanticSchemaManifest()
 }
 
 func publishedTableCollation(tableName string) string {

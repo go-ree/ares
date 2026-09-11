@@ -39,7 +39,7 @@ Ares 二进制提供三个运行入口：
 
 生产部署应使用两个不同的 MySQL 账号：
 
-- 运行时账号通过 Ares schema 的全库 `SELECT` 读取 23 张受管表和 `schema_migrations`，但只对其中 21 张受管表授予精确表级 DML；`pipelines` 与 `pipelines_job_combination` 保持只读，身份、审计与幂等回执表按实际用途进一步收紧，ledger 也始终只读；
+- 运行时账号通过 Ares schema 的全库 `SELECT` 读取 26 张受管表和 `schema_migrations`，但只对其中 24 张受管表授予精确表级 DML；`pipelines` 与 `pipelines_job_combination` 保持只读，身份、审计与幂等回执表按实际用途进一步收紧，ledger 也始终只读；
 - 迁移账号额外授予 `CREATE`、`ALTER`、`INDEX`、`REFERENCES`，并保留迁移所需的 DML 权限；当前迁移不需要 `DROP`。该账号常态必须锁定且没有活动会话；
 - 不要向应用容器注入迁移 DSN 或管理员 DSN，也不要让 `migrate up` 回退使用运行时 DSN；guarded 管理员必须直接持有全局 `PROCESS`、`CREATE USER`、`SELECT`、`TRIGGER`、`EVENT`、`SHOW VIEW`，以及 `CONNECTION_ADMIN` 或 `SUPER`，且 `mysql.user.User_attributes.$.Restrictions` 为空。缺任一项、通过角色间接获得或存在部分权限限制时，都无法权威证明会话与元数据全集；
 - 密码只应进入部署系统的 Secret 或本地未提交的 `.env`，不得写入仓库、命令输出或日志。
@@ -47,7 +47,7 @@ Ares 二进制提供三个运行入口：
 默认 Compose 使用 `MYSQL_RUNTIME_USER` / `MYSQL_RUNTIME_PASSWORD` 和 `MYSQL_MIGRATION_USER` / `MYSQL_MIGRATION_PASSWORD`。同一份[账号初始化脚本](../../deploy/compose/mysql/01-create-users.sh) 按角色分两次运行：
 
 - `database-migrator-user` 在 MySQL 健康后创建/更新迁移账号并重置其授权，最终保持账号锁定，成功后才允许 migrator 启动；
-- `database-runtime-user` 在 schema 迁移完成后创建/更新运行时账号，先撤销既有授权，再授予全库 `SELECT` 和 21 张受管表的逐表 DML；另外两张受管表 `pipelines`、`pipelines_job_combination` 不获得表级 DML，成功后才允许 `ares` 启动。
+- `database-runtime-user` 在 schema 迁移完成后创建/更新运行时账号，先撤销既有授权，再授予全库 `SELECT` 和 24 张受管表的逐表 DML；另外两张受管表 `pipelines`、`pipelines_job_combination` 不获得表级 DML，成功后才允许 `ares` 启动。
 
 六张身份与审计表的写权限分别为：`auth_users` 仅 `INSERT, UPDATE`，`auth_identities` 仅 `INSERT`，`auth_sessions` 和 `auth_oidc_flows` 为 `INSERT, UPDATE, DELETE`，`auth_bootstrap_state` 仅 `UPDATE`，`audit_events` 仅 `INSERT`。应用运行账号不能修改或删除审计事件；服务端对 Bootstrap singleton 只允许从未完成原子转换为已完成，不提供恢复入口。
 
@@ -89,7 +89,7 @@ PR #6 及更早的 Compose 使用 `MYSQL_USER` 作为应用账号，MySQL 首次
 3. 对 Ares 专用旧账号执行 `REVOKE ALL PRIVILEGES, GRANT OPTION FROM '<旧用户名>'@'<host>'`，或在确认不再需要时执行 `DROP USER '<旧用户名>'@'<host>'`；
 4. 再次 `SHOW GRANTS` 或确认账号不存在；确认目标 schema 只向计划使用的 runtime/migrator 身份授权后，才运行当前账号任务和迁移，并从部署 Secret/`.env` 删除废弃的 `MYSQL_USER`、`MYSQL_PASSWORD`。
 
-不要把示例用户名或 host 直接用于生产；账号可能被定制，且同名用户在不同 host 下是不同 MySQL 身份。保留旧账号用于“快速回退”也不安全：当前 epoch 8 不允许 epoch 7 及更早二进制连接升级后的可写数据库，真正回退必须恢复迁移前备份。
+不要把示例用户名或 host 直接用于生产；账号可能被定制，且同名用户在不同 host 下是不同 MySQL 身份。保留旧账号用于“快速回退”也不安全：当前 epoch 9 不允许 epoch 8 及更早二进制连接升级后的可写数据库，真正回退必须恢复迁移前备份。
 
 ## Schema ledger 与只读检查
 
@@ -156,7 +156,7 @@ docker compose logs migrate
 
 预期 `auth-secrets`、`database-migrator-user`、`migrate`、`database-runtime-user` 均为 `Exited (0)`，`mysql`、`ares` 和 `web` 最终为 healthy。任一一次性任务失败时 `ares` 都不会启动；先查看对应任务日志，不要绕过依赖直接启动服务。
 
-完成当前 epoch 8 迁移和运行时授权收敛后，可以把同一服务扩为三个 API/Worker 副本：
+完成当前 epoch 9 迁移和运行时授权收敛后，可以把同一服务扩为三个 API/Worker 副本：
 
 ```bash
 docker compose up -d --build --wait --scale ares=3
@@ -187,7 +187,15 @@ docker compose run --rm --no-deps \
 
 该命令只读取 `auth_secrets` volume，不修改 schema。管理员 Bootstrap 在数据库中只能成功一次；成功后即使再次读取相同 Token，也不能创建第二位管理员。
 
-## 从 epoch 7 升级至 epoch 8
+## 从 epoch 8 升级至 epoch 9
+
+1. 停止旧 API/Worker，备份并在隔离空库恢复验证；保留匹配 epoch 8 的镜像及密钥。
+2. 使用当前 migrator 升级至 epoch 9 / `[9,9]`；dirty 仅按 `20260911_002_pipeline_templates` 显式恢复，三条 DDL 的前缀状态必须完全符合 manifest。
+3. 重新运行 database-runtime-user，26 张受管表中 24 张拥有精确 DML。新增 application_types/pipeline_templates 为 INSERT/UPDATE，pipeline_template_versions 仅 INSERT（均继承 SELECT）；版本无 UPDATE/DELETE。
+4. 检查 migrate status、健康端点与原有应用/用户/任务；Java/Python 是可配置种子，本次没有模板管理 UI，不自动转换旧数据。
+5. 失败保留故障库，以全新恢复库和匹配旧镜像回退，不允许 epoch 8 镜像接回 epoch 9。具体边界见 [模板存储契约](../development/template-storage.md)。
+
+## 历史边界：从 epoch 7 升级至 epoch 8
 
 1. 停止所有旧版 API/Worker，并备份数据库；不得与新 Worker 混跑。
 2. 使用当前镜像执行现有 Compose migrator 流程，到达 epoch 8 / `[8,8]`；dirty 仅允许按 `20260911_001_task_attempts` 恢复。
@@ -195,7 +203,7 @@ docker compose run --rm --no-deps \
 4. 使用运行时账号检查 schema 状态后启动新 API/Worker。旧步骤默认 max_attempts=1；只回填有执行证据的当前尝试，不虚构历史，也不赋予历史失败安全重试资格。
 5. 回退须恢复升级前备份并部署匹配的旧镜像，不能让 epoch 7 镜像写入 epoch 8。
 
-以下 epoch 6→7 等章节为历史升级边界；使用最新镜像最终必须到达 epoch 8。
+以下 epoch 6→7 等章节为历史升级边界；使用最新镜像最终必须到达 epoch 9。
 
 ## 从 epoch 6 升级至 epoch 7
 
@@ -278,7 +286,7 @@ epoch 5 的兼容区间为 `[5,5]`。升级会新增六张身份/审计表，并
 
 ## 从 W04 前版本升级
 
-epoch 4 是从“应用启动隐式 DDL”切换为“独立迁移任务”的历史停机边界，其兼容区间为 `[4,4]`；当前迁移链会继续执行到 epoch 8。不能在旧 Ares 实例仍连接数据库时执行升级。
+epoch 4 是从“应用启动隐式 DDL”切换为“独立迁移任务”的历史停机边界，其兼容区间为 `[4,4]`；当前迁移链会继续执行到 epoch 9。不能在旧 Ares 实例仍连接数据库时执行升级。
 
 推荐顺序：
 
@@ -293,7 +301,7 @@ epoch 4 是从“应用启动隐式 DDL”切换为“独立迁移任务”的�
 9. 使用运行时账号执行 `migrate status`，必须返回 `0`，然后才启动 `ares` 和 `web`。
 10. 验证健康检查、应用读取和一次受控业务写入，并确认运行时账号不能修改 ledger 或执行 DDL。
 
-目标版本包含 epoch 8，因此从 W04 前升级时既要完成身份根密钥、精确公开源、首位管理员
+目标版本包含 epoch 9，因此从 W04 前升级时既要完成身份根密钥、精确公开源、首位管理员
 Bootstrap 和 OIDC 规划，也要遵守 epoch 5 → 6 的发布停写、备份、22 表可读/20 表 DML 权限复核
 及 epoch 6 → 7 的租约验收、epoch 7 → 8 的全量停旧和 23 表可读/21 表 DML 权限复核；不能恢复匿名页面身份或把旧共享
 管理员 Token 当作长期权限边界。
@@ -336,10 +344,10 @@ docker compose exec -T mysql \
 
 - 命令退出码为 `0`，文件非空且包含 `schema_migrations` 与关键业务表；
 - 记录备份对应的应用版本、schema epoch、时间和目标数据库；
-- 在隔离数据库中完成导入；当前 epoch 8 备份用支持 epoch 8 的 W07-B 候选版本执行 `migrate status`，较早版本使用与备份 epoch 对应的二进制；W04 前版本没有该子命令时应核对表、旧 ledger 和哨兵数据，并实际启动创建该备份的精确旧版本完成健康检查与关键读写；
+- 在隔离数据库中完成导入；当前 epoch 9 备份用支持 epoch 9 的 W11-A2a 版本执行 `migrate status`，较早版本使用与备份 epoch 对应的二进制；W04 前版本没有该子命令时应核对表、旧 ledger 和哨兵数据，并实际启动创建该备份的精确旧版本完成健康检查与关键读写；
 - 备份按生产数据级别加密、限制访问并设置保留期。
 
-逻辑备份导入不会自动删除目标库中已有的新结构，因此不能把旧备份直接覆盖导入已经完成 epoch 8 的数据库。回退恢复应停止所有 Ares 实例，把故障库保留为只读证据，在全新的空数据库或已清空且确认无须保留的目标中恢复，再启动与该备份 epoch 兼容的应用。生产恢复还应提供备份时匹配的系统配置加密密钥；会话根密钥无法恢复时，已有会话会失效，但不能因此更改数据库身份或审计记录。
+逻辑备份导入不会自动删除目标库中已有的新结构，因此不能把旧备份直接覆盖导入已经完成 epoch 9 的数据库。回退恢复应停止所有 Ares 实例，把故障库保留为只读证据，在全新的空数据库或已清空且确认无须保留的目标中恢复，再启动与该备份 epoch 兼容的应用。生产恢复还应提供备份时匹配的系统配置加密密钥；会话根密钥无法恢复时，已有会话会失效，但不能因此更改数据库身份或审计记录。
 
 ## Dirty 迁移恢复
 
@@ -372,7 +380,7 @@ docker compose run --rm --no-deps migrate \
 
 - 首选修复新版本并前滚，不对已经发布的旧迁移做原地修改。
 - 只有数据库最新兼容区间包含目标旧应用 epoch 时，才允许只回退二进制。
-- epoch 8 不兼容 epoch 7；完成当前迁移后，不能让只支持 epoch 7 或更早 schema 的旧镜像重新连接这个可写数据库。epoch 7/6/5/4 与更早版本的历史不兼容边界同样保留。
+- epoch 9 不兼容 epoch 8；完成当前迁移后，不能让只支持 epoch 8 或更早 schema 的旧镜像重新连接这个可写数据库。epoch 7/6/5/4 与更早版本的历史不兼容边界同样保留。
 - 必须回退到 W04 前版本时，应冻结写入、停止所有实例、恢复迁移前数据库备份，再部署与备份匹配的旧应用。
 - 不支持通用 down migration。未来需要删除列、表或数据的 contract 迁移必须单独设计、评审和安排维护窗口。
 
