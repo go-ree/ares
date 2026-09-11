@@ -45,7 +45,6 @@ export interface AppInfo {
   dev_language: DevLanguage | string;
   description_cn: string;
   git_url: string;
-  rundeck_app_name?: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -78,7 +77,6 @@ export interface PatchAppRequest {
   dev_language?: string;
   description_cn?: string;
   git_url?: string;
-  rundeck_app_name?: string;
 }
 
 // =========================

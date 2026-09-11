@@ -253,8 +253,9 @@ Canonical JSON 错误继续使用统一 envelope，只公开稳定分类：
 - `POST /api/v1/deploy/publish`
 - `POST /api/v1/deploy/publish/batch`
 
-Adapter 严格解析旧 DTO 并映射 `branch -> ref`、`extra_data -> inputs`。`is_rundeck` 只为旧请求
-形状保留，不参与目标、摘要或步骤选择；实际执行器完全来自 AppConfig 当前工作流。
+Adapter 严格解析旧 DTO 并映射 `branch -> ref`、`extra_data -> inputs`。
+2026-09-11 更新：移除 `is_rundeck` 旧请求形状兼容，传入该字段返回 400；
+实际执行器完全来自 AppConfig 当前工作流。应用身份不再支持 Rundeck 别名。
 
 带 key 的旧请求先在 `(actor_user_id, semantic_operation, key_digest)` 作用域查找已有 receipt。
 命中时，Adapter 以 receipt items 中按原请求顺序保存的 `config_id` 为目标身份，再用 Unscoped 的

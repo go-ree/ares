@@ -62,7 +62,7 @@ db-integration: ## 在 MySQL 8.4 上运行数据库迁移集成测试（需要 A
 	$(GO) test -count=1 -run '^(TestPreW04FixtureIsImmutable|TestMySQL84Migrations|TestMySQL84TaskAttemptMigration)$$' ./internal/db
 	$(GO) test -count=1 -run '^TestMySQL(WorkerLeases|TaskLifecycle|TaskRetries)$$' ./internal/workflow
 	$(GO) test -count=1 -run '^TestMySQLJenkinsSettingsFence$$' ./internal/integration
-	$(GO) test -count=1 -run '^TestMySQL(IdempotentRelease|KeyedLegacyHistoricalReplay|CrossBatchLockOrder|DomainMutationsWaitForReleaseParentLock|LegacyLeaderSingleOwnerAndConnectionLossTakeover)$$' ./internal/publish
+	$(GO) test -count=1 -run '^TestMySQL(IdempotentRelease|KeyedLegacyHistoricalReplay|CrossBatchLockOrder|DomainMutationsWaitForReleaseParentLock|LegacyLeaderSingleOwnerAndConnectionLossTakeover|RundeckRemoval)$$' ./internal/publish
 	$(GO) test -count=1 -run '^(TestMigrationCLIExitCodesAndSafeOutput|TestServeRejectsEmptySchemaBeforeStartingRuntime)$$' .
 
 db-account-integration: ## 在 MySQL 8.4 容器中动态验证最小权限账号初始化

@@ -44,20 +44,8 @@ func normalizeTaskRecordNullableText(record *entity.TaskRecord) {
 		return
 	}
 	record.Message = tool.NormalizeNullableText(record.Message)
-	record.RundeckAppName = normalizeNullableTextPointer(record.RundeckAppName)
 	record.CiJobName = tool.NormalizeNullableText(record.CiJobName)
 	record.CdJobName = tool.NormalizeNullableText(record.CdJobName)
 	record.Products = tool.NormalizeNullableText(record.Products)
 	record.PipelineParam = normalizePipelineParamJSON(record.PipelineParam)
-}
-
-func normalizeNullableTextPointer(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	normalized := tool.NormalizeNullableText(*value)
-	if normalized == "" {
-		return nil
-	}
-	return &normalized
 }

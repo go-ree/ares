@@ -377,7 +377,7 @@ func insertDemoTasks(session *xorm.Session, apps []demoApplication, workflowVers
 			CreatedTime:       createdAt,
 			UpdatedTime:       createdAt,
 		}
-		if _, err := session.NoAutoTime().Nullable("rundeck_app_name", "ci_job_name", "cd_job_name").Insert(&task); err != nil {
+		if _, err := session.NoAutoTime().Nullable("ci_job_name", "cd_job_name").Insert(&task); err != nil {
 			return fmt.Errorf("insert demo task %s/%s: %w", app.App.AppName, item.env, err)
 		}
 		if err := insertDemoTaskSteps(session, task, item, i); err != nil {

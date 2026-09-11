@@ -85,20 +85,12 @@ func (v *AppValidator) ValidatePatchApp(req *PatchAppRequest) error {
 		req.OwnerCN == nil &&
 		req.DevLanguage == nil &&
 		req.DescriptionCN == nil &&
-		req.GitUrl == nil &&
-		req.RundeckAppName == nil {
+		req.GitUrl == nil {
 		return errors.New("没有需要更新的字段")
 	}
 
-	namePattern := regexp.MustCompile(`^[a-z][a-z0-9\-]{2,24}$`)
 	ownerPattern := regexp.MustCompile(`^[a-z]+\.[a-z]+$`)
 
-	if req.RundeckAppName != nil {
-		s := strings.TrimSpace(*req.RundeckAppName)
-		if !tool.IsEmptyLikeText(s) && !namePattern.MatchString(s) {
-			return errors.New("rundeck_app_name 格式不正确：必须以小写字母开头，只能包含小写字母、数字和连字符，长度3-25")
-		}
-	}
 	if req.Owner != nil {
 		s := strings.TrimSpace(*req.Owner)
 		if s == "" || !ownerPattern.MatchString(s) {

@@ -405,8 +405,11 @@ items 长度和顺序必须与请求完全相同。`success=true` 项的 task/st
 - `POST /api/v1/deploy/publish`
 - `POST /api/v1/deploy/publish/batch`
 
-Adapter 映射 `branch -> ref`、`extra_data -> inputs`；`is_rundeck` 不再控制发布步骤，只为旧 DTO
-解析保留。旧、新单发共享幂等作用域；旧、新批量也共享幂等作用域。带 key 的请求会先按当前
+Adapter 映射 `branch -> ref`、`extra_data -> inputs`。Rundeck 兼容字段已移除：
+应用 PATCH 的 `rundeck_app_name`、发布（含批量）及历史查询 JSON 的 `is_rundeck`
+均作为未知字段返回 400；客户端须删除这些字段，应用身份统一使用 `app_name`。
+应用和任务响应不再返回 `rundeck_app_name`。历史数据库旧列保留但不再映射或读写。
+旧、新单发共享幂等作用域；旧、新批量也共享幂等作用域。带 key 的请求会先按当前
 `actor_user_id + semantic_operation + key digest` 查询已有 receipt：命中时，以 receipt items 中按原请求
 顺序保存的 `config_id` 为目标身份，再使用包含软删除行的历史 AppConfig 与应用记录校验原
 `app_name + env` alias，最后进入 canonical 摘要比较与重放。这样目标后来被停用、软删除，或活动

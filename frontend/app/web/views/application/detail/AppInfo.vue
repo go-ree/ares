@@ -47,9 +47,6 @@
           <el-descriptions-item label="应用中文名">
             {{ appDetail?.app_name_cn || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="Rundeck AppName">
-            <span class="mono">{{ appDetail?.rundeck_app_name || '-' }}</span>
-          </el-descriptions-item>
 
           <el-descriptions-item label="负责人">
             <span class="mono">{{ appDetail?.owner || '-' }}</span>
@@ -83,11 +80,6 @@
           <el-descriptions-item label="应用中文名">
             <el-form-item prop="app_name_cn" class="inline-item">
               <el-input v-model="form.app_name_cn" placeholder="中文名" />
-            </el-form-item>
-          </el-descriptions-item>
-          <el-descriptions-item label="Rundeck AppName">
-            <el-form-item prop="rundeck_app_name" class="inline-item">
-              <el-input v-model="form.rundeck_app_name" placeholder="demo-app" />
             </el-form-item>
           </el-descriptions-item>
 
@@ -151,7 +143,6 @@ const form = reactive<PatchAppRequest>({
   dev_language: '',
   description_cn: '',
   git_url: '',
-  rundeck_app_name: '',
 });
 
 const rules: FormRules = {
@@ -166,19 +157,16 @@ const formRef = ref<FormInstance>();
 const hydrate = (detail: AppInfo) => {
   const appNameCN = normalizeLegacyNullableText(detail.app_name_cn);
   const descriptionCN = normalizeLegacyNullableText(detail.description_cn);
-  const rundeckAppName = normalizeLegacyNullableText(detail.rundeck_app_name);
   appDetail.value = {
     ...detail,
     app_name_cn: appNameCN,
     description_cn: descriptionCN,
-    rundeck_app_name: rundeckAppName || null,
   };
   form.app_name_cn = appNameCN;
   form.owner = detail.owner || '';
   form.owner_cn = detail.owner_cn || '';
   form.description_cn = descriptionCN;
   form.git_url = detail.git_url || '';
-  form.rundeck_app_name = rundeckAppName;
 
   original.value = {
     app_name_cn: form.app_name_cn,
@@ -186,7 +174,6 @@ const hydrate = (detail: AppInfo) => {
     owner_cn: form.owner_cn,
     description_cn: form.description_cn,
     git_url: form.git_url,
-    rundeck_app_name: form.rundeck_app_name,
   };
 };
 
@@ -212,8 +199,7 @@ const isDirty = computed(() => {
     (form.owner ?? '') !== (o.owner ?? '') ||
     (form.owner_cn ?? '') !== (o.owner_cn ?? '') ||
     (form.description_cn ?? '') !== (o.description_cn ?? '') ||
-    (form.git_url ?? '') !== (o.git_url ?? '') ||
-    (form.rundeck_app_name ?? '') !== (o.rundeck_app_name ?? '')
+    (form.git_url ?? '') !== (o.git_url ?? '')
   );
 });
 
@@ -234,7 +220,6 @@ const buildPatch = (): PatchAppRequest => {
   // 描述可空：清空时传空字符串，表示明确覆盖
   setIfChanged('description_cn', form.description_cn, o.description_cn);
   setIfChanged('git_url', form.git_url, o.git_url);
-  setIfChanged('rundeck_app_name', form.rundeck_app_name, o.rundeck_app_name);
 
   // 清理 undefined
   Object.keys(patch).forEach(key => {

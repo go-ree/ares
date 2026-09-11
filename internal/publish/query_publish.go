@@ -14,7 +14,6 @@ import (
 
 type PublishQuery struct {
 	AppName   string `json:"app_name" form:"app_name"`
-	IsRundeck bool   `json:"is_rundeck"`
 	Env       string `json:"env" form:"env"`
 	Publisher string `json:"publisher" form:"publisher"`
 	Branch    string `json:"branch" form:"branch"`
@@ -57,11 +56,7 @@ func (pm *PublishManager) buildPublishQuery(ctx context.Context, params PublishQ
 
 	// 构建查询条件
 	if params.AppName != "" {
-		if params.IsRundeck {
-			session = session.Where("rundeck_app_name = ?", params.AppName)
-		} else {
-			session = session.Where("app_name = ?", params.AppName)
-		}
+		session = session.Where("app_name = ?", params.AppName)
 	}
 	if params.Env != "" {
 		session = session.Where("env = ?", params.Env)
@@ -133,7 +128,6 @@ func (pm *PublishManager) QueryBuildPublish(ctx context.Context, params PublishQ
 
 	slog.Info("查询构建任务列表",
 		"app_name", params.AppName,
-		"is_rundeck", params.IsRundeck,
 		"env", params.Env,
 		"publisher", params.Publisher,
 		"branch", params.Branch,

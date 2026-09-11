@@ -12,13 +12,12 @@ import (
 // PatchAppRequest 应用基本信息变更（PATCH：只更新传入字段）
 type PatchAppRequest struct {
 	// 允许更新的字段（不允许修改 app_name / app_id）
-	AppNameCN      *string `json:"app_name_cn"`
-	Owner          *string `json:"owner"`
-	OwnerCN        *string `json:"owner_cn"`
-	DevLanguage    *string `json:"dev_language"`
-	DescriptionCN  *string `json:"description_cn"`
-	GitUrl         *string `json:"git_url"`
-	RundeckAppName *string `json:"rundeck_app_name"`
+	AppNameCN     *string `json:"app_name_cn"`
+	Owner         *string `json:"owner"`
+	OwnerCN       *string `json:"owner_cn"`
+	DevLanguage   *string `json:"dev_language"`
+	DescriptionCN *string `json:"description_cn"`
+	GitUrl        *string `json:"git_url"`
 }
 
 func buildPatchAppMap(req PatchAppRequest) (map[string]any, error) {
@@ -40,7 +39,7 @@ func buildPatchAppMap(req PatchAppRequest) (map[string]any, error) {
 		return nil
 	}
 
-	// 这里约定：除 description_cn / rundeck_app_name 之外，其它字段不允许置空
+	// 这里约定：除 description_cn 之外，其它字段不允许置空
 	if err := setStrTrim("app_name_cn", req.AppNameCN, false); err != nil {
 		return nil, err
 	}
@@ -56,11 +55,8 @@ func buildPatchAppMap(req PatchAppRequest) (map[string]any, error) {
 	if err := setStrTrim("git_url", req.GitUrl, false); err != nil {
 		return nil, err
 	}
-	// 允许置空：用于清理描述/解绑 rundeck 名称（置空会写入 SQL NULL）
+	// 允许置空：用于清理描述（置空会写入 SQL NULL）
 	if err := setStrTrim("description_cn", req.DescriptionCN, true); err != nil {
-		return nil, err
-	}
-	if err := setStrTrim("rundeck_app_name", req.RundeckAppName, true); err != nil {
 		return nil, err
 	}
 
