@@ -26,6 +26,7 @@ const logReadPollInterval = 300 * time.Millisecond
 // @Produce text/event-stream
 // @Param task_id path int true "任务 ID"
 // @Param step_key path string true "工作流步骤 key"
+// @Param attempt query int false "尝试编号；省略时读取当前尝试"
 // @Param cursor query string false "不透明日志游标；不得与不同值的 Last-Event-ID 同时提交"
 // @Param Last-Event-ID header string false "断线续传游标；不得与不同值的 cursor 同时提交"
 // @Success 200 {string} string "SSE events: log, ping, end, stream-error, auth-expired"
@@ -82,7 +83,11 @@ func (wc *WorkflowController) StreamTaskStepLogs(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, util.ResponseFailure("日志流不可用", "internal_error"))
 		return
 	}
-	session, err := wc.logs.Open(streamContext, taskID, stepKey)
+	attempt := 0
+	if raw := c.Query("attempt"); raw != "" {
+		attempt, _ = canonicalPositiveTaskID(raw)
+	}
+	session, err := wc.logs.OpenAttempt(streamContext, taskID, stepKey, attempt)
 	if err != nil {
 		respondTaskStepLogError(c, err, false)
 		return
@@ -137,6 +142,11 @@ func taskStepLogCursor(rawQuery string, header http.Header) (string, error) {
 		return "", errInvalidLogQuery
 	}
 	for key, entries := range values {
+		if key == "attempt" && len(entries) == 1 {
+			if _, ok := canonicalPositiveTaskID(entries[0]); ok {
+				continue
+			}
+		}
 		if key != "cursor" || len(entries) != 1 || entries[0] == "" {
 			return "", errInvalidLogQuery
 		}

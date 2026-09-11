@@ -16,8 +16,8 @@ const (
 )
 
 // LogService binds a public task/step identity to the opaque execution
-// reference stored in its immutable v2 snapshot. Callers can provide only a
-// cursor; provider addresses and resource identifiers never cross this API.
+// reference stored in its v2 snapshot or selected attempt. Callers can provide
+// only an attempt and cursor; provider addresses never cross this API.
 type LogService struct {
 	store    LogSourceStore
 	registry *Registry
@@ -35,13 +35,29 @@ func NewLogService(store LogSourceStore, registry *Registry) *LogService {
 }
 
 func (s *LogService) Open(ctx context.Context, taskID int, stepKey string) (*LogSession, error) {
+	return s.OpenAttempt(ctx, taskID, stepKey, 0)
+}
+
+func (s *LogService) OpenAttempt(ctx context.Context, taskID int, stepKey string, attempt int) (*LogSession, error) {
 	if s == nil || s.store == nil || s.registry == nil {
 		return nil, errors.New("日志服务未初始化")
 	}
 	if taskID <= 0 || !stepKeyPattern.MatchString(stepKey) {
 		return nil, fmt.Errorf("task_id 或 step_key 无效")
 	}
-	source, err := s.store.GetTaskStepLogSource(ctx, taskID, stepKey)
+	var source TaskStepLogSource
+	var err error
+	if attempt > 0 {
+		store, ok := s.store.(interface {
+			GetAttemptLogSource(context.Context, int, string, int) (TaskStepLogSource, error)
+		})
+		if !ok {
+			return nil, ErrNotFound
+		}
+		source, err = store.GetAttemptLogSource(ctx, taskID, stepKey, attempt)
+	} else {
+		source, err = s.store.GetTaskStepLogSource(ctx, taskID, stepKey)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -981,6 +981,7 @@ GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`release_workflows\` TO '${MYSQL_
 GRANT INSERT ON \`${MYSQL_DATABASE}\`.\`release_workflow_versions\` TO '${MYSQL_RUNTIME_USER}'@'%';
 GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`app_config_workflows\` TO '${MYSQL_RUNTIME_USER}'@'%';
 GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`task_step_records\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`task_step_attempts\` TO '${MYSQL_RUNTIME_USER}'@'%';
 GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`auth_users\` TO '${MYSQL_RUNTIME_USER}'@'%';
 GRANT INSERT ON \`${MYSQL_DATABASE}\`.\`auth_identities\` TO '${MYSQL_RUNTIME_USER}'@'%';
 GRANT INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.\`auth_sessions\` TO '${MYSQL_RUNTIME_USER}'@'%';

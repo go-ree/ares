@@ -44,20 +44,26 @@ type AppConfigWorkflow struct {
 // TaskStepRecord is a task-local snapshot. It deliberately stores the full
 // step configuration so editing a workflow never changes an in-flight task.
 type TaskStepRecord struct {
-	StepRecordID      int64           `xorm:"BIGINT pk autoincr 'step_record_id'" json:"step_record_id"`
-	TaskID            int             `xorm:"INT notnull index(idx_task_position) index(idx_task_status) unique(uk_task_step_key) 'task_id'" json:"task_id"`
-	WorkflowVersionID int64           `xorm:"BIGINT notnull index 'workflow_version_id'" json:"workflow_version_id"`
-	StepKey           string          `xorm:"VARCHAR(63) notnull unique(uk_task_step_key) 'step_key'" json:"step_key"`
-	Name              string          `xorm:"VARCHAR(120) notnull 'name'" json:"name"`
-	Uses              string          `xorm:"VARCHAR(120) notnull 'uses'" json:"uses"`
-	Category          string          `xorm:"VARCHAR(32) null 'category'" json:"category,omitempty"`
-	Position          int             `xorm:"INT notnull index(idx_task_position) 'position'" json:"position"`
-	Config            json.RawMessage `xorm:"JSON notnull 'config'" json:"-"`
-	TimeoutSeconds    int             `xorm:"INT notnull default 3600 'timeout_seconds'" json:"timeout_seconds"`
-	OnFailure         string          `xorm:"VARCHAR(16) notnull default 'stop' 'on_failure'" json:"on_failure"`
-	Status            string          `xorm:"VARCHAR(32) notnull default 'pending' index(idx_task_status) 'status'" json:"status"`
-	Attempt           int             `xorm:"INT notnull default 1 'attempt'" json:"attempt"`
-	ExternalRef       json.RawMessage `xorm:"JSON null 'external_ref'" json:"-"`
+	StepRecordID         int64           `xorm:"BIGINT pk autoincr 'step_record_id'" json:"step_record_id"`
+	TaskID               int             `xorm:"INT notnull index(idx_task_position) index(idx_task_status) unique(uk_task_step_key) 'task_id'" json:"task_id"`
+	WorkflowVersionID    int64           `xorm:"BIGINT notnull index 'workflow_version_id'" json:"workflow_version_id"`
+	StepKey              string          `xorm:"VARCHAR(63) notnull unique(uk_task_step_key) 'step_key'" json:"step_key"`
+	Name                 string          `xorm:"VARCHAR(120) notnull 'name'" json:"name"`
+	Uses                 string          `xorm:"VARCHAR(120) notnull 'uses'" json:"uses"`
+	Category             string          `xorm:"VARCHAR(32) null 'category'" json:"category,omitempty"`
+	Position             int             `xorm:"INT notnull index(idx_task_position) 'position'" json:"position"`
+	Config               json.RawMessage `xorm:"JSON notnull 'config'" json:"-"`
+	TimeoutSeconds       int             `xorm:"INT notnull default 3600 'timeout_seconds'" json:"timeout_seconds"`
+	OnFailure            string          `xorm:"VARCHAR(16) notnull default 'stop' 'on_failure'" json:"on_failure"`
+	Status               string          `xorm:"VARCHAR(32) notnull default 'pending' index(idx_task_status) 'status'" json:"status"`
+	Attempt              int             `xorm:"INT notnull default 1 'attempt'" json:"attempt"`
+	MaxAttempts          int             `xorm:"INT notnull default 1 'max_attempts'" json:"-"`
+	RetryDelaySeconds    int             `xorm:"INT notnull default 1 'retry_delay_seconds'" json:"-"`
+	RetryMaxDelaySeconds int             `xorm:"INT notnull default 60 'retry_max_delay_seconds'" json:"-"`
+	RetryMode            string          `xorm:"VARCHAR(16) notnull default 'automatic' 'retry_mode'" json:"-"`
+	RetryClass           string          `xorm:"VARCHAR(32) notnull default '' 'retry_class'" json:"-"`
+	RetryAt              *time.Time      `xorm:"DATETIME(6) null 'retry_at'" json:"-"`
+	ExternalRef          json.RawMessage `xorm:"JSON null 'external_ref'" json:"-"`
 	// Output is an internal hand-off between workflow steps. Executor output is
 	// opaque and may contain sensitive delivery metadata, so public task APIs do
 	// not serialize it. A future authenticated/public-output contract can expose

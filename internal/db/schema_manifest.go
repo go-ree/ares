@@ -1272,8 +1272,8 @@ func validateNoInboundForeignKeys(ctx context.Context, executor sqlExecutor) err
 	if err := readSchemaForeignKeys(ctx, executor, &snapshot); err != nil {
 		return fmt.Errorf("inspect authoritative inbound foreign keys: %w", err)
 	}
-	managedTables := make(map[string]struct{}, len(epoch7SemanticSchemaManifest.tables))
-	for table := range epoch7SemanticSchemaManifest.tables {
+	managedTables := make(map[string]struct{}, len(epoch8SemanticSchemaManifest.tables))
+	for table := range epoch8SemanticSchemaManifest.tables {
 		managedTables[table] = struct{}{}
 	}
 	diffs := compareInboundForeignKeys(snapshot.inboundForeignKeys, managedTables)

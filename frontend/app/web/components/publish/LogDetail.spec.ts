@@ -10,6 +10,8 @@ import LogDetail from './LogDetail.vue';
 
 const context = vi.hoisted(() => ({
   getTaskDetail: vi.fn(),
+  getTaskAttempts: vi.fn(),
+  retryTaskStep: vi.fn(),
 }));
 
 type TestTableRow = Record<string, unknown>;
@@ -74,6 +76,8 @@ const TableColumnStub = defineComponent({
 vi.mock('@/services/deploy', async importOriginal => ({
   ...(await importOriginal<typeof import('@/services/deploy')>()),
   getTaskDetail: context.getTaskDetail,
+  getTaskAttempts: context.getTaskAttempts,
+  retryTaskStep: context.retryTaskStep,
 }));
 
 class FakeEventSource extends EventTarget {
@@ -178,6 +182,8 @@ describe('LogDetail step capabilities', () => {
       expiresAt: '2099-01-01T00:00:00Z',
     });
     context.getTaskDetail.mockReset();
+    context.getTaskAttempts.mockReset();
+    context.retryTaskStep.mockReset();
   });
 
   afterEach(() => {
@@ -228,6 +234,35 @@ describe('LogDetail step capabilities', () => {
     wrapper.unmount();
   });
 
+  it('loads attempt history and only offers retry to a release operator', async () => {
+    const failedStep = {
+      ...step('build', 0, true),
+      status: 'failed',
+      retry_eligible: true,
+      max_attempts: 3,
+    };
+    context.getTaskDetail.mockResolvedValue({
+      data: { code: 1, result: task({ status: 'failed', steps: [failedStep] }) },
+    });
+    context.getTaskAttempts.mockResolvedValue({
+      data: { code: 1, result: [{ attempt: 1, status: 'failed', message: '第一次失败' }] },
+    });
+    context.retryTaskStep.mockResolvedValue({ data: { code: 1 } });
+    const wrapper = mountDetail();
+    await flushPromises();
+    expect(wrapper.find('.step-retry-button').exists()).toBe(false);
+    await wrapper.find('.attempt-history-button').trigger('click');
+    await flushPromises();
+    expect(context.getTaskAttempts).toHaveBeenCalledWith(7, 'build');
+    expect(wrapper.text()).toContain('第一次失败');
+    useAuthStore().user!.permissions.push(PERMISSIONS.RELEASES_CREATE);
+    await flushPromises();
+    await wrapper.find('.step-retry-button').trigger('click');
+    await flushPromises();
+    expect(context.retryTaskStep).toHaveBeenCalledExactlyOnceWith(7, 'build', 1);
+    wrapper.unmount();
+  });
+
   it('renders a log action only for v2 steps that declare capabilities.logs', async () => {
     context.getTaskDetail.mockResolvedValue({
       data: {
@@ -252,7 +287,7 @@ describe('LogDetail step capabilities', () => {
     await flushPromises();
     expect(FakeEventSource.instances).toHaveLength(0);
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/v1/tasks/7/steps/build/logs/stream',
+      '/api/v1/tasks/7/steps/build/logs/stream?attempt=1',
       expect.objectContaining({ credentials: 'include', redirect: 'error', mode: 'same-origin' })
     );
     wrapper.unmount();

@@ -15,6 +15,7 @@ const (
 	FailureContinue = "continue"
 
 	StepPending        = "pending"
+	StepRetryWait      = "retry_wait"
 	StepRunning        = "running"
 	StepSucceeded      = "succeeded"
 	StepFailed         = "failed"
@@ -55,9 +56,11 @@ type StepSpec struct {
 	With           json.RawMessage `json:"with" swaggertype:"object"`
 	TimeoutSeconds int             `json:"timeout_seconds,omitempty"`
 	OnFailure      string          `json:"on_failure,omitempty"`
+	Retry          *RetryPolicy    `json:"retry,omitempty"`
 }
 
 type Capabilities struct {
+	Retry  bool `json:"retry"`
 	Logs   bool `json:"logs"`
 	Cancel bool `json:"cancel"`
 }
@@ -78,6 +81,9 @@ type TaskStepView struct {
 	OnFailure         string       `json:"on_failure"`
 	Status            string       `json:"status"`
 	Attempt           int          `json:"attempt"`
+	MaxAttempts       int          `json:"max_attempts"`
+	RetryAt           *time.Time   `json:"retry_at,omitempty"`
+	RetryEligible     bool         `json:"retry_eligible"`
 	Message           string       `json:"message,omitempty"`
 	StartedTime       *time.Time   `json:"started_at,omitempty"`
 	FinishedTime      *time.Time   `json:"finished_at,omitempty"`
@@ -96,6 +102,8 @@ func taskStepView(record entity.TaskStepRecord, capabilities Capabilities) TaskS
 		Message: record.Message, StartedTime: record.StartedTime,
 		FinishedTime: record.FinishedTime, CreatedTime: record.CreatedTime,
 		UpdatedTime: record.UpdatedTime, Capabilities: capabilities,
+		MaxAttempts: record.MaxAttempts, RetryAt: record.RetryAt,
+		RetryEligible: capabilities.Retry && retryEligible(record) && record.OnFailure == FailureStop,
 	}
 }
 
@@ -138,6 +146,7 @@ type ReconcileRequest struct {
 }
 
 type Result struct {
+	RetryClass        string          `json:"-"`
 	State             string          `json:"state"`
 	ExternalReference json.RawMessage `json:"external_reference,omitempty"`
 	Output            json.RawMessage `json:"output,omitempty"`

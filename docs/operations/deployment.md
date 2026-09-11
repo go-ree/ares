@@ -132,13 +132,13 @@ Compose 会根据两组 MySQL 变量生成运行时 `ARES_DB_CONN_STR`、迁移 
 
 Compose 把公开源固定为 `http://localhost:${ARES_HTTP_PORT}`，开启本地登录和一次性 Bootstrap，关闭 OIDC 与旧共享管理员 Token。`auth-secrets` 会在私有 `auth_secrets` volume 中一次生成并复用会话根密钥、Bootstrap Token 和系统配置加密密钥；`docker compose down` 会保留它们，`docker compose down -v` 会连同 MySQL 数据一起删除并重新生成。请勿把真实密码或 Token 提交到仓库。数据库示例密码仅用于本机体验；部署到共享环境前必须在未提交的 `.env` 中替换，并且应在首次启动之前完成。
 
-Compose 不依赖 MySQL 只在空数据目录运行一次的 initdb 机制。MySQL 健康后，`database-migrator-user` 先使用 root 管理连接安全收敛迁移账号并保持锁定；账号任务的 named lock、全部特权预检和账号修改始终复用同一条禁用自动重连的物理连接。`migrate` 的管理员连接持有相同迁移账号锁，再为本次执行设置随机一次性密码、短暂解锁并建立唯一迁移会话，随后立即重新锁号、轮换掉一次性密码并清理其他会话。watchdog 会持续验证锁 ownership；退出路径会关闭唯一连接并复核 migrator 仍锁定且没有残留会话。迁移完成后，`database-runtime-user` 同时按全局顺序持有迁移账号锁和运行时账号锁，再收敛运行时账号：Ares schema 通过全库 `SELECT` 覆盖 22 张受管表和 `schema_migrations`，22 张受管表中只有 20 张获得精确表级 DML；`pipelines` 与 `pipelines_job_combination` 保持只读，审计事件和两张幂等回执表只能追加，运行时不能修改 ledger。持锁连接失效时，旧任务只有非阻塞拿齐原锁才能执行 fail-closed 收敛，不会排队越过后续 owner。
+Compose 不依赖 MySQL 只在空数据目录运行一次的 initdb 机制。MySQL 健康后，`database-migrator-user` 先使用 root 管理连接安全收敛迁移账号并保持锁定；账号任务的 named lock、全部特权预检和账号修改始终复用同一条禁用自动重连的物理连接。`migrate` 的管理员连接持有相同迁移账号锁，再为本次执行设置随机一次性密码、短暂解锁并建立唯一迁移会话，随后立即重新锁号、轮换掉一次性密码并清理其他会话。watchdog 会持续验证锁 ownership；退出路径会关闭唯一连接并复核 migrator 仍锁定且没有残留会话。迁移完成后，`database-runtime-user` 同时按全局顺序持有迁移账号锁和运行时账号锁，再收敛运行时账号：Ares schema 通过全库 `SELECT` 覆盖 23 张受管表和 `schema_migrations`，23 张受管表中只有 21 张获得精确表级 DML；`pipelines` 与 `pipelines_job_combination` 保持只读，审计事件和两张幂等回执表只能追加，运行时不能修改 ledger。持锁连接失效时，旧任务只有非阻塞拿齐原锁才能执行 fail-closed 收敛，不会排队越过后续 owner。
 
 MySQL named lock 只在当前服务端实例内有效。全部账号任务、root/admin/migrator 连接和并发迁移 Job 必须固定到同一个稳定的 MySQL 8.4 single-writer 端点；不能通过 Router、ProxySQL、DNS 轮询、读写分离或 active-active 把它们分流到多个 writer。需要多写拓扑时必须由外部编排提供跨节点分布式互斥。HA 切换导致连接或 `server_uuid` 改变会使本次作业失败，核对账号与 dirty 状态后从账号任务重跑。
 
 账号任务要求 MySQL 8.4.x，并在任何写入前拒绝 mandatory roles、匿名账号、同名非 `%` Host、目标身份的出向 role/PROXY/DEFINER、目标身份在其他 schema 或全局的权限、Ares schema 中的 trigger/event/routine/view，以及 runtime/migrator 之外仍持有目标 schema 权限的主体；guarded 管理员还会权威拒绝外部 schema 子表反向引用 Ares 受管表或 ledger 的外键。随后才锁号、轮换并丢弃旧双密码、清除入向角色/PROXY 和直授权、终止旧会话并授予白名单权限。数据库级授权还会根据 `@@GLOBAL.partial_revokes` 转义 `\\`、`%`、`_` 等 grant-pattern 元字符，避免 `ares_prod` 的授权意外覆盖 `aresXprod`；旧的不安全 pattern 会先被拒绝并要求 DBA 撤权。runtime 最终回连验证实际身份与有效角色；运行时任务还会先证明 migrator 已锁定且无会话。任何检查或清理失败都会阻止应用启动，不能绕过。
 
-这意味着 PR #6 等旧 volume 不能在旧 `MYSQL_USER` 仍持有数据库级 `ALL PRIVILEGES` 时直接升级。两个账号任务只管理 `MYSQL_MIGRATION_USER` 与 `MYSQL_RUNTIME_USER`，不会猜测、修改或删除旧主体；必须先停止全部旧实例并验证备份，再由 DBA 按[数据库迁移与恢复手册](database-migrations.md)审计、撤销或删除旧账号对 Ares schema 的授权，之后才能启动当前 epoch 7 链路。`.env` 中的 `MYSQL_ROOT_PASSWORD` 仍须匹配该 volume 内的实际 root 密码；只修改环境变量不会改变 MySQL 内的 root 密码。共享 MySQL 若不能满足特权门禁或不允许一次性 root 任务，应由 DBA 按相同身份解析、继承关系、旧会话和权限矩阵建号，并在生产编排中以受控的等价 Job 替换两个账号任务。不要通过删除生产 volume 解决凭据问题。
+这意味着 PR #6 等旧 volume 不能在旧 `MYSQL_USER` 仍持有数据库级 `ALL PRIVILEGES` 时直接升级。两个账号任务只管理 `MYSQL_MIGRATION_USER` 与 `MYSQL_RUNTIME_USER`，不会猜测、修改或删除旧主体；必须先停止全部旧实例并验证备份，再由 DBA 按[数据库迁移与恢复手册](database-migrations.md)审计、撤销或删除旧账号对 Ares schema 的授权，之后才能启动当前 epoch 8 链路。`.env` 中的 `MYSQL_ROOT_PASSWORD` 仍须匹配该 volume 内的实际 root 密码；只修改环境变量不会改变 MySQL 内的 root 密码。共享 MySQL 若不能满足特权门禁或不允许一次性 root 任务，应由 DBA 按相同身份解析、继承关系、旧会话和权限矩阵建号，并在生产编排中以受控的等价 Job 替换两个账号任务。不要通过删除生产 volume 解决凭据问题。
 
 账号脚本在 `NO_BACKSLASH_ESCAPES` 模式下把正确转义的密码直接交给 `CREATE USER` / `ALTER USER`，依赖并验证 MySQL 8.4 `general_log` 将密码重写为 `<secret>`；脚本不会通过密码变量、可逆十六进制值或动态 `PREPARE` 中转。若托管平台或审计代理改变日志行为，必须先证明日志仍不含明文或可逆密码表示。
 
@@ -227,7 +227,7 @@ LogReader/上游请求前取得；容量满返回 429、`Retry-After` 和 `strea
 
 ## 数据库与 Demo 初始化
 
-Ares migrator 是专用 schema owner，当前仅支持 MySQL 8.4.x。空库由显式 bootstrap 创建 epoch 1 的固定 10 表基线，再按 epoch 顺序扩展到当前 epoch 7 的 22 张受管表；bootstrap 中断只在已有对象是无业务数据、完整定义匹配且按固定顺序形成连续前缀时恢复。已有表只由 migration 修改。`ares serve` 仅做只读兼容性检查，不执行 Xorm 结构同步或其他 DDL。epoch 2 起的数据契约还要求每条未删除 AppConfig 的环境都对应未删除的 `env_configs` 目录项；缺失或软删除引用会 fail-closed，不会自动猜测。当前受管表包括：
+Ares migrator 是专用 schema owner，当前仅支持 MySQL 8.4.x。空库由显式 bootstrap 创建 epoch 1 的固定 10 表基线，再按 epoch 顺序扩展到当前 epoch 8 的 23 张受管表；bootstrap 中断只在已有对象是无业务数据、完整定义匹配且按固定顺序形成连续前缀时恢复。已有表只由 migration 修改。`ares serve` 仅做只读兼容性检查，不执行 Xorm 结构同步或其他 DDL。epoch 2 起的数据契约还要求每条未删除 AppConfig 的环境都对应未删除的 `env_configs` 目录项；缺失或软删除引用会 fail-closed，不会自动猜测。当前受管表包括：
 
 - `apps`
 - `app_configs`
@@ -243,6 +243,7 @@ Ares migrator 是专用 schema owner，当前仅支持 MySQL 8.4.x。空库由�
 - `release_workflow_versions`
 - `app_config_workflows`
 - `task_step_records`
+- `task_step_attempts`
 - `auth_users`
 - `auth_identities`
 - `auth_sessions`
@@ -354,9 +355,9 @@ docker compose up -d --build --wait
 
 ### 从旧镜像迁移
 
-当前版本的最终数据库版本是 epoch 7，迁移
-`20260908_001_worker_leases` 为 v2 Worker 增加调度时间、任务租约、单调 fencing token 与
-持久化失败计数，并为 `integration_settings` 增加 revision。epoch 7 与 epoch 6 应用不能混合
+当前版本的最终数据库版本是 epoch 8，迁移
+`20260911_001_task_attempts` 增加步骤重试策略快照与独立尝试历史；历史步骤默认最多尝试一次。
+升级后必须重跑运行时账号任务，授予新表的精确 DML 权限。epoch 8 与 epoch 7 及更早应用不能混合
 写入同一数据库；必须停止全部旧副本并验证备份后再迁移，随后只启动新版本副本。
 
 新镜像不再把仓库的环境配置或集群凭据打包进镜像。数据库运行连接通过 `ARES_DB_CONN_STR` 注入，一次性 migrator 使用独立的 `ARES_DB_MIGRATION_CONN_STR` 和只在该作业内可见的 `ARES_DB_MIGRATION_ADMIN_CONN_STR`；Jenkins 与 Kubernetes 配置改为启动后由 `admin` 会话在 Web 中保存。升级前请备份数据库和现有系统配置加密密钥，并为身份服务准备稳定的会话根密钥。系统配置加密密钥遗失或变更后，已保存的敏感配置无法解密，需要重新录入；W02 之前保存的 `v1` 凭据也会在界面明确要求重新录入，不做无上下文的静默迁移。会话根密钥变化会使现有会话和未完成的 OIDC 登录流失效。
@@ -365,9 +366,9 @@ docker compose up -d --build --wait
 
 版本化迁移在专用连接上持有当前 MySQL 实例内的数据库级 named lock，单次操作超时可通过 `ARES_DB_SCHEMA_MIGRATION_TIMEOUT` 调高，等待锁的时间由 `ARES_DB_MIGRATION_LOCK_TIMEOUT` 单独控制。运行时只读检查和业务请求不会获得迁移账号权限。升级超大旧表时应先在副本验证，并按维护窗口调整迁移 DSN 的 I/O 超时；正式执行仍必须使用稳定 single-writer 端点。
 
-epoch 6 引入且由 epoch 7 继续继承的 `migrate status` 与 `serve` 会永久校验全部已保留幂等回执，因此生产上线前必须按[数据库迁移与恢复手册](database-migrations.md#永久-receipt-verifier-的容量基线与告警门槛)建立生产规模容量基线。本手册不声称未经实测的固定时延：以获批的 `ARES_DB_SCHEMA_MIGRATION_TIMEOUT` 为预算，基准 p95 达到预算的 50% 时告警，达到 80% 或出现超时、取消、校验失败时阻止发布。不得通过删除回执或临时扩大运行时账号权限解决容量问题。
+epoch 6 引入且由 epoch 7/8 继续继承的 `migrate status` 与 `serve` 会永久校验全部已保留幂等回执，因此生产上线前必须按[数据库迁移与恢复手册](database-migrations.md#永久-receipt-verifier-的容量基线与告警门槛)建立生产规模容量基线。本手册不声称未经实测的固定时延：以获批的 `ARES_DB_SCHEMA_MIGRATION_TIMEOUT` 为预算，基准 p95 达到预算的 50% 时告警，达到 80% 或出现超时、取消、校验失败时阻止发布。不得通过删除回执或临时扩大运行时账号权限解决容量问题。
 
-迁移完成后不要把旧镜像接回可写数据库：epoch 7 与 epoch 6 及更早应用不兼容，旧版 Worker 不理解任务租约、fencing 和 integration revision。推荐以前向修复处理应用问题；必须回退时，应冻结写入，将数据库恢复到升级前备份，再部署与该备份匹配的旧应用。单独降级二进制/镜像不是受支持的回滚方式。完整停机升级、dirty 恢复和故障排查步骤见[数据库迁移与恢复手册](database-migrations.md)。
+迁移完成后不要把旧镜像接回可写数据库：epoch 8 与 epoch 7 及更早应用不兼容，旧版 Worker 不理解重试等待和独立尝试历史。推荐以前向修复处理应用问题；必须回退时，应冻结写入，将数据库恢复到升级前备份，再部署与该备份匹配的旧应用。单独降级二进制/镜像不是受支持的回滚方式。完整停机升级、dirty 恢复和故障排查步骤见[数据库迁移与恢复手册](database-migrations.md)。
 
 Jenkins 外部引用绑定到接收任务时的服务地址。当前设置为 enabled 且仍有已绑定的 v1
 `packaging/deploying`、会自动部署的 `packaged` 任务，或 v2 `running` Jenkins 步骤时，地址、

@@ -540,7 +540,7 @@ func (pm *PublishManager) JobStatus() ([]*ActiveTaskView, error) {
 			}
 			summary.Total++
 			switch step.Status {
-			case workflow.StepPending:
+			case workflow.StepPending, workflow.StepRetryWait:
 				summary.Pending++
 			case workflow.StepRunning:
 				summary.Running++

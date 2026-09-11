@@ -282,6 +282,11 @@ definitions:
       spec:
         $ref: '#/definitions/workflow.WorkflowSpec'
     type: object
+  controller.retryTaskStepRequest:
+    properties:
+      expected_attempt:
+        type: integer
+    type: object
   controller.updateUserRequest:
     properties:
       enabled:
@@ -1119,11 +1124,26 @@ definitions:
         description: 排序字段
         type: string
     type: object
+  workflow.AttemptView:
+    properties:
+      attempt:
+        type: integer
+      finished_at:
+        type: string
+      message:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+    type: object
   workflow.Capabilities:
     properties:
       cancel:
         type: boolean
       logs:
+        type: boolean
+      retry:
         type: boolean
     type: object
   workflow.Descriptor:
@@ -1143,6 +1163,17 @@ definitions:
       uses:
         type: string
     type: object
+  workflow.RetryPolicy:
+    properties:
+      initial_delay_seconds:
+        type: integer
+      max_attempts:
+        type: integer
+      max_delay_seconds:
+        type: integer
+      mode:
+        type: string
+    type: object
   workflow.StepSpec:
     properties:
       category:
@@ -1153,6 +1184,8 @@ definitions:
         type: string
       on_failure:
         type: string
+      retry:
+        $ref: '#/definitions/workflow.RetryPolicy'
       timeout_seconds:
         type: integer
       uses:
@@ -1172,6 +1205,8 @@ definitions:
         type: string
       finished_at:
         type: string
+      max_attempts:
+        type: integer
       message:
         type: string
       name:
@@ -1180,6 +1215,10 @@ definitions:
         type: string
       position:
         type: integer
+      retry_at:
+        type: string
+      retry_eligible:
+        type: boolean
       started_at:
         type: string
       status:
@@ -4181,6 +4220,36 @@ paths:
       summary: 修改用户角色或启用状态
       tags:
       - System
+  /api/v1/tasks/{task_id}/steps/{step_key}/attempts:
+    get:
+      parameters:
+      - description: 任务 ID
+        in: path
+        name: task_id
+        required: true
+        type: integer
+      - description: 步骤标识
+        in: path
+        name: step_key
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+                result:
+                  items:
+                    $ref: '#/definitions/workflow.AttemptView'
+                  type: array
+              type: object
+      summary: 获取步骤执行尝试历史（不包含内部引用或输出）
+      tags:
+      - Publish
   /api/v1/tasks/{task_id}/steps/{step_key}/logs/stream:
     get:
       parameters:
@@ -4194,6 +4263,10 @@ paths:
         name: step_key
         required: true
         type: string
+      - description: 尝试编号；省略时读取当前尝试
+        in: query
+        name: attempt
+        type: integer
       - description: 不透明日志游标；不得与不同值的 Last-Event-ID 同时提交
         in: query
         name: cursor
@@ -4282,6 +4355,47 @@ paths:
                   type: integer
               type: object
       summary: 按工作流任务步骤流式读取日志
+      tags:
+      - Publish
+  /api/v1/tasks/{task_id}/steps/{step_key}/retry:
+    post:
+      parameters:
+      - description: 任务 ID
+        in: path
+        name: task_id
+        required: true
+        type: integer
+      - description: 步骤标识
+        in: path
+        name: step_key
+        required: true
+        type: string
+      - description: 预期尝试编号
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.retryTaskStepRequest'
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                code:
+                  type: integer
+              type: object
+      summary: 请求安全重试失败步骤
       tags:
       - Publish
   /home:

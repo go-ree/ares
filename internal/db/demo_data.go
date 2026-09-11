@@ -142,6 +142,9 @@ func InitializeDemoData() error {
 	if err := insertDemoTasks(session, apps, workflowVersionIDs); err != nil {
 		return err
 	}
+	if _, err := session.Exec(taskAttemptBackfillSQL); err != nil {
+		return err
+	}
 
 	if err := session.Commit(); err != nil {
 		return fmt.Errorf("commit demo data: %w", err)
@@ -418,6 +421,10 @@ func insertDemoTaskSteps(session *xorm.Session, task entity.TaskRecord, seed dem
 		steps[0].Message = "Demo 非阻断检查失败"
 	}
 	for stepIndex := range steps {
+		steps[stepIndex].MaxAttempts = 1
+		steps[stepIndex].RetryDelaySeconds = 1
+		steps[stepIndex].RetryMaxDelaySeconds = 60
+		steps[stepIndex].RetryMode = "automatic"
 		insert := session.NoAutoTime().Nullable("external_ref")
 		if len(steps[stepIndex].Output) == 0 {
 			insert = insert.Nullable("output")

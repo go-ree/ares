@@ -357,7 +357,10 @@ func (s *XORMStore) CreateTaskSnapshot(ctx context.Context, taskID int, workflow
 
 func insertTaskStepSnapshots(ctx context.Context, session *xorm.Session, taskID int, workflow WorkflowView) error {
 	for position, step := range workflow.Spec.Steps {
+		policy := normalizeRetry(step.Retry)
 		record := entity.TaskStepRecord{
+			MaxAttempts: policy.MaxAttempts, RetryDelaySeconds: policy.InitialDelaySeconds,
+			RetryMaxDelaySeconds: policy.MaxDelaySeconds, RetryMode: policy.Mode,
 			TaskID:            taskID,
 			WorkflowVersionID: workflow.WorkflowVersionID,
 			StepKey:           step.Key,
@@ -613,6 +616,9 @@ func (s *XORMStore) ClaimStep(ctx context.Context, lease TaskLease, stepRecordID
 		if !claimed {
 			return nil
 		}
+		if err := ensureAttempt(session, lease.TaskID, stepRecordID); err != nil {
+			return err
+		}
 		_, updateErr = session.Context(ctx).Exec(`UPDATE task_record
 			SET status = ?, message = NULL, updated_at = CURRENT_TIMESTAMP
 			WHERE task_id = ?`, TaskRunning, lease.TaskID)
@@ -643,6 +649,10 @@ func (s *XORMStore) ReleaseStep(
 			return rowsErr
 		}
 		released = updated == 1
+		if released {
+			_, err := session.Exec(`DELETE a FROM task_step_attempts a JOIN task_step_records s ON s.step_record_id = a.step_record_id AND s.attempt = a.attempt WHERE s.step_record_id = ? AND a.status = 'running' AND a.external_ref IS NULL`, stepRecordID)
+			return err
+		}
 		return nil
 	})
 	return released, err
@@ -663,15 +673,18 @@ func (s *XORMStore) SaveStepResult(
 	}
 	err = s.withValidTaskLease(ctx, lease, func(session *xorm.Session) error {
 		finishedExpression := "NULL"
+		if err := ensureAttempt(session, lease.TaskID, stepRecordID); err != nil {
+			return err
+		}
 		if status != StepRunning {
 			finishedExpression = "CURRENT_TIMESTAMP(6)"
 		}
 		query := fmt.Sprintf(`UPDATE task_step_records
-			SET status = ?, external_ref = ?, output = ?, message = ?, finished_at = %s
+			SET status = ?, external_ref = ?, output = ?, message = ?, retry_class = ?, finished_at = %s
 			WHERE step_record_id = ? AND task_id = ? AND status = ?`, finishedExpression)
 		result, updateErr := session.Context(ctx).Exec(query,
 			status, nullableJSON(stepResult.ExternalReference), nullableJSON(stepResult.Output),
-			nullableText(truncateRunes(stepResult.Message, 1000)), stepRecordID, lease.TaskID, StepRunning)
+			nullableText(truncateRunes(stepResult.Message, 1000)), stepResult.RetryClass, stepRecordID, lease.TaskID, StepRunning)
 		if updateErr != nil {
 			return updateErr
 		}
@@ -680,6 +693,9 @@ func (s *XORMStore) SaveStepResult(
 			return rowsErr
 		}
 		saved = updated == 1
+		if saved {
+			return syncAttempt(session, stepRecordID)
+		}
 		return nil
 	})
 	return saved, err

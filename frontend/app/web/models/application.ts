@@ -205,10 +205,16 @@ export interface PipelineStepType {
   config_schema?: Record<string, unknown>;
   available?: boolean;
   unavailable_reason?: string;
-  capabilities?: { logs: boolean; cancel: boolean };
+  capabilities?: { logs: boolean; cancel: boolean; retry?: boolean };
 }
 
 export interface WorkflowStep {
+  retry?: {
+    max_attempts: number;
+    initial_delay_seconds?: number;
+    max_delay_seconds?: number;
+    mode?: 'automatic' | 'manual';
+  };
   key: string;
   name: string;
   uses: string;

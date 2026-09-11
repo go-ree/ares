@@ -4,8 +4,8 @@
 
 2026-09-11，W07 设计已确定。依赖已合并的 W06 task lease/fencing。W07 分三次交付，每次更新路线图并通过中文 PR 验收：
 
-1. **W07-A（本次）**：步骤总时限、`timed_out` / `outcome_unknown` 终态、外部引用保留、查询异常退避、前端状态展示。
-2. **W07-B**：版本化重试策略、独立 attempt 表、数据库时间退避、手动重试和尝试历史界面。
+1. **W07-A（已合并 PR #37）**：步骤总时限、`timed_out` / `outcome_unknown` 终态、外部引用保留、查询异常退避、前端状态展示。
+2. **W07-B（本次）**：版本化重试策略、独立 attempt 表、数据库时间退避、手动重试和尝试历史界面。
 3. **W07-C**：持久化取消请求、执行器取消与确认协议、Jenkins Queue/Build 取消、前端能力入口。
 
 拆分原因：先区分失败、时间耗尽与外部结果不明，再允许创建新的 attempt；取消需要在这些状态与历史记录之上保证幂等和可追查。W07-A 合并不代表完整 W07 完成。
@@ -36,6 +36,16 @@
 - 每次真正执行使用新的 attempt 与 `task_id/step_key/attempt` 幂等键；同一 attempt 的接管、轮询、请求重放不改变键。
 - 手动重试接受预期 attempt，服务端检查权限、策略和结果分类，CAS 拒绝过期或并发命令。只恢复失败边界，不修改旧工作流快照、不回放成功的历史节点。
 - 迁移只回填可证实的当前尝试，不虚构旧 attempt；未开始的 pending 不产生已执行历史。历史 API 不暴露配置、输出和外部引用，日志按精确 attempt 寻址。
+
+### 3.1 W07-B 实现决策
+
+- retry 为可选对象，省略保持一次尝试；字段为 max_attempts（1～5）、initial_delay_seconds / max_delay_seconds（1～3600，默认 1/60）、mode（automatic 或 manual，默认 automatic）。manual 只允许 on_failure=stop；自动和手动共用次数上限。
+- 执行器能力增加 retry，Result 的内部 retry_class 仅接受 no_side_effect / completed_safe，且仅明确 failed 有效。Noop 声明无副作用并支持 fail_attempts（0～4）演示；Jenkins 保持不具备安全重试能力。
+- epoch 8 增加步骤重试策略快照、retry_at、retry_class 和 task_step_attempts。task 仍为 running，retry_wait 仅为步骤状态，以保留已有 task 租约契约。attempt 在到期准备下一尝试时递增；ClaimStep 原子创建 running 历史，保存结果原子更新投影和当前历史。未调用/明确无副作用的 unavailable claim 可撤销其 running 记录，不消耗预算。
+- 自动失败先写 failed 历史，再持租约排定 retry_wait；这两个事务间崩溃可从 failed 恢复。retry_at 只初始化一次，轮询或接管不会重置；未到期不会启动后续步骤。
+- 手动 API 接受 expected_attempt，只有 failed 任务的 stop 失败边界、剩余预算、明确安全类别和执行器能力同时满足才接受。任务行锁串行化，排定 retry_wait 并恢复未执行的 skipped 后续步骤；重复或过期请求返回 409，不创建额外 attempt。
+- 历史查询按 task/step 返回最多 5 条新尝试（历史迁移保留可证实的当前 attempt 编号），不返回引用/配置/输出。日志支持可选 attempt 参数并锁定对应历史引用；省略仍读取当前步骤引用。
+- 升级必须停止旧 Worker，再运行 migrator 到 epoch 8，再启动新镜像。epoch 7 镜像拒绝 epoch 8；回退依赖升级前备份恢复，不直接回连新库。历史回填不推断 retry_class，不回写工作流版本或 checksum。
 
 ## 4. W07-C 取消契约
 

@@ -59,8 +59,8 @@ test: ## 运行 Go 全量测试
 
 db-integration: ## 在 MySQL 8.4 上运行数据库迁移集成测试（需要 ARES_TEST_MYSQL_DSN）
 	@test -n "$$ARES_TEST_MYSQL_DSN" || { echo "请设置 MySQL 8.4 管理员 DSN：ARES_TEST_MYSQL_DSN"; exit 1; }
-	$(GO) test -count=1 -run '^(TestPreW04FixtureIsImmutable|TestMySQL84Migrations)$$' ./internal/db
-	$(GO) test -count=1 -run '^TestMySQL(WorkerLeases|TaskLifecycle)$$' ./internal/workflow
+	$(GO) test -count=1 -run '^(TestPreW04FixtureIsImmutable|TestMySQL84Migrations|TestMySQL84TaskAttemptMigration)$$' ./internal/db
+	$(GO) test -count=1 -run '^TestMySQL(WorkerLeases|TaskLifecycle|TaskRetries)$$' ./internal/workflow
 	$(GO) test -count=1 -run '^TestMySQLJenkinsSettingsFence$$' ./internal/integration
 	$(GO) test -count=1 -run '^TestMySQL(IdempotentRelease|KeyedLegacyHistoricalReplay|CrossBatchLockOrder|DomainMutationsWaitForReleaseParentLock|LegacyLeaderSingleOwnerAndConnectionLossTakeover)$$' ./internal/publish
 	$(GO) test -count=1 -run '^(TestMigrationCLIExitCodesAndSafeOutput|TestServeRejectsEmptySchemaBeforeStartingRuntime)$$' .
