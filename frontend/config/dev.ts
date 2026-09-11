@@ -6,6 +6,6 @@ export default {
     port: 5432,
     username: 'postgres',
     password: 'postgres',
-    database: 'chaoscanvas_dev',
+    database: 'ares_dev',
   },
 };

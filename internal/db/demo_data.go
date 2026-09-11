@@ -208,7 +208,7 @@ func demoApplications() []demoApplication {
 				OwnerCN:       "演示用户",
 				DevLanguage:   "node.js",
 				DescriptionCN: "用于体验静态前端发布配置的示例应用",
-				GitUrl:        "git@github.com:go-ree/chaoscanvas.git",
+				GitUrl:        "git@github.com:go-ree/ares.git",
 			},
 			PackageType: "static",
 			BaseImage:   "nginx:alpine",

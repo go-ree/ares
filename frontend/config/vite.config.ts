@@ -54,7 +54,7 @@ export default defineConfig(({ command, mode }) => {
           const response = {
             status: 'ok',
             timestamp: new Date().toISOString(),
-            service: 'chaoscanvas',
+            service: 'ares',
             version: process.env.npm_package_version || '0.0.0',
             environment: process.env.NODE_ENV || 'development',
             hostname: process.env.HOSTNAME || 'unknown',
@@ -162,7 +162,7 @@ export default defineConfig(({ command, mode }) => {
           const response = {
             status: 'ok',
             timestamp: new Date().toISOString(),
-            service: 'chaoscanvas',
+            service: 'ares',
             version: process.env.npm_package_version || '0.0.0',
             environment: 'production',
             hostname: process.env.HOSTNAME || 'unknown',

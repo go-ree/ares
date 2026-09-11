@@ -1,6 +1,6 @@
 # Ares Web Console
 
-该目录包含 Ares 的 Vue 3 管理端，前身为 ChaosCanvas。前端已经与 Go API 合并到同一仓库，并通过根目录的 Docker Compose 一起交付。
+该目录包含 Ares 的 Vue 3 管理端。前端已经与 Go API 合并到同一仓库，并通过根目录的 Docker Compose 一起交付。
 
 ## 本地开发
 

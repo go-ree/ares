@@ -1,11 +1,11 @@
 export default {
   port: 8080,
-  apiBaseUrl: 'https://api.chaoscanvas.com',
+  apiBaseUrl: '/api/v1',
   database: {
     host: 'localhost',
     port: 5432,
     username: 'postgres',
     password: 'password',
-    database: 'chaoscanvas',
+    database: 'ares',
   },
 };
