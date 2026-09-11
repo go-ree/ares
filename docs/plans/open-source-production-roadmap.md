@@ -1,7 +1,7 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W01 仓库实现已合并、管理项阻塞；W02～W06 已合并；W07-A 实现及本地验收完成，准备 PR 评审；W07-B/C 未开始
+> - 当前状态：W01 仓库实现已合并、管理项阻塞；W02～W06 已合并；W07-A [PR #37](https://github.com/go-ree/ares/pull/37) 待验收；W07-B/C 未开始
 > - 基线版本：`main@b890145`，已合并 [PR #36](https://github.com/go-ree/ares/pull/36)
 > - 最后更新：2026-09-11
 
@@ -81,7 +81,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 | W04    | 数据库迁移机制收敛           | W01                | `已完成` | [PR #22](https://github.com/go-ree/ares/pull/22) | 存量结构只由版本化 migration 改变               |
 | W05    | AppConfig 核心的幂等发布     | W02、W04           | `已完成` | [PR #35](https://github.com/go-ree/ares/pull/35) | 预检、`config_id` 发布、`Idempotency-Key`       |
 | W06    | 多副本 Worker 与租约         | W04、W05           | `已完成` | [PR #36](https://github.com/go-ree/ares/pull/36) | 已合入主线，关闭 R-003              |
-| W07    | 重试、取消、超时与尝试历史   | W03、W06           | `开发中` | 待创建                                           | 分 A/B/C 交付；本次实现 A：超时与不明确结果                  |
+| W07    | 重试、取消、超时与尝试历史   | W03、W06           | `开发中` | A：[PR #37](https://github.com/go-ree/ares/pull/37) | A 待验收；B/C 未开始                  |
 | W08    | Secret Resolver 与密钥轮换   | W02、W04           | `未开始` | 待创建                                           | 工作流只保存 Secret 引用，运行时按版本解析      |
 | W09    | 执行器开发套件与扩展生态     | W03、W07、W08      | `未开始` | 待创建                                           | 契约测试、模板及新增执行器                      |
 | W10    | 可观测性、正式发行与生产示例 | W01、W06、W07、W08 | `未开始` | 待创建                                           | 指标、告警、签名镜像、生产部署与升级工具        |
@@ -320,7 +320,7 @@ W02 与 W04 依赖 W01 已交付的仓库内质量基线，可以并行设计；
 
 | 增量 | 范围 | 状态 |
 | --- | --- | --- |
-| W07-A | 总时限、timed_out/outcome_unknown、查询退避、前端状态 | 本地验收通过，待创建 PR |
+| W07-A | 总时限、timed_out/outcome_unknown、查询退避、前端状态 | 待验收：[PR #37](https://github.com/go-ree/ares/pull/37) |
 | W07-B | 策略、attempt 迁移、有限自动/手动重试、尝试历史 | 未开始 |
 | W07-C | 持久化取消、执行器确认协议、Jenkins 取消、Web 入口 | 未开始 |
 
@@ -480,6 +480,7 @@ W07-A 已验证的子项（不代替上述完整范围）：
 - 前端验证：使用固定 Node 24.20.0 / npm 11.19.1 完成 Prettier、ESLint、TypeScript、19 文件 190 项测试和生产构建；npm audit 为 0 漏洞，保留原有 Element Plus 大 chunk 提示。
 - 供应链：govulncheck 无可达或导入包漏洞，仅模块图中 1 条不可达报告；go mod verify / tidy -diff、Swagger 无漂移、工作流语法与 Compose 配置检查通过。Swagger 下载代理短暂阻塞后切换本次命令 GOPROXY 重跑成功，仓库依赖和工具版本未变。
 - 数据库与兼容：无 DDL，epoch 7 保持不变；禁止新旧 Worker 混跑，回退边界见 ADR-0006。W07-B/C 尚未实现，W07 整体维持开发中。
+- 评审：[PR #37](https://github.com/go-ree/ares/pull/37) 已创建，W07-A 进入待验收；云端检查以 PR 实时状态为准，开发任务不直接合并。隔离 MySQL 测试容器及其临时数据卷已删除。
 
 ### 2026-09-08：W06 实现完成并通过本地验收
 
