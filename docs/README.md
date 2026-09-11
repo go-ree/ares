@@ -2,6 +2,8 @@
 
 文档按实际用途分类维护：
 
+下一阶段（设计待评审，尚未实现）：[CI、产出物与 CD 领域设计](architecture/ci-artifact-cd.md)、[ADR-0007](architecture/decisions/0007-ci-artifact-cd-separation.md)、[W11 分阶段实施计划](plans/ci-artifact-cd-roadmap.md)。
+
 W07 当前设计：[ADR-0006：任务超时、失败恢复与取消](architecture/decisions/0006-task-lifecycle-recovery.md)，开发契约见[任务状态与恢复边界](development/task-lifecycle.md)。
 
 - 架构文档：[可插拔 CI/CD 与动态环境架构](architecture/pluggable-cicd.md)、[ADR-0001：版本化数据库迁移与运行时兼容性检查](architecture/decisions/0001-versioned-database-migrations.md)、[ADR-0002：OIDC、服务端会话、RBAC 与只增审计](architecture/decisions/0002-authentication-rbac-audit.md)、[ADR-0003：执行器通用步骤日志与游标续传](architecture/decisions/0003-generic-step-logs.md)、[ADR-0004：以 AppConfig 为目标的原子幂等发布](architecture/decisions/0004-appconfig-idempotent-releases.md)、[ADR-0005：多副本 Worker 的任务租约与 fencing](architecture/decisions/0005-multi-replica-worker-leases.md)
