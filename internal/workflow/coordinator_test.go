@@ -338,7 +338,7 @@ func TestCoordinatorDoesNotPersistRawExecutorErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.TaskStatus != TaskFailed || store.steps[0].Message != "执行器调用失败，请检查服务端运行状态" {
+	if result.TaskStatus != TaskOutcomeUnknown || strings.Contains(store.steps[0].Message, "must-not-persist") {
 		t.Fatalf("result=%#v message=%q", result, store.steps[0].Message)
 	}
 }
@@ -357,7 +357,7 @@ func TestCoordinatorDoesNotReturnOrLogRawReconcileErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("raw reconcile error escaped coordinator: %v", err)
 	}
-	if result.TaskStatus != TaskFailed || store.steps[0].Message != "执行器调用失败，请检查服务端运行状态" {
+	if result.TaskStatus != TaskRunning || !result.Blocked || !result.PollBackoff || strings.Contains(store.steps[0].Message, "must-not-persist") {
 		t.Fatalf("result=%#v message=%q", result, store.steps[0].Message)
 	}
 }
@@ -408,7 +408,7 @@ func TestCoordinatorPreservesExternalReferenceWhenExecutorReturnsInvalidState(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.TaskStatus != TaskFailed || store.steps[0].Status != StepFailed {
+	if result.TaskStatus != TaskOutcomeUnknown || store.steps[0].Status != StepOutcomeUnknown {
 		t.Fatalf("result=%#v step=%#v", result, store.steps[0])
 	}
 	if string(store.steps[0].ExternalRef) != string(reference) {
@@ -438,13 +438,13 @@ func (e *deadlineIgnoringResultExecutor) Start(ctx context.Context, _ StartReque
 	<-ctx.Done()
 	// A broken adapter may report success after its deadline. The coordinator
 	// must not persist that late result.
-	return Result{State: ResultSucceeded, Message: "late start success"}, nil
+	return Result{State: ResultSucceeded, Message: "late start success", ExternalReference: json.RawMessage(`{"run_id":"late"}`), Output: json.RawMessage(`{"late":true}`)}, nil
 }
 
 func (e *deadlineIgnoringResultExecutor) Reconcile(ctx context.Context, _ ReconcileRequest) (Result, error) {
 	e.reconciles.Add(1)
 	<-ctx.Done()
-	return Result{State: ResultSucceeded, Message: "late reconcile success"}, nil
+	return Result{State: ResultSucceeded, Message: "late reconcile success", ExternalReference: json.RawMessage(`{"run_id":"late"}`)}, nil
 }
 
 func TestCoordinatorRejectsSuccessfulResultsReturnedAfterStepDeadline(t *testing.T) {
@@ -475,6 +475,10 @@ func TestCoordinatorRejectsSuccessfulResultsReturnedAfterStepDeadline(t *testing
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			executor := &deadlineIgnoringResultExecutor{}
+			if test.step.StartedTime != nil {
+				started := time.Now().Add(-900 * time.Millisecond)
+				test.step.StartedTime = &started
+			}
 			registry := NewRegistry()
 			if err := registry.Register(executor); err != nil {
 				t.Fatal(err)
@@ -484,11 +488,14 @@ func TestCoordinatorRejectsSuccessfulResultsReturnedAfterStepDeadline(t *testing
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !result.Terminal || result.TaskStatus != TaskFailed || store.steps[0].Status != StepFailed {
+			if !result.Terminal || result.TaskStatus != TaskTimedOut || store.steps[0].Status != StepTimedOut {
 				t.Fatalf("late deadline result persisted: result=%#v step=%#v", result, store.steps[0])
 			}
 			if strings.Contains(store.steps[0].Message, "late") {
 				t.Fatalf("late executor message persisted: %q", store.steps[0].Message)
+			}
+			if string(store.steps[0].ExternalRef) != `{"run_id":"late"}` || len(store.steps[0].Output) != 0 {
+				t.Fatalf("late reference lost or output accepted: %#v", store.steps[0])
 			}
 		})
 	}

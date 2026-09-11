@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/go-ree/ares/internal/entity"
 	"github.com/go-ree/ares/internal/security"
@@ -93,6 +92,9 @@ func (c *Coordinator) Advance(ctx context.Context, lease TaskLease) (AdvanceResu
 	}
 
 	for _, step := range steps {
+		if isUncertainTerminal(step.Status) {
+			return c.stopUncertainTask(ctx, lease, step.StepKey, step.Status, step.Message)
+		}
 		if step.Status == StepFailed && step.OnFailure == FailureStop {
 			if err := c.store.SkipPendingSteps(ctx, lease, "前置步骤失败，流程已停止"); err != nil {
 				return AdvanceResult{}, err
@@ -181,7 +183,14 @@ func (c *Coordinator) start(ctx context.Context, lease TaskLease, step entity.Ta
 			previous[candidate.StepKey] = append(json.RawMessage(nil), candidate.Output...)
 		}
 	}
-	callCtx, cancel := context.WithTimeout(ctx, time.Duration(step.TimeoutSeconds)*time.Second)
+	remaining, err := c.store.StepTimeRemaining(ctx, lease, step.StepRecordID, step.TimeoutSeconds)
+	if err != nil {
+		return AdvanceResult{}, err
+	}
+	if remaining <= 0 {
+		return c.finishTimedOut(ctx, lease, step, Result{})
+	}
+	callCtx, cancel := context.WithTimeout(ctx, remaining)
 	defer cancel()
 	result, err := executor.Start(callCtx, StartRequest{
 		TaskID:         taskID,
@@ -197,18 +206,18 @@ func (c *Coordinator) start(ctx context.Context, lease TaskLease, step entity.Ta
 			return AdvanceResult{}, ctx.Err()
 		}
 		if callCtx.Err() != nil {
-			return c.finishExecutorError(ctx, lease, step, callCtx.Err())
+			return c.finishTimedOut(ctx, lease, step, result)
 		}
-		if errors.Is(err, ErrExecutorUnavailable) {
+		if errors.Is(err, ErrExecutorUnavailable) && !hasJSONValue(result.ExternalReference) {
 			return c.releaseUnavailableStep(ctx, lease, step)
 		}
-		return c.finishExecutorError(ctx, lease, step, err)
+		return c.finishStartError(ctx, lease, step, result, err)
 	}
 	if err := ctx.Err(); err != nil {
 		return AdvanceResult{}, err
 	}
 	if err := callCtx.Err(); err != nil {
-		return c.finishExecutorError(ctx, lease, step, err)
+		return c.finishTimedOut(ctx, lease, step, result)
 	}
 	return c.applyResult(ctx, lease, step, result)
 }
@@ -236,8 +245,10 @@ func (c *Coordinator) reconcile(ctx context.Context, lease TaskLease, step entit
 		return AdvanceResult{}, err
 	}
 	if remaining <= 0 {
-		return c.finishExecutorError(ctx, lease, step, fmt.Errorf("步骤执行超时"))
+		return c.finishTimedOut(ctx, lease, step, Result{})
 	}
+	callCtx, cancel := context.WithTimeout(ctx, remaining)
+	defer cancel()
 	// A worker may observe the CAS claim while the winning worker is still in
 	// Start. Until Start persists an opaque reference there is nothing safe to
 	// reconcile. A crashed starter is eventually handled by the timeout above.
@@ -249,14 +260,18 @@ func (c *Coordinator) reconcile(ctx context.Context, lease TaskLease, step entit
 	}
 	executor, found := c.registry.Get(step.Uses)
 	if !found {
-		return c.finishExecutorError(ctx, lease, step, fmt.Errorf("执行器未注册：%s", step.Uses))
+		return c.applyResult(ctx, lease, step, Result{State: ResultOutcomeUnknown, Message: "执行器未注册，无法确认外部执行结果；请核查外部任务"})
 	}
-	release, err := c.store.GetTaskReleaseContext(ctx, lease)
+	release, err := c.store.GetTaskReleaseContext(callCtx, lease)
 	if err != nil {
+		if ctx.Err() != nil {
+			return AdvanceResult{}, ctx.Err()
+		}
+		if callCtx.Err() != nil {
+			return c.finishTimedOut(ctx, lease, step, Result{})
+		}
 		return AdvanceResult{}, err
 	}
-	callCtx, cancel := context.WithTimeout(ctx, remaining)
-	defer cancel()
 	result, err := executor.Reconcile(callCtx, ReconcileRequest{
 		TaskID:            taskID,
 		StepKey:           step.StepKey,
@@ -271,21 +286,21 @@ func (c *Coordinator) reconcile(ctx context.Context, lease TaskLease, step entit
 			return AdvanceResult{}, ctx.Err()
 		}
 		if callCtx.Err() != nil {
-			return c.finishExecutorError(ctx, lease, step, callCtx.Err())
+			return c.finishTimedOut(ctx, lease, step, result)
 		}
-		if errors.Is(err, ErrExecutorUnavailable) {
-			return AdvanceResult{
-				TaskID: taskID, TaskStatus: TaskRunning, StepKey: step.StepKey,
-				StepStatus: StepRunning, Blocked: true, PollBackoff: true,
-			}, nil
-		}
-		return c.finishExecutorError(ctx, lease, step, err)
+		// Query failure is not proof that the external execution failed. Persist
+		// any newly resolved reference (e.g. queue -> build) and poll the same
+		// attempt with the worker's durable backoff until its original deadline.
+		return c.applyResult(ctx, lease, step, Result{
+			State: ResultUnknown, ExternalReference: result.ExternalReference,
+			Message: "暂时无法查询执行结果，将继续查询；不会重新提交任务",
+		})
 	}
 	if err := ctx.Err(); err != nil {
 		return AdvanceResult{}, err
 	}
 	if err := callCtx.Err(); err != nil {
-		return c.finishExecutorError(ctx, lease, step, err)
+		return c.finishTimedOut(ctx, lease, step, result)
 	}
 	return c.applyResult(ctx, lease, step, result)
 }
@@ -299,19 +314,52 @@ func (c *Coordinator) finishExecutorError(ctx context.Context, lease TaskLease, 
 	return c.applyResult(ctx, lease, step, result)
 }
 
+func (c *Coordinator) finishStartError(ctx context.Context, lease TaskLease, step entity.TaskStepRecord, result Result, executorErr error) (AdvanceResult, error) {
+	slog.Warn("执行器提交结果不明确", "task_id", lease.TaskID, "step_key", step.StepKey, "uses", step.Uses, "error_type", fmt.Sprintf("%T", executorErr))
+	return c.applyResult(ctx, lease, step, Result{
+		State: ResultOutcomeUnknown, ExternalReference: result.ExternalReference,
+		Message: "无法确认任务是否已提交或完成；请核查外部任务，避免重复执行",
+	})
+}
+
+func (c *Coordinator) finishTimedOut(ctx context.Context, lease TaskLease, step entity.TaskStepRecord, result Result) (AdvanceResult, error) {
+	return c.applyResult(ctx, lease, step, Result{
+		State: ResultTimedOut, ExternalReference: result.ExternalReference,
+		Message: "步骤总执行时限已耗尽；外部任务可能仍在运行，请核查后再操作",
+	})
+}
+
+func isUncertainTerminal(status string) bool {
+	return status == StepTimedOut || status == StepOutcomeUnknown
+}
+
+func (c *Coordinator) stopUncertainTask(ctx context.Context, lease TaskLease, stepKey, status, message string) (AdvanceResult, error) {
+	if err := c.store.SkipPendingSteps(ctx, lease, "前置步骤超时或结果不明确，流程已停止；请核查外部任务"); err != nil {
+		return AdvanceResult{}, err
+	}
+	if err := c.store.SetTaskStatus(ctx, lease, status, message); err != nil {
+		return AdvanceResult{}, err
+	}
+	return AdvanceResult{TaskID: lease.TaskID, TaskStatus: status, StepKey: stepKey, StepStatus: status, Terminal: true}, nil
+}
+
 func (c *Coordinator) applyResult(ctx context.Context, lease TaskLease, step entity.TaskStepRecord, result Result) (AdvanceResult, error) {
 	taskID := lease.TaskID
 	if !validResultState(result.State) {
 		// A misbehaving executor may already have created an external resource.
 		// Preserve its opaque reference for audit/log lookup while rejecting the
 		// invalid state and any output it supplied.
-		result.State = ResultFailed
+		result.State = ResultOutcomeUnknown
 		result.Output = nil
-		result.Message = "执行器返回了无效状态"
+		result.Message = "执行器返回了无效状态，无法确认外部结果；请核查外部任务"
 	}
 	if hasJSONValue(result.Output) {
 		if err := security.ValidateJSONNoSensitiveKeys(result.Output, "executor.output"); err != nil {
-			result.State = ResultFailed
+			if result.State == ResultRunning || result.State == ResultUnknown {
+				result.State = ResultOutcomeUnknown
+			} else if !isUncertainTerminal(result.State) {
+				result.State = ResultFailed
+			}
 			result.Output = nil
 			result.Message = "执行器输出不符合安全策略，已拒绝持久化"
 		}
@@ -335,7 +383,11 @@ func (c *Coordinator) applyResult(ctx context.Context, lease TaskLease, step ent
 	response := AdvanceResult{TaskID: taskID, TaskStatus: TaskRunning, StepKey: step.StepKey, StepStatus: stepStatus}
 	if stepStatus == StepRunning {
 		response.Blocked = true
+		response.PollBackoff = result.State == ResultUnknown
 		return response, nil
+	}
+	if isUncertainTerminal(stepStatus) {
+		return c.stopUncertainTask(ctx, lease, step.StepKey, stepStatus, result.Message)
 	}
 	if stepStatus == StepFailed && step.OnFailure == FailureStop {
 		if err := c.store.SkipPendingSteps(ctx, lease, "前置步骤失败，流程已停止"); err != nil {
@@ -393,7 +445,7 @@ func idempotencyKey(taskID int, stepKey string, attempt int) string {
 
 func validResultState(state string) bool {
 	switch state {
-	case ResultRunning, ResultSucceeded, ResultFailed, ResultCancelled, ResultUnknown:
+	case ResultRunning, ResultSucceeded, ResultFailed, ResultCancelled, ResultUnknown, ResultTimedOut, ResultOutcomeUnknown:
 		return true
 	default:
 		return false

@@ -56,6 +56,8 @@ Registry 会核对静态能力和接口实现：`capabilities.logs=true` 必须�
 
 不要让工作流引擎解析该结构。只有拥有它的执行器可以解释 external reference。
 
+Start 与 Reconcile 的错误语义、总时限以及 `timed_out` / `outcome_unknown` 处理见[任务状态与恢复边界](task-lifecycle.md)。轮询失败不能映射为外部构建失败；返回 error 时也应携带刚解析到的新外部引用。
+
 `Result.Message` 会进入公开任务接口，只能返回稳定、可公开的状态说明，不能透传上游响应正文、Header、URL 或原始网络错误。执行器返回的 `error` 默认会被引擎转换成通用公开文案。`Result.Output` 只用于步骤间内部传递，虽不通过 API 返回，仍会持久化；引擎会在落库前递归拒绝常见敏感键，执行器自身也必须先校验并避免把凭据放入普通字段。
 
 ## 5. 配置和 Secret

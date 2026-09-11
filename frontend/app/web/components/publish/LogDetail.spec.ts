@@ -213,6 +213,21 @@ describe('LogDetail step capabilities', () => {
       },
     });
 
+  it.each([
+    ['timed_out', '执行超时'],
+    ['outcome_unknown', '执行结果待核查'],
+  ])('keeps logs and shows external execution warning for %s', async (status, label) => {
+    context.getTaskDetail.mockResolvedValue({
+      data: { code: 1, result: task({ status, steps: [{ ...step('build', 0, true), status }] }) },
+    });
+    const wrapper = mountDetail();
+    await flushPromises();
+    expect(wrapper.text()).toContain(label);
+    expect(wrapper.find('[title*="外部任务可能仍在运行"]').exists()).toBe(true);
+    expect(wrapper.findAll('.step-log-button')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
   it('renders a log action only for v2 steps that declare capabilities.logs', async () => {
     context.getTaskDetail.mockResolvedValue({
       data: {

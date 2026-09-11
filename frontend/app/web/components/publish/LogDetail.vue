@@ -36,6 +36,14 @@
         </el-descriptions-item>
       </el-descriptions>
 
+      <el-alert
+        v-if="taskSteps.some(step => ['timed_out', 'outcome_unknown'].includes(step.status))"
+        title="流程已停止推进，但外部任务可能仍在运行。请先核查外部执行状态，避免重复发布。"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+
       <div v-if="isStreaming" class="connection-status">
         <el-tag type="success" size="small">
           <el-icon><Loading /></el-icon>
@@ -303,6 +311,8 @@ const stepStatusLabel = (status: string) =>
     running: '执行中',
     succeeded: '成功',
     failed: '失败',
+    timed_out: '执行超时',
+    outcome_unknown: '执行结果待核查',
     skipped: '已跳过',
     cancelled: '已取消',
   })[status] || status;
@@ -311,7 +321,7 @@ const stepStatusType = (status: string) => {
   if (status === 'succeeded') return 'success';
   if (status === 'failed') return 'danger';
   if (status === 'running') return 'primary';
-  if (status === 'cancelled' || status === 'skipped') return 'warning';
+  if (['cancelled', 'skipped', 'timed_out', 'outcome_unknown'].includes(status)) return 'warning';
   return 'info';
 };
 
