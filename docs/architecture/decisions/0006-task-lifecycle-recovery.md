@@ -57,6 +57,6 @@
 
 ## 5. 验收与升级
 
-W07-A 验证数据库剩余时限、晚到结果引用保留、Start 不明确错误、Reconcile 恢复、continue 安全停止、终态崩溃恢复、父上下文取消和过期 fencing，以及前端状态/日志可用性。W07-B/C 另补真实 MySQL 的并发重试/取消、重启退避、attempt 唯一性及 Jenkins 竞态矩阵。
+W07-A 验证数据库剩余时限、晚到结果引用保留、Start 不明确错误、Reconcile 恢复、continue 安全停止、终态崩溃恢复、父上下文取消和过期 fencing，以及前端状态/日志可用性。W07-B 已通过真实 MySQL 的并发重试单赢家、重启退避、attempt 唯一性、预算上限和历史日志引用隔离；W07-C 再补取消与 Jenkins 竞态矩阵。
 
-W07-A 无 DDL，沿用 epoch 7 的 VARCHAR 状态列。发布时停止全部旧 API/Worker，再替换镜像；不支持新旧 Worker 混跑。回退前须确认没有只保存到步骤的新终态、所有对应任务已收敛且外部构建已核查；否则保持新版本修复，不能让旧 Worker 将新步骤状态误判成功。W07-B/C 的迁移和回退契约在对应 PR 中补齐。
+W07-A 无 DDL，沿用 epoch 7 的 VARCHAR 状态列。W07-B 升级至 epoch 8，须停止全部旧 API/Worker、验证备份、运行迁移和运行时账号任务后再启动新镜像；不支持新旧 Worker 混跑。回退必须恢复升级前备份并核查外部执行，不得单独降级镜像。具体步骤见[数据库迁移与恢复手册](../../operations/database-migrations.md)。W07-C 的取消存储与升级契约将在对应 PR 中补齐。
