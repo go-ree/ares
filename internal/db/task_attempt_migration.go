@@ -76,7 +76,7 @@ max_attempts|int|NO|1||
 retry_delay_seconds|int|NO|1||
 retry_max_delay_seconds|int|NO|60||
 retry_mode|varchar(16)|NO|automatic||
-retry_class|varchar(32)|NO||| 
+retry_class|varchar(32)|NO|||
 retry_at|datetime(6)|YES|<NULL>||`) {
 		if isCharacterColumnType(column.columnType) {
 			column.charset = "utf8mb4"

@@ -200,7 +200,7 @@ var schemaMigrations = []schemaMigration{
 	newAuthRBACSchemaMigration("94c805d77d89ec0a748b85906900b641440922548d612de77ef19df4085ea6bf"),
 	newIdempotentReleaseSchemaMigration("7424d336779d63001196bdc5e7f347de3d9b73846f865440d944032eb5e3ba7c"),
 	newWorkerLeaseSchemaMigration("854a5beda4a6a4e32373180de63e95c95ba5aa689154a32419f8b3f09292a9d9"),
-	newTaskAttemptSchemaMigration("40c06c8329daa3ec084c3931c65841d19537c7f67a623eb6319a49612ac948a8"),
+	newTaskAttemptSchemaMigration("6aca76101ab924231156543a410334703a3c6eece8d70ddff0df7d26195bb59c"),
 }
 
 type ledgerRow struct {

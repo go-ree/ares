@@ -22,7 +22,7 @@ func TestPublishedMigrationChecksumsAreStable(t *testing.T) {
 		5: "5fdb78c86cb338613d32e6e05c9ad38e652ba30fe83bf02564d0e110574aef0a",
 		6: "55fade2745e43396c5b7e031e225dc18d38d523627e2469feac9a362aa0ac3ed",
 		7: "c861661da96b99252a356c3d8c703760c8d6610af3c6e61384cebe293ba70582",
-		8: "8bd329fa06e025d35d8be6ed545cb01125735d1b3c51a092ad2f1f661ae7aaa1",
+		8: "3d96237a751e4399f427bb410ae88337161d59da74b12764dd375c36b5c5ae39",
 	}
 	for _, migration := range schemaMigrations {
 		if got := migration.checksum(); got != want[migration.epoch] {
