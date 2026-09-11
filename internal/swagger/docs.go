@@ -4260,6 +4260,75 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/pipeline-templates/validate": {
+            "post": {
+                "tags": [
+                    "Pipeline"
+                ],
+                "summary": "校验 CI/CD 模板结构（不保存、不执行、不检查外部能力）",
+                "parameters": [
+                    {
+                        "description": "模板规范",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pipelinetemplate.Spec"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "result": {
+                                            "$ref": "#/definitions/controller.TemplateValidationResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "result": {
+                                            "$ref": "#/definitions/controller.TemplateValidationResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/releases/batch": {
             "post": {
                 "description": "在同一事务中按原请求顺序提交完整回执及所有可发布任务；业务失败以 receipt item 返回",
@@ -6012,6 +6081,26 @@ const docTemplate = `{
                 }
             }
         },
+        "controller.TemplateValidationResult": {
+            "type": "object",
+            "properties": {
+                "executable": {
+                    "type": "boolean"
+                },
+                "problems": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pipelinetemplate.Problem"
+                    }
+                },
+                "valid": {
+                    "type": "boolean"
+                },
+                "validation_scope": {
+                    "type": "string"
+                }
+            }
+        },
         "controller.authOptionsResponse": {
             "type": "object",
             "properties": {
@@ -6678,6 +6767,136 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
+                }
+            }
+        },
+        "pipelinetemplate.ArtifactType": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "media_type": {
+                    "type": "string"
+                },
+                "simulated": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "pipelinetemplate.Input": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/pipelinetemplate.ArtifactType"
+                }
+            }
+        },
+        "pipelinetemplate.Parameter": {
+            "type": "object",
+            "properties": {
+                "allow_override": {
+                    "type": "boolean"
+                },
+                "default": {
+                    "type": "object"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "pipelinetemplate.Problem": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                }
+            }
+        },
+        "pipelinetemplate.Spec": {
+            "type": "object",
+            "properties": {
+                "application_type": {
+                    "type": "string"
+                },
+                "inputs": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/pipelinetemplate.ArtifactType"
+                    }
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "outputs": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/pipelinetemplate.Input"
+                    }
+                },
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/pipelinetemplate.Parameter"
+                    }
+                },
+                "schema_version": {
+                    "type": "integer"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pipelinetemplate.Step"
+                    }
+                },
+                "target_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "pipelinetemplate.Step": {
+            "type": "object",
+            "properties": {
+                "inputs": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/pipelinetemplate.Input"
+                    }
+                },
+                "key": {
+                    "type": "string"
+                },
+                "outputs": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/pipelinetemplate.ArtifactType"
+                    }
+                },
+                "parameters": {
+                    "description": "Keys are executor parameter slots; values name template parameters.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "uses": {
+                    "type": "string"
+                },
+                "with": {
+                    "type": "object"
                 }
             }
         },
