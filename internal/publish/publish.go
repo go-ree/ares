@@ -547,7 +547,7 @@ func (pm *PublishManager) JobStatus() ([]*ActiveTaskView, error) {
 			case workflow.StepSucceeded:
 				summary.Succeeded++
 				summary.Settled++
-			case workflow.StepFailed:
+			case workflow.StepFailed, workflow.StepTimedOut, workflow.StepOutcomeUnknown:
 				summary.Failed++
 				summary.Settled++
 			case workflow.StepCancelled:

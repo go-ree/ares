@@ -720,7 +720,7 @@ func (s *XORMStore) SetTaskStatus(ctx context.Context, lease TaskLease, status, 
 
 func validTaskStatus(status string) bool {
 	switch status {
-	case TaskQueued, TaskRunning, TaskSucceeded, TaskFailed, TaskCancelled, TaskSucceededWithWarnings:
+	case TaskQueued, TaskRunning, TaskSucceeded, TaskFailed, TaskCancelled, TaskSucceededWithWarnings, TaskTimedOut, TaskOutcomeUnknown:
 		return true
 	default:
 		return false
@@ -729,7 +729,7 @@ func validTaskStatus(status string) bool {
 
 func terminalTaskStatus(status string) bool {
 	switch status {
-	case TaskSucceeded, TaskFailed, TaskCancelled, TaskSucceededWithWarnings:
+	case TaskSucceeded, TaskFailed, TaskCancelled, TaskSucceededWithWarnings, TaskTimedOut, TaskOutcomeUnknown:
 		return true
 	default:
 		return false

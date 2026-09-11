@@ -368,7 +368,7 @@ func TestReconcileMapsJenkinsStatus(t *testing.T) {
 		{"ABORTED", workflow.ResultCancelled},
 		{"UNSTABLE", workflow.ResultFailed},
 		{"NOT_BUILT", workflow.ResultFailed},
-		{"ABNORMAL", workflow.ResultFailed},
+		{"ABNORMAL", workflow.ResultUnknown},
 	} {
 		client := &fakeJenkinsClient{
 			address: "https://jenkins.example",
@@ -388,6 +388,29 @@ func TestReconcileMapsJenkinsStatus(t *testing.T) {
 		if result.State != test.want {
 			t.Errorf("Reconcile(%s) state = %s, want %s", test.jenkins, result.State, test.want)
 		}
+	}
+}
+
+func TestReconcilePreservesResolvedBuildReferenceOnQueryFailure(t *testing.T) {
+	client := &fakeJenkinsClient{
+		address: "https://jenkins.example",
+		queue: func(context.Context, int64) (jenkins.QueueBuildState, error) {
+			return jenkins.QueueBuildState{BuildID: 42}, nil
+		},
+		status: func(context.Context, string, int64) (string, error) {
+			return "", errors.New("temporary connection failure")
+		},
+	}
+	executor := &Executor{acquire: func() jenkinsClient { return client }}
+	result, err := executor.Reconcile(context.Background(), workflow.ReconcileRequest{
+		ExternalReference: json.RawMessage(`{"integration":"jenkins/default","address":"https://jenkins.example","job":"demo-ci","queue_id":7}`),
+	})
+	if !errors.Is(err, workflow.ErrExecutorUnavailable) {
+		t.Fatalf("err=%v", err)
+	}
+	reference, err := decodeExternalReference(result.ExternalReference)
+	if err != nil || reference.BuildID != 42 || reference.QueueID != 7 {
+		t.Fatalf("reference=%+v err=%v", reference, err)
 	}
 }
 
@@ -412,7 +435,7 @@ func TestReconcileFailsDeterministicallyWhenJenkinsAddressChanged(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.State != workflow.ResultFailed || !reflect.DeepEqual(result.ExternalReference, reference) {
+	if result.State != workflow.ResultOutcomeUnknown || !reflect.DeepEqual(result.ExternalReference, reference) {
 		t.Fatalf("result = %#v, want terminal failure retaining reference", result)
 	}
 }
@@ -439,7 +462,7 @@ func TestReconcileRejectsUnboundOrInvalidReferenceWithoutNetwork(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.State != workflow.ResultFailed || !reflect.DeepEqual(result.ExternalReference, reference) {
+			if result.State != workflow.ResultOutcomeUnknown || !reflect.DeepEqual(result.ExternalReference, reference) {
 				t.Fatalf("result = %#v, want terminal failure retaining reference", result)
 			}
 			if acquireCalls != 0 {

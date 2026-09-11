@@ -1,6 +1,6 @@
 # 可插拔 CI/CD 实施路线
 
-> 状态：PR #4 已交付阶段 A～C 与阶段 D 主链路；W03 [PR #34](https://github.com/go-ree/ares/pull/34) 已把通用步骤日志合并到主线，阶段 D 全部完成。W05 [PR #35](https://github.com/go-ree/ares/pull/35) 已把发布幂等合并到主线；W06 多副本 Worker 已完成实现与本地验收，[PR #36](https://github.com/go-ree/ares/pull/36) 待验收，其余阶段 E 工作统一在 [开源化与生产能力开发计划](open-source-production-roadmap.md) 中跟踪。
+> 状态：PR #4 已交付阶段 A～C 与阶段 D 主链路；W03 [PR #34](https://github.com/go-ree/ares/pull/34) 已把通用步骤日志合并到主线，阶段 D 全部完成。W05 [PR #35](https://github.com/go-ree/ares/pull/35)、W06 [PR #36](https://github.com/go-ree/ares/pull/36) 已合并。当前推进 W07-A 超时与不明确结果处理，其余阶段 E 工作统一在 [开源化与生产能力开发计划](open-source-production-roadmap.md) 中跟踪。
 
 本文是 [可插拔 CI/CD 与动态环境架构](../architecture/pluggable-cicd.md) 的实施计划。每一阶段都要求可独立验证、可升级并支持前向修复；数据库迁移后的旧镜像降级不等于安全回退，旧数据删除不属于当前阶段。
 
@@ -69,7 +69,7 @@
 
 - [x] 移除运行时 Xorm 结构同步，空库 bootstrap 与存量结构变化统一使用版本化迁移（W04 已由 PR #22 合并完成）。
 - [ ] 增加 attempt、有限重试、退避、超时和取消。
-- [x] 为多副本 Worker 增加 `next_poll_at`、owner/lease、fencing、公平到期扫描、跨副本集成 revision 和 v1 leader（W06 实现与本地验收已完成，[PR #36](https://github.com/go-ree/ares/pull/36) 待验收）。
+- [x] 为多副本 Worker 增加 `next_poll_at`、owner/lease、fencing、公平到期扫描、跨副本集成 revision 和 v1 leader（W06 已由 [PR #36](https://github.com/go-ree/ares/pull/36) 合并）。
 - [x] 发布 API 支持 `Idempotency-Key`（W05 已由 [PR #35](https://github.com/go-ree/ares/pull/35) 合并完成）。
 - [ ] 增加 Secret Resolver，流程仅保存 Secret 引用。
 - [ ] 提供执行器契约测试套件和开发模板。

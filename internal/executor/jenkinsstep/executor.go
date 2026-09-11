@@ -231,7 +231,7 @@ func (e *Executor) Reconcile(ctx context.Context, request workflow.ReconcileRequ
 	}
 	if client.Address() != reference.Address {
 		return workflow.Result{
-			State:             workflow.ResultFailed,
+			State:             workflow.ResultOutcomeUnknown,
 			ExternalReference: append(json.RawMessage(nil), request.ExternalReference...),
 			Message:           "Jenkins 连接已变更，无法继续查询原实例任务",
 		}, nil
@@ -262,7 +262,7 @@ func (e *Executor) Reconcile(ctx context.Context, request workflow.ReconcileRequ
 	}
 	status, err := client.GetBuildStatusContext(ctx, reference.Job, reference.BuildID)
 	if err != nil {
-		return workflow.Result{}, fmt.Errorf("%w：Jenkins 构建状态暂不可用", workflow.ErrExecutorUnavailable)
+		return workflow.Result{ExternalReference: append(json.RawMessage(nil), request.ExternalReference...)}, fmt.Errorf("%w：Jenkins 构建状态暂不可用", workflow.ErrExecutorUnavailable)
 	}
 	result := workflow.Result{ExternalReference: append(json.RawMessage(nil), request.ExternalReference...)}
 	switch status {
@@ -280,8 +280,8 @@ func (e *Executor) Reconcile(ctx context.Context, request workflow.ReconcileRequ
 		result.State = workflow.ResultFailed
 		result.Message = "Jenkins 构建终态：" + status
 	default:
-		result.State = workflow.ResultFailed
-		result.Message = "Jenkins 返回无法识别的构建终态"
+		result.State = workflow.ResultUnknown
+		result.Message = "Jenkins 构建状态尚无法识别，将继续查询"
 	}
 	return result, nil
 }
@@ -389,7 +389,7 @@ func validExternalJobName(job string) bool {
 
 func invalidReferenceResult(reference json.RawMessage, message string) workflow.Result {
 	return workflow.Result{
-		State:             workflow.ResultFailed,
+		State:             workflow.ResultOutcomeUnknown,
 		ExternalReference: append(json.RawMessage(nil), reference...),
 		Message:           message,
 	}
