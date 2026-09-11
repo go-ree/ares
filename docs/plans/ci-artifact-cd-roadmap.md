@@ -29,7 +29,7 @@ W07-C 在 W11 运行模型固定后同时覆盖 CI/CD 的取消；W08 是真实�
 | 增量 | 状态 | 范围 |
 | --- | --- | --- |
 | A1 | 已合并：[PR #42](https://github.com/go-ree/ares/pull/42) | 独立 CI/CD 规范、类型化槽位、前序引用、参数约束、校验 API 与回归测试 |
-| A2a | 待验收 | 类型/模板/不可变版本 schema、数据契约、最小权限与恢复验收，详见 [存储契约](../development/template-storage.md) |
+| A2a | 待验收：[PR #44](https://github.com/go-ree/ares/pull/44) | 类型/模板/不可变版本 schema、数据契约、最小权限与恢复验收，详见 [存储契约](../development/template-storage.md) |
 | A2b | 未开始 | 事务存储、类型启停与模板草稿 CAS、原子发布版本及并发测试 |
 | A3 | 未开始 | 类型/模板管理 API、版本/CAS、权限矩阵及集成验收 |
 
