@@ -489,7 +489,8 @@ PR #40/#41 已合并。本次交付 W11-A1 的结构规范与无副作用校验 
 - 确认 PR #40/#41 已合并，从 `main@a5105ea` 开发。将 W11-A 拆为 A1 类型化结构契约、A2 目录/模板存储及迁移、A3 管理 API/权限矩阵，完整 A 阶段未完成。
 - 新增独立 pipelinetemplate 包与 POST `/api/v1/pipeline-templates/validate`；固定 CI/CD 归属、命名产物槽位、前序引用、模拟/真实类型一致性和参数默认值边界。请求上限 64 KiB、32 步、每级 16 槽、32 参数。
 - 校验无数据库/执行器副作用，始终返回 executable=false；仅现有 workflows:write 的 admin 可调用，复用 Origin/CSRF/审计，响应不回显 with/默认值。
-- 本次无 schema 迁移、不修改旧 workflow/attempt/receipt，不提供模板保存或新 UI；Swagger 与开发契约同步更新。测试和预览部署证据待补充。
+- 本次无 schema 迁移、不修改旧 workflow/attempt/receipt，不提供模板保存或新 UI；Swagger 与开发契约同步更新。后端全量单测、Vet、相关 Race、约 164 万次模糊测试、Swagger/格式/工作流/Compose 检查通过。
+- 预览后端 `6dbebd6` 已部署，先停旧服务并备份数据库；epoch 8 兼容、服务健康、校验接口匿名 401，3 个应用/1 个用户/4 个任务保持不变。[PR #42](https://github.com/go-ree/ares/pull/42) 待验收，最终云端检查以 PR 实时状态为准，未直接合并。
 
 ### 2026-09-11：前端品牌统一为 Ares
 
