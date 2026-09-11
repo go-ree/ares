@@ -5955,9 +5955,6 @@
                 },
                 "owner_cn": {
                     "type": "string"
-                },
-                "rundeck_app_name": {
-                    "type": "string"
                 }
             }
         },
@@ -6319,9 +6316,6 @@
                 "owner_cn": {
                     "type": "string"
                 },
-                "rundeck_app_name": {
-                    "type": "string"
-                },
                 "updated_at": {
                     "type": "string",
                     "format": "date-time"
@@ -6387,9 +6381,6 @@
                 },
                 "publisher_user_id": {
                     "type": "integer"
-                },
-                "rundeck_app_name": {
-                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -6949,9 +6940,6 @@
                 "publisher_user_id": {
                     "type": "integer"
                 },
-                "rundeck_app_name": {
-                    "type": "string"
-                },
                 "status": {
                     "type": "string"
                 },
@@ -7056,9 +7044,6 @@
                 "extra_data": {
                     "type": "object",
                     "additionalProperties": {}
-                },
-                "is_rundeck": {
-                    "type": "boolean"
                 }
             }
         },
@@ -7119,9 +7104,6 @@
                 },
                 "env": {
                     "type": "string"
-                },
-                "is_rundeck": {
-                    "type": "boolean"
                 },
                 "page_num": {
                     "description": "PageInteger distinguishes omission (use the default) from explicit null.",
@@ -7439,9 +7421,6 @@
                 },
                 "publisher_user_id": {
                     "type": "integer"
-                },
-                "rundeck_app_name": {
-                    "type": "string"
                 },
                 "status": {
                     "type": "string"

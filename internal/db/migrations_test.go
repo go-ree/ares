@@ -71,7 +71,9 @@ func TestPersistentEntitySourcesAreStable(t *testing.T) {
 		"../entity/task_record_images.go",
 		"../entity/workflow.go",
 	}
-	const expected = "1412090c5938f52de9a3a0503f7f73c08370b5c2201b9aec76e2bc2f4bf33486"
+	// Only runtime Rundeck mappings removed; historical nullable columns and
+	// published migrations/manifests remain unchanged at epoch 8.
+	const expected = "8a1b209c91220ab29130bb1db99e260147bd78cb481a8414a0544ac6299aacd8"
 	if got := sourceFingerprint(t, files); got != expected {
 		t.Errorf("persistent entity fingerprint = %s, want %s; entity changes require a migration and manifest review", got, expected)
 	}

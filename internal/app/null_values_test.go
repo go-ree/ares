@@ -31,8 +31,7 @@ func TestValidateCreateAppRejectsLegacyNullRequiredText(t *testing.T) {
 
 func TestBuildPatchAppMapWritesNullableTextAsSQLNull(t *testing.T) {
 	description := " Null "
-	rundeckAppName := " nUlL "
-	request := PatchAppRequest{DescriptionCN: &description, RundeckAppName: &rundeckAppName}
+	request := PatchAppRequest{DescriptionCN: &description}
 	if err := NewAppValidator().ValidatePatchApp(&request); err != nil {
 		t.Fatalf("ValidatePatchApp() rejected a nullable sentinel: %v", err)
 	}
@@ -42,9 +41,6 @@ func TestBuildPatchAppMapWritesNullableTextAsSQLNull(t *testing.T) {
 	}
 	if value, exists := updates["description_cn"]; !exists || value != nil {
 		t.Fatalf("description_cn update = %#v, want explicit nil", value)
-	}
-	if value, exists := updates["rundeck_app_name"]; !exists || value != nil {
-		t.Fatalf("rundeck_app_name update = %#v, want explicit nil", value)
 	}
 
 	appNameCN := "NULL"

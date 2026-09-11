@@ -39,7 +39,6 @@ type CreatePublishRequest struct {
 	AppName   string         `json:"app_name"`
 	Branch    string         `json:"branch"`
 	Env       string         `json:"env"`
-	IsRundeck bool           `json:"is_rundeck"`
 	ExtraData map[string]any `json:"extra_data,omitempty"`
 }
 
@@ -54,7 +53,6 @@ type PublishActor struct {
 // PublishRequest 实际发布需要用到的参数
 type PublishRequest struct {
 	AppName         string         `json:"app_name"`
-	RundeckAppName  *string        `json:"rundeck_app_name"`
 	Branch          string         `json:"branch"`
 	Env             string         `json:"env"`
 	Publisher       string         `json:"publisher"`
@@ -100,21 +98,6 @@ type TaskRecordView struct {
 func (pm *PublishManager) VerifyApp(req *PublishRequest) (*entity.Apps, error) {
 	var app []entity.Apps
 	err := db.Engine.Where("app_name = ? AND deleted_at IS NULL", req.AppName).Find(&app)
-	if err != nil {
-		return nil, fmt.Errorf("应用信息查询失败：%s", err)
-	}
-	if len(app) == 0 {
-		return nil, newInputError(fmt.Sprintf("未找到应用：%s", req.AppName))
-	}
-	if len(app) > 1 {
-		return nil, fmt.Errorf("匹配到 %d 条记录信息，请检查app_name：%s 是否唯一存在", len(app), req.AppName)
-	}
-	return &app[0], nil
-}
-
-func (pm *PublishManager) VerifyRunDeckApp(req *PublishRequest) (*entity.Apps, error) {
-	var app []entity.Apps
-	err := db.Engine.Where("rundeck_app_name = ? AND deleted_at IS NULL", req.AppName).Find(&app)
 	if err != nil {
 		return nil, fmt.Errorf("应用信息查询失败：%s", err)
 	}
@@ -202,11 +185,10 @@ func (pm *PublishManager) CreatePublish(ctx context.Context, createReq *CreatePu
 		Publisher:       actor.DisplayName,
 		PublisherUserID: actor.UserID,
 		ExtraData:       createReq.ExtraData,
-		// RundeckAppName 将在验证后设置
 	}
 	var app *entity.Apps
 
-	// 原先为了兼容 rundeck 名称做过分支处理；现在统一按 app_name 查询即可
+	// 统一使用应用名称查询。
 	app, err = pm.VerifyApp(req)
 	if err != nil {
 		return nil, err
@@ -489,7 +471,6 @@ func composePublishData(req *PublishRequest, app *entity.Apps, appConfig *entity
 	appConfigID := appConfig.ConfigID
 	taskRecord := &entity.TaskRecord{
 		AppName:         app.AppName,
-		RundeckAppName:  app.RundeckAppName, // 现在是指针类型，可以直接赋值
 		Publisher:       req.Publisher,
 		PublisherUserID: &publisherUserID,
 		AppConfigID:     &appConfigID,

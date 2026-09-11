@@ -5966,9 +5966,6 @@ const docTemplate = `{
                 },
                 "owner_cn": {
                     "type": "string"
-                },
-                "rundeck_app_name": {
-                    "type": "string"
                 }
             }
         },
@@ -6330,9 +6327,6 @@ const docTemplate = `{
                 "owner_cn": {
                     "type": "string"
                 },
-                "rundeck_app_name": {
-                    "type": "string"
-                },
                 "updated_at": {
                     "type": "string",
                     "format": "date-time"
@@ -6398,9 +6392,6 @@ const docTemplate = `{
                 },
                 "publisher_user_id": {
                     "type": "integer"
-                },
-                "rundeck_app_name": {
-                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -6960,9 +6951,6 @@ const docTemplate = `{
                 "publisher_user_id": {
                     "type": "integer"
                 },
-                "rundeck_app_name": {
-                    "type": "string"
-                },
                 "status": {
                     "type": "string"
                 },
@@ -7067,9 +7055,6 @@ const docTemplate = `{
                 "extra_data": {
                     "type": "object",
                     "additionalProperties": {}
-                },
-                "is_rundeck": {
-                    "type": "boolean"
                 }
             }
         },
@@ -7130,9 +7115,6 @@ const docTemplate = `{
                 },
                 "env": {
                     "type": "string"
-                },
-                "is_rundeck": {
-                    "type": "boolean"
                 },
                 "page_num": {
                     "description": "PageInteger distinguishes omission (use the default) from explicit null.",
@@ -7450,9 +7432,6 @@ const docTemplate = `{
                 },
                 "publisher_user_id": {
                     "type": "integer"
-                },
-                "rundeck_app_name": {
-                    "type": "string"
                 },
                 "status": {
                     "type": "string"

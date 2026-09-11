@@ -167,8 +167,6 @@ definitions:
         type: string
       owner_cn:
         type: string
-      rundeck_app_name:
-        type: string
     type: object
   app.PatchDomainRequest:
     properties:
@@ -405,8 +403,6 @@ definitions:
         type: string
       owner_cn:
         type: string
-      rundeck_app_name:
-        type: string
       updated_at:
         format: date-time
         type: string
@@ -452,8 +448,6 @@ definitions:
         type: string
       publisher_user_id:
         type: integer
-      rundeck_app_name:
-        type: string
       status:
         type: string
       steps:
@@ -821,8 +815,6 @@ definitions:
         type: string
       publisher_user_id:
         type: integer
-      rundeck_app_name:
-        type: string
       status:
         type: string
       step_summary:
@@ -893,8 +885,6 @@ definitions:
       extra_data:
         additionalProperties: {}
         type: object
-      is_rundeck:
-        type: boolean
     type: object
   publish.CreatePublishResult:
     properties:
@@ -935,8 +925,6 @@ definitions:
         type: string
       env:
         type: string
-      is_rundeck:
-        type: boolean
       page_num:
         description: PageInteger distinguishes omission (use the default) from explicit
           null.
@@ -1155,8 +1143,6 @@ definitions:
         type: string
       publisher_user_id:
         type: integer
-      rundeck_app_name:
-        type: string
       status:
         type: string
       steps:

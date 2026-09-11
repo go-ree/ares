@@ -138,22 +138,17 @@ func TestTaskRecordViewUsesPublicStepProjection(t *testing.T) {
 }
 
 func TestNormalizeTaskRecordNullableText(t *testing.T) {
-	rundeckAppName := " nUlL "
 	record := entity.TaskRecord{
-		RundeckAppName: &rundeckAppName,
-		Message:        " Null ",
-		CiJobName:      "NULL",
-		CdJobName:      "  ",
-		Products:       " image:v1 ",
-		PipelineParam:  json.RawMessage(`{"domain":"NULL","branch":"NULL"}`),
+		Message:       " Null ",
+		CiJobName:     "NULL",
+		CdJobName:     "  ",
+		Products:      " image:v1 ",
+		PipelineParam: json.RawMessage(`{"domain":"NULL","branch":"NULL"}`),
 	}
 
 	normalizeTaskRecordNullableText(&record)
 	if record.Message != "" || record.CiJobName != "" || record.CdJobName != "" {
 		t.Fatalf("legacy task values were not cleared: %#v", record)
-	}
-	if record.RundeckAppName != nil {
-		t.Fatalf("rundeck_app_name = %#v, want nil", record.RundeckAppName)
 	}
 	if record.Products != "image:v1" {
 		t.Fatalf("products = %q, want trimmed normal value", record.Products)
