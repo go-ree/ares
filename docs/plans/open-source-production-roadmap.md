@@ -1,8 +1,8 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W01 管理项阻塞；W02～W06、W07-A/B 已合并；W11 设计 PR #40 已合并、实现未开始；前端品牌统一为 Ares
-> - 基线版本：`main@244119c`，已合并 [PR #40](https://github.com/go-ree/ares/pull/40)
+> - 当前状态：W01 管理项阻塞；W02～W06、W07-A/B 已合并；W11-A1 模板结构契约开发中；A2/A3 未开始；W07-C 暂缓
+> - 基线版本：`main@a5105ea`，已合并 [PR #41](https://github.com/go-ree/ares/pull/41)
 > - 最后更新：2026-09-11
 
 本文承接 [可插拔 CI/CD 实施路线](pluggable-cicd-roadmap.md)。上一阶段已经完成动态环境、版本化工作流、通用串行编排和 Jenkins Adapter 的主链路；本计划负责把 Ares 从“可运行的开源 CI/CD 基础”推进到“可安全公开部署、可持续扩展、可进行生产化验证”的状态。
@@ -87,7 +87,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 | W08    | Secret Resolver 与密钥轮换   | W02、W04           | `未开始` | 待创建                                           | 工作流只保存 Secret 引用，运行时按版本解析      |
 | W09    | 执行器开发套件与扩展生态     | W03、W07、W08、W11-F      | `未开始` | 待创建                                           | 契约测试、模板及新增执行器                      |
 | W10    | 可观测性、正式发行与生产示例 | W01、W06、W07、W08、W11-F | `未开始` | 待创建                                           | 指标、告警、签名镜像、生产部署与升级工具        |
-| W11    | 应用类型 CI、产出物与独立 CD | W02～W06、W07-A/B；真实接入另需 W07-C/W08 | `设计中` | [PR #40](https://github.com/go-ree/ares/pull/40) | 文档待评审；领域设计、兼容迁移与 A～F 计划；代码未开始 |
+| W11    | 应用类型 CI、产出物与独立 CD | W02～W06、W07-A/B；真实接入另需 W07-C/W08 | `开发中` | [PR #40](https://github.com/go-ree/ares/pull/40) | 设计已合并；A1 结构契约本次交付，A2/A3 未开始 |
 
 依赖关系如下：
 
@@ -480,9 +480,17 @@ W07-A 已验证的子项（不代替上述完整范围）：
 
 W11 的完整工作包明细与验收矩阵单独维护在 [CI、产出物与 CD 解耦实施计划](ci-artifact-cd-roadmap.md)。设计决策 D-010 处于待评审状态：[ADR-0007](../architecture/decisions/0007-ci-artifact-cd-separation.md)，涉及 W11 及 W07-C/W08 的顺序调整；不把已有 AppConfig 全流程文档当成新模型接口约定。
 
-PR #37/#38 已合并，W07-A/B 已完成。先评审 [ADR-0007](../architecture/decisions/0007-ci-artifact-cd-separation.md) 与 [W11 计划](ci-artifact-cd-roadmap.md)，文档合并后从 W11-A 开发；W07-C 暂缓至新模型稳定。当前仅设计，不更改业务代码、schema 或预览部署。W01 管理项继续独立跟踪。
+PR #40/#41 已合并。本次交付 W11-A1 的结构规范与无副作用校验 API；下一次推进 W11-A2 应用类型及模板版本持久化，再由 A3 补管理接口。W07-C 暂缓至新模型稳定；W01 管理项继续独立跟踪。完整 W11-A 和构建部署能力均未完成。
 
 ## 9. 进度记录
+
+### 2026-09-11：W11-A1 模板结构契约
+
+- 确认 PR #40/#41 已合并，从 `main@a5105ea` 开发。将 W11-A 拆为 A1 类型化结构契约、A2 目录/模板存储及迁移、A3 管理 API/权限矩阵，完整 A 阶段未完成。
+- 新增独立 pipelinetemplate 包与 POST `/api/v1/pipeline-templates/validate`；固定 CI/CD 归属、命名产物槽位、前序引用、模拟/真实类型一致性和参数默认值边界。请求上限 64 KiB、32 步、每级 16 槽、32 参数。
+- 校验无数据库/执行器副作用，始终返回 executable=false；仅现有 workflows:write 的 admin 可调用，复用 Origin/CSRF/审计，响应不回显 with/默认值。
+- 本次无 schema 迁移、不修改旧 workflow/attempt/receipt，不提供模板保存或新 UI；Swagger 与开发契约同步更新。后端全量单测、Vet、相关 Race、约 164 万次模糊测试、Swagger/格式/工作流/Compose 检查通过。
+- 预览后端 `6dbebd6` 已部署，先停旧服务并备份数据库；epoch 8 兼容、服务健康、校验接口匿名 401，3 个应用/1 个用户/4 个任务保持不变。[PR #42](https://github.com/go-ree/ares/pull/42) 待验收，最终云端检查以 PR 实时状态为准，未直接合并。
 
 ### 2026-09-11：前端品牌统一为 Ares
 

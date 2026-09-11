@@ -57,6 +57,9 @@ func RouterWithRuntime(r gin.IRouter, runtime Runtime) {
 	apiRouter.GET("/pipeline-step-types", runtime.require(routePolicy{
 		Permission: auth.PermissionWorkflowsRead, Action: "workflow.step-types.read", ResourceType: "workflow",
 	}), workflowController.ListPipelineStepTypes)
+	apiRouter.POST("/pipeline-templates/validate", runtime.require(routePolicy{
+		Permission: auth.PermissionWorkflowsWrite, Action: "pipeline-template.validate", ResourceType: "pipeline-template",
+	}), controller.ValidatePipelineTemplate)
 	apiRouter.GET("/job/stream/log", controller.LegacyJenkinsLogDeprecationHeaders, runtime.require(routePolicy{
 		Permission: auth.PermissionLogsRead, Action: "release.log.read", ResourceType: "release-log",
 		ResourceQuery: "task_id", SensitiveRead: true, SSE: true,

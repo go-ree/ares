@@ -241,6 +241,19 @@ definitions:
       projectType:
         type: string
     type: object
+  controller.TemplateValidationResult:
+    properties:
+      executable:
+        type: boolean
+      problems:
+        items:
+          $ref: '#/definitions/pipelinetemplate.Problem'
+        type: array
+      valid:
+        type: boolean
+      validation_scope:
+        type: string
+    type: object
   controller.authOptionsResponse:
     properties:
       bootstrap_available:
@@ -681,6 +694,91 @@ definitions:
         type: string
       status:
         type: string
+    type: object
+  pipelinetemplate.ArtifactType:
+    properties:
+      kind:
+        type: string
+      media_type:
+        type: string
+      simulated:
+        type: boolean
+    type: object
+  pipelinetemplate.Input:
+    properties:
+      from:
+        type: string
+      type:
+        $ref: '#/definitions/pipelinetemplate.ArtifactType'
+    type: object
+  pipelinetemplate.Parameter:
+    properties:
+      allow_override:
+        type: boolean
+      default:
+        type: object
+      required:
+        type: boolean
+      type:
+        type: string
+    type: object
+  pipelinetemplate.Problem:
+    properties:
+      code:
+        type: string
+      path:
+        type: string
+    type: object
+  pipelinetemplate.Spec:
+    properties:
+      application_type:
+        type: string
+      inputs:
+        additionalProperties:
+          $ref: '#/definitions/pipelinetemplate.ArtifactType'
+        type: object
+      kind:
+        type: string
+      name:
+        type: string
+      outputs:
+        additionalProperties:
+          $ref: '#/definitions/pipelinetemplate.Input'
+        type: object
+      parameters:
+        additionalProperties:
+          $ref: '#/definitions/pipelinetemplate.Parameter'
+        type: object
+      schema_version:
+        type: integer
+      steps:
+        items:
+          $ref: '#/definitions/pipelinetemplate.Step'
+        type: array
+      target_type:
+        type: string
+    type: object
+  pipelinetemplate.Step:
+    properties:
+      inputs:
+        additionalProperties:
+          $ref: '#/definitions/pipelinetemplate.Input'
+        type: object
+      key:
+        type: string
+      outputs:
+        additionalProperties:
+          $ref: '#/definitions/pipelinetemplate.ArtifactType'
+        type: object
+      parameters:
+        additionalProperties:
+          type: string
+        description: Keys are executor parameter slots; values name template parameters.
+        type: object
+      uses:
+        type: string
+      with:
+        type: object
     type: object
   publish.ActiveTaskView:
     properties:
@@ -3638,6 +3736,45 @@ paths:
                   type: array
               type: object
       summary: 获取流水线步骤类型目录
+      tags:
+      - Pipeline
+  /api/v1/pipeline-templates/validate:
+    post:
+      parameters:
+      - description: 模板规范
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pipelinetemplate.Spec'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.TemplateValidationResult'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.TemplateValidationResult'
+              type: object
+      summary: 校验 CI/CD 模板结构（不保存、不执行、不检查外部能力）
       tags:
       - Pipeline
   /api/v1/releases/batch:

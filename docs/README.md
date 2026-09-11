@@ -2,6 +2,8 @@
 
 文档按实际用途分类维护：
 
+W11-A1 开发入口：[CI/CD 模板结构契约与校验 API](development/pipeline-template-contract.md)（仅结构校验，模板保存和执行尚未接入）。
+
 下一阶段（设计待评审，尚未实现）：[CI、产出物与 CD 领域设计](architecture/ci-artifact-cd.md)、[ADR-0007](architecture/decisions/0007-ci-artifact-cd-separation.md)、[W11 分阶段实施计划](plans/ci-artifact-cd-roadmap.md)。
 
 W07 当前设计：[ADR-0006：任务超时、失败恢复与取消](architecture/decisions/0006-task-lifecycle-recovery.md)，开发契约见[任务状态与恢复边界](development/task-lifecycle.md)。
