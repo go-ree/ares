@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * ChaosCanvas 应用入口文件
+ * Ares 应用入口文件
  * 用于Jenkins构建流程和Docker容器启动
  */
 
@@ -19,7 +19,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 const args = process.argv.slice(2);
 const command = args[0] || 'start:dev';
 
-console.log(`[${new Date().toISOString()}] 启动 ChaosCanvas 应用`);
+console.log(`[${new Date().toISOString()}] 启动 Ares 应用`);
 console.log(`[${new Date().toISOString()}] 环境: ${process.env.NODE_ENV}`);
 console.log(`[${new Date().toISOString()}] 命令: ${command}`);
 console.log(`[${new Date().toISOString()}] 工作目录: ${process.cwd()}`);

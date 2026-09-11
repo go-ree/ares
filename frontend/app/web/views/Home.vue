@@ -9,7 +9,7 @@
           </template>
           <div class="welcome-content card-content">
             <el-icon class="welcome-icon"><Promotion /></el-icon>
-            <div class="welcome-title">ChaosCanvas</div>
+            <div class="welcome-title">Ares</div>
             <div class="welcome-desc">一站式应用发布管理平台</div>
           </div>
         </el-card>

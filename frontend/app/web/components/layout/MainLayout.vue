@@ -4,7 +4,7 @@
       <!-- 顶部导航栏 -->
       <el-header class="header">
         <div class="header-left">
-          <span class="project-title">ChaosCanvas</span>
+          <span class="project-title">Ares</span>
         </div>
         <div class="header-right">
           <el-dropdown>
