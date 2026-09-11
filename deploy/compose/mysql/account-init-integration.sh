@@ -799,6 +799,9 @@ fi
 mysql_root "ALTER USER '${runtime_user}'@'%' ACCOUNT LOCK" >/dev/null
 
 tables=(
+	application_types
+	pipeline_templates
+	pipeline_template_versions
 	apps
 	app_configs
 	app_config_domains
@@ -914,6 +917,7 @@ assert_query_equals 0 \
 	WHERE GRANTEE = CONCAT(CHAR(39), '${runtime_user}', CHAR(39), '@', CHAR(39), '%', CHAR(39))
 		AND TABLE_SCHEMA = '${database}'
 		AND TABLE_NAME NOT IN (
+			'application_types', 'pipeline_templates', 'pipeline_template_versions',
 			'apps', 'app_configs', 'app_config_domains', 'task_record', 'task_record_images',
 			'env_configs', 'integration_settings',
 			'dev_language_rules', 'release_workflows', 'release_workflow_versions',
@@ -922,7 +926,7 @@ assert_query_equals 0 \
 			'release_idempotency_records', 'release_idempotency_items'
 		)" \
 	'runtime DML 表白名单不匹配'
-assert_query_equals $'21\t39\tDELETE,INSERT,UPDATE' \
+assert_query_equals $'24\t44\tDELETE,INSERT,UPDATE' \
 	"SELECT COUNT(DISTINCT TABLE_NAME), COUNT(*),
 		COALESCE(GROUP_CONCAT(DISTINCT PRIVILEGE_TYPE ORDER BY PRIVILEGE_TYPE SEPARATOR ','), '')
 	FROM information_schema.TABLE_PRIVILEGES
@@ -930,6 +934,9 @@ assert_query_equals $'21\t39\tDELETE,INSERT,UPDATE' \
 		AND TABLE_SCHEMA = '${database}'" \
 	'runtime 表级权限数量不符合最小权限矩阵'
 for table_privileges in \
+	'application_types:INSERT,UPDATE' \
+	'pipeline_templates:INSERT,UPDATE' \
+	'pipeline_template_versions:INSERT' \
 	'apps:INSERT,UPDATE' \
 	'app_configs:INSERT,UPDATE' \
 	'app_config_domains:DELETE,INSERT,UPDATE' \

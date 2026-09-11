@@ -36,7 +36,9 @@ func TestNormalizedAresMySQLDSNEnablesTimeParsing(t *testing.T) {
 }
 
 func TestMigrationEngineFingerprintIsStable(t *testing.T) {
-	const expected = "dfc62e13416c9698822a2f00c082bba4dca0bf47e20e12a75f229a7dcf0d60df"
+	// Reviewed epoch 9 catalog/data-contract dispatch and inbound-FK coverage;
+	// existing migration algorithms and epoch 1–8 definitions are unchanged.
+	const expected = "050d5cfecff699877c1efbf17df10f35b18fd5ae1d74007f13c1b681077ef1ae"
 	files := []string{
 		"migrations.go",
 		"guarded_migrations.go",

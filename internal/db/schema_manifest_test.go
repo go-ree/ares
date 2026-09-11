@@ -233,6 +233,8 @@ func TestPublishedEpochManifestDigestsAreStable(t *testing.T) {
 		5: "210c78958db0ae7b68d6b9d2a8ff5cb535cf0b9b9992396c69c80b2e631a5f9e",
 		6: "a99d3f17df9a31fa3bfee26cf15a373e18fdf406b428dccfdcde0e94abe2b6d4",
 		7: "29571c30fe4685c1a64290f9d58850d72d4edf952b66741cac46914eee48c6c3",
+		8: "cc06e25f6c9a4e651c724baed66a1965b766ba22ec08cc3b9377bb73505ad124",
+		9: "6f00fa49dd4420ff2da4a517ba16a0fbc92a8f0501625e048e41eb563e0d7f42",
 	}
 	for epoch, manifest := range publishedEpochSchemaManifests() {
 		if got := semanticSchemaManifestDigest(manifest); got != wants[epoch] {
@@ -255,6 +257,7 @@ func TestPublishedEpochDataContractDigestsAreStable(t *testing.T) {
 		6: "3a8bbc9437bb32688db4deed08789fc724b342792329e995b98da1ce100a88e9",
 		7: "731d21452d61e3ebcb7d050edd10013a736d767214bee174f59180df56ec4c61",
 		8: "5951295b46892e8cff4f175eec20810fbae479b083ae3afc90aa7d1116905eff",
+		9: "563b02bdc9d0295b9e65f393338d5e91596cb5c8711d63384fe2bc4fcfe92c39",
 	}
 	for epoch := uint64(1); epoch <= ApplicationSchemaEpoch; epoch++ {
 		got := stringListDigest(epochDataContractIDs(epoch))
@@ -279,6 +282,8 @@ func publishedEpochSchemaManifests() map[uint64]semanticSchemaManifest {
 		5: epoch5SemanticSchemaManifest,
 		6: epoch6SemanticSchemaManifest,
 		7: epoch7SemanticSchemaManifest,
+		8: epoch8SemanticSchemaManifest,
+		9: epoch9SemanticSchemaManifest,
 	}
 }
 
