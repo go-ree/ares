@@ -123,7 +123,7 @@
                 placeholder="管理员密码"
               />
               <span class="field-hint">
-                UTF-8 编码后须为 12–1024 字节；中文及部分符号会占多个字节。
+                至少 8 个字符，允许纯数字；UTF-8 编码不能超过 1024 字节。
               </span>
               <span v-if="bootstrapFieldError('password')" class="field-error" role="alert">
                 {{ bootstrapFieldError('password') }}
@@ -239,8 +239,8 @@ const bootstrapValidationErrors = computed<Partial<Record<BootstrapField, string
   }
 
   const passwordBytes = utf8ByteLength(bootstrapForm.password);
-  if (passwordBytes < 12 || passwordBytes > 1024) {
-    errors.password = '管理员密码的 UTF-8 编码须为 12–1024 字节';
+  if (Array.from(bootstrapForm.password).length < 8 || passwordBytes > 1024) {
+    errors.password = '管理员密码至少 8 个字符，UTF-8 编码不能超过 1024 字节';
   }
   if (!bootstrapPasswordConfirmation.value) {
     errors.password_confirmation = '请再次输入管理员密码';

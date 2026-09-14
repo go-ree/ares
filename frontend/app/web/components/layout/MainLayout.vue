@@ -325,8 +325,8 @@ const submitPasswordChange = async () => {
     return;
   }
   const passwordBytes = new TextEncoder().encode(next).byteLength;
-  if (passwordBytes < 12 || passwordBytes > 1024) {
-    ElMessage.warning('新密码长度必须在 12 到 1024 字节之间');
+  if (Array.from(next).length < 8 || passwordBytes > 1024) {
+    ElMessage.warning('新密码至少 8 个字符，UTF-8 编码不能超过 1024 字节');
     return;
   }
   if (next !== passwordForm.value.confirmation) {

@@ -9,13 +9,14 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
 )
 
 const (
-	minimumPasswordBytes = 12
-	maximumPasswordBytes = 1024
+	minimumPasswordCharacters = 8
+	maximumPasswordBytes      = 1024
 )
 
 type argon2Parameters struct {
@@ -40,8 +41,8 @@ func HashPassword(password string) (string, error) {
 }
 
 func HashPasswordContext(ctx context.Context, password string) (string, error) {
-	if len(password) < minimumPasswordBytes || len(password) > maximumPasswordBytes {
-		return "", newInputError(fmt.Sprintf("密码长度必须在 %d 到 %d 字节之间", minimumPasswordBytes, maximumPasswordBytes))
+	if !utf8.ValidString(password) || utf8.RuneCountInString(password) < minimumPasswordCharacters || len(password) > maximumPasswordBytes {
+		return "", newInputError(fmt.Sprintf("密码至少 %d 个字符，UTF-8 编码不能超过 %d 字节", minimumPasswordCharacters, maximumPasswordBytes))
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
