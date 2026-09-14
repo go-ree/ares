@@ -53,7 +53,7 @@
     "@vue/tsconfig": "^0.7.0",
     "axios-mock-adapter": "^2.1.0",
     "cross-env": "^7.0.3",
-    "eslint": "^8.57.1",
+    "eslint": "^10.10.0",
     "eslint-plugin-vue": "^9.33.0",
     "husky": "^8.0.3",
     "happy-dom": "^20.14.0",
