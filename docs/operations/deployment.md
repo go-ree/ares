@@ -77,7 +77,7 @@ docker compose run --rm --no-deps \
   -e ARES_AUTH_SECRETS_PRINT_BOOTSTRAP=true auth-secrets
 ```
 
-访问 `http://localhost:8080`，在“首次部署管理员”区域粘贴该 Token，设置用户名、显示名和至少 12 字节的密码。只有第一个成功请求能完成 Bootstrap；之后应停止传播该 Token，并使用本地管理员账号登录。登录后可访问 Swagger，并在“应用管理”查看 Demo 数据；首次评估还应确认 12 份应用环境配置都能读取各自的两步 Noop 工作流，重启 `ares` 与 `web` 后仍保持一致。OIDC 用户即使先登录并自动创建为 `viewer`，也不会消费或阻止这个独立的一次性 Bootstrap。
+访问 `http://localhost:8080`，在“首次部署管理员”区域粘贴该 Token，设置用户名、显示名和至少 8 个字符的密码（不允许纯数字，UTF-8 编码最多 1024 字节）。只有第一个成功请求能完成 Bootstrap；之后应停止传播该 Token，并使用本地管理员账号登录。登录后可访问 Swagger，并在“应用管理”查看 Demo 数据；首次评估还应确认 12 份应用环境配置都能读取各自的两步 Noop 工作流，重启 `ares` 与 `web` 后仍保持一致。OIDC 用户即使先登录并自动创建为 `viewer`，也不会消费或阻止这个独立的一次性 Bootstrap。
 
 ## 环境变量
 

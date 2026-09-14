@@ -51,6 +51,22 @@ const bootstrapInput = (wrapper: VueWrapper, placeholder: string) =>
   wrapper.get(`input[placeholder="${placeholder}"]`);
 
 describe('Login', () => {
+  it.each(['12345678', '１２３４５６７８'])(
+    'rejects all-digit bootstrap password: %s',
+    async password => {
+      const wrapper = await mountLogin();
+      await bootstrapInput(wrapper, 'Bootstrap Token').setValue('token-from-deployment');
+      await bootstrapInput(wrapper, '管理员用户名').setValue('admin');
+      await bootstrapInput(wrapper, '显示名称').setValue('Admin');
+      await bootstrapInput(wrapper, '管理员密码').setValue(password);
+      await bootstrapInput(wrapper, '再次输入管理员密码').setValue(password);
+      await wrapper.findAll('form.login-form')[1].trigger('submit');
+      await flushPromises();
+      expect(context.bootstrap).not.toHaveBeenCalled();
+      expect(wrapper.text()).toContain('密码不能是纯数字');
+      wrapper.unmount();
+    }
+  );
   beforeEach(() => {
     context.login.mockResolvedValue(true);
     context.bootstrap.mockResolvedValue(true);
@@ -88,41 +104,43 @@ describe('Login', () => {
     expect(wrapper.text()).toContain('请按字段提示修正首次管理员信息');
     expect(wrapper.text()).toContain('用户名须为 3–64 个字符');
     expect(wrapper.text()).toContain('显示名称的 UTF-8 编码不能超过 255 字节');
-    expect(wrapper.text()).toContain('管理员密码的 UTF-8 编码须为 12–1024 字节');
+    expect(wrapper.text()).toContain('管理员密码至少 8 个字符，UTF-8 编码不能超过 1024 字节');
     expect(wrapper.text()).toContain('两次输入的管理员密码不一致');
     wrapper.unmount();
   });
 
-  it('accepts bootstrap values exactly on UTF-8 byte boundaries', async () => {
-    const wrapper = await mountLogin();
-    const username = `a${'b'.repeat(63)}`;
-    const displayName = '界'.repeat(85);
-    const password = '密'.repeat(4);
+  it.each(['a2345678', '密'.repeat(8)])(
+    'accepts eight-character bootstrap passwords: %s',
+    async password => {
+      const wrapper = await mountLogin();
+      const username = `a${'b'.repeat(63)}`;
+      const displayName = '界'.repeat(85);
 
-    await bootstrapInput(wrapper, 'Bootstrap Token').setValue('token-from-deployment');
-    await bootstrapInput(wrapper, '管理员用户名').setValue(username);
-    await bootstrapInput(wrapper, '显示名称').setValue(displayName);
-    await bootstrapInput(wrapper, '管理员密码').setValue(password);
-    await bootstrapInput(wrapper, '再次输入管理员密码').setValue(password);
-    await wrapper.findAll('form.login-form')[1].trigger('submit');
-    await flushPromises();
+      await bootstrapInput(wrapper, 'Bootstrap Token').setValue('token-from-deployment');
+      await bootstrapInput(wrapper, '管理员用户名').setValue(username);
+      await bootstrapInput(wrapper, '显示名称').setValue(displayName);
+      await bootstrapInput(wrapper, '管理员密码').setValue(password);
+      await bootstrapInput(wrapper, '再次输入管理员密码').setValue(password);
+      await wrapper.findAll('form.login-form')[1].trigger('submit');
+      await flushPromises();
 
-    expect(context.bootstrap).toHaveBeenCalledWith({
-      bootstrap_token: 'token-from-deployment',
-      username,
-      display_name: displayName,
-      password,
-    });
-    expect(context.replace).toHaveBeenCalledWith('/application/list');
-    wrapper.unmount();
-  });
+      expect(context.bootstrap).toHaveBeenCalledWith({
+        bootstrap_token: 'token-from-deployment',
+        username,
+        display_name: displayName,
+        password,
+      });
+      expect(context.replace).toHaveBeenCalledWith('/application/list');
+      wrapper.unmount();
+    }
+  );
 
   it('shows the public bootstrap validation detail returned in a 400 envelope', async () => {
     context.bootstrap.mockRejectedValue(
       axiosError(400, {
         code: 0,
         message: '首次管理员创建失败',
-        error: '密码长度必须在 12 到 1024 字节之间',
+        error: '密码至少 8 个字符，UTF-8 编码不能超过 1024 字节',
       })
     );
     const wrapper = await mountLogin();
@@ -135,7 +153,7 @@ describe('Login', () => {
     await wrapper.findAll('form.login-form')[1].trigger('submit');
     await flushPromises();
 
-    expect(wrapper.text()).toContain('密码长度必须在 12 到 1024 字节之间');
+    expect(wrapper.text()).toContain('密码至少 8 个字符，UTF-8 编码不能超过 1024 字节');
     expect(wrapper.text()).not.toContain('request failed');
     wrapper.unmount();
   });
