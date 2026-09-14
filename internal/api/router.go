@@ -28,6 +28,7 @@ func RouterWithRuntime(r gin.IRouter, runtime Runtime) {
 	compatibleController := controller.NewCompatibleController()
 	environmentController := controller.NewEnvironmentController()
 	authController := controller.NewAuthController(runtime.Auth)
+	templateController := controller.NewTemplateCatalogController(runtime.TemplateCatalog)
 	workflowRuntime := release.Shared()
 	workflowController := controller.NewWorkflowController(workflowRuntime.Service, workflowRuntime.Coordinator, workflowRuntime.Logs)
 
@@ -60,6 +61,21 @@ func RouterWithRuntime(r gin.IRouter, runtime Runtime) {
 	apiRouter.POST("/pipeline-templates/validate", runtime.require(routePolicy{
 		Permission: auth.PermissionWorkflowsWrite, Action: "pipeline-template.validate", ResourceType: "pipeline-template",
 	}), controller.ValidatePipelineTemplate)
+	types := apiRouter.Group("/application-types")
+	types.Use(controller.TemplateCatalogDeadline())
+	types.GET("", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsRead, Action: "application-type.list", ResourceType: "application-type"}), templateController.ListTypes)
+	types.GET("/:key", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsRead, Action: "application-type.read", ResourceType: "application-type", ResourceParam: "key"}), templateController.GetType)
+	types.POST("", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsWrite, Action: "application-type.create", ResourceType: "application-type"}), templateController.CreateType)
+	types.PUT("/:key", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsWrite, Action: "application-type.update", ResourceType: "application-type", ResourceParam: "key"}), templateController.UpdateType)
+	templates := apiRouter.Group("/pipeline-templates")
+	templates.Use(controller.TemplateCatalogDeadline())
+	templates.GET("", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsRead, Action: "pipeline-template.list", ResourceType: "pipeline-template"}), templateController.ListTemplates)
+	templates.POST("", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsWrite, Action: "pipeline-template.create", ResourceType: "pipeline-template"}), templateController.CreateTemplate)
+	templates.GET("/:template_id", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsWrite, Action: "pipeline-template.draft.read", ResourceType: "pipeline-template", ResourceParam: "template_id", SensitiveRead: true}), templateController.GetTemplate)
+	templates.PUT("/:template_id", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsWrite, Action: "pipeline-template.update", ResourceType: "pipeline-template", ResourceParam: "template_id"}), templateController.UpdateTemplate)
+	templates.GET("/:template_id/versions", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsRead, Action: "pipeline-template.versions.list", ResourceType: "pipeline-template", ResourceParam: "template_id"}), templateController.ListVersions)
+	templates.POST("/:template_id/versions", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsWrite, Action: "pipeline-template.publish", ResourceType: "pipeline-template", ResourceParam: "template_id"}), templateController.Publish)
+	templates.GET("/:template_id/versions/:number", runtime.require(routePolicy{Permission: auth.PermissionWorkflowsWrite, Action: "pipeline-template.version.read", ResourceType: "pipeline-template", ResourceParams: []string{"template_id", "number"}, SensitiveRead: true}), templateController.GetVersion)
 	apiRouter.GET("/job/stream/log", controller.LegacyJenkinsLogDeprecationHeaders, runtime.require(routePolicy{
 		Permission: auth.PermissionLogsRead, Action: "release.log.read", ResourceType: "release-log",
 		ResourceQuery: "task_id", SensitiveRead: true, SSE: true,

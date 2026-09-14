@@ -2,7 +2,7 @@
 
 文档按实际用途分类维护：
 
-W11 开发入口：[CI/CD 模板结构契约与校验 API](development/pipeline-template-contract.md)、[类型与模板存储契约](development/template-storage.md)。A2b 提供内部保存/发布服务，管理 API、页面与真实执行尚未接入。
+W11 开发入口：[CI/CD 模板结构契约与校验 API](development/pipeline-template-contract.md)、[类型与模板存储契约](development/template-storage.md)、[类型与模板管理 API](development/template-catalog-api.md)。A3 接入有权限/审计的管理 API；页面与真实执行尚未接入。
 
 新模型设计与进度：[CI、产出物与 CD 领域设计](architecture/ci-artifact-cd.md)、[ADR-0007](architecture/decisions/0007-ci-artifact-cd-separation.md)、[W11 分阶段实施计划](plans/ci-artifact-cd-roadmap.md)、[Java CI 步骤计划](plans/java-ci-step-catalog.md)（真实步骤尚未实现）。
 
