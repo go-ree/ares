@@ -2,7 +2,7 @@
 
 ## 1. 本次交付边界
 
-A2 拆为 A2a schema/迁移/权限和 A2b 事务存储/CAS。本次仅 A2a，不新增 HTTP 管理接口、应用绑定或执行路径，不把结构合法等同可执行。A3 才接管理 API，D 才接页面。
+A2 拆为 A2a schema/迁移/权限和 A2b 事务存储/CAS。A2a 已合并，A2b 新增 `internal/templatecatalog` 内部存储服务，不新增 HTTP 管理接口、应用绑定或执行路径，不把结构合法等同可执行。A3 才接管理 API，D 才接页面。
 
 ### 1.1 稳定身份与归属
 
@@ -10,9 +10,19 @@ A2 拆为 A2a schema/迁移/权限和 A2b 事务存储/CAS。本次仅 A2a，不
 - `pipeline_templates`：全局唯一稳定 `template_key`、不可变 kind/归属、可变草稿 JSON、revision 与创建/更新时间。CI 引用类型，CD 引用 target_type，不绑定开发语言。停用只阻止后续选择，不删除历史定义。
 - `pipeline_template_versions`：模板外键、模板内连续版本号、来源 revision、不可变规范、SHA-256、创建人和时间。唯一键 `(template_id, version_number)` 与 `(template_id, source_revision)` 防止同一草稿重复发布。没有应用私有模板副本。
 
-### 1.2 后续事务约束（A2b，尚未实现）
+### 1.2 事务约束（A2b）
 
 类型/模板修改要求 expected_revision，原子 CAS 失败返回冲突；key/kind/归属不可变。发布锁定类型再锁模板，验证启用状态与草稿、分配下一版本号，并在同一事务插入版本和递增模板 revision。版本规范不接受 UPDATE/DELETE。禁用与发布使用相同锁序；重复发布相同 source_revision 不产生第二版。无执行器能力证明时不得启动 CI/CD。
+
+### 1.3 内部服务行为
+
+- `CreateType/GetType/UpdateType`、`CreateTemplate/GetTemplate/UpdateTemplate`、`Publish/GetVersion` 提供最小持久化能力。列表分页、HTTP DTO、角色权限与审计接入留给 A3；当前没有对外路由，调用者以后必须先授权。
+- 更新 DTO 不接收稳定 key、kind 或归属字段的变更；草稿 Spec 必须与原归属一致。显示名/启停/草稿可以修改。类型停用后仍允许维护已有草稿，但不能创建该类型的新模板或发布；CD 不受语言类型启停影响。
+- 创建 revision 为 1；每次成功更新或发布均加 1。发布使用当前 expected_revision 作为 source_revision，重复/陈旧请求返回 `ErrConflict`（不自动重放），调用方可读取固定版本。即使内容未改，使用新 revision 再发布也会生成新的连续版本号。
+- 事务使用 READ COMMITTED：先读取不可变归属，再锁类型和模板；避免等待父锁后仍用旧快照分配版本号。停用先取得锁则发布拒绝；发布先取得锁则完整提交后停用。版本表仅普通读取，无需 UPDATE 权限。
+- 结构、归属、非零 actor/revision 和 JSON 限额在写入前验证；数据库 JSON 排版后的 64 KiB 限额在提交前再检查。版本插入或 revision 更新任一步失败均回滚。
+- 固定错误类别为 Invalid、NotFound、Conflict、Disabled、Storage；不暴露 SQL/草稿/参数。类型 CAS 未命中（包括不存在）返回 Conflict；按 ID 读取不存在返回 NotFound。死锁/锁等待超时映射 Conflict，调用方重新读取后决定是否重试；上下文取消/超时保留分类。
+- 不改动 epoch 9 或其冻结依赖；发布只是登记定义，不证明执行器存在，不生成运行或产物。
 
 ## 2. Schema 与完整性
 
