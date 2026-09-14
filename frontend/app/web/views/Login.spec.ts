@@ -51,6 +51,22 @@ const bootstrapInput = (wrapper: VueWrapper, placeholder: string) =>
   wrapper.get(`input[placeholder="${placeholder}"]`);
 
 describe('Login', () => {
+  it.each(['12345678', '１２３４５６７８'])(
+    'rejects all-digit bootstrap password: %s',
+    async password => {
+      const wrapper = await mountLogin();
+      await bootstrapInput(wrapper, 'Bootstrap Token').setValue('token-from-deployment');
+      await bootstrapInput(wrapper, '管理员用户名').setValue('admin');
+      await bootstrapInput(wrapper, '显示名称').setValue('Admin');
+      await bootstrapInput(wrapper, '管理员密码').setValue(password);
+      await bootstrapInput(wrapper, '再次输入管理员密码').setValue(password);
+      await wrapper.findAll('form.login-form')[1].trigger('submit');
+      await flushPromises();
+      expect(context.bootstrap).not.toHaveBeenCalled();
+      expect(wrapper.text()).toContain('密码不能是纯数字');
+      wrapper.unmount();
+    }
+  );
   beforeEach(() => {
     context.login.mockResolvedValue(true);
     context.bootstrap.mockResolvedValue(true);
@@ -93,7 +109,7 @@ describe('Login', () => {
     wrapper.unmount();
   });
 
-  it.each(['12345678', '密'.repeat(8)])(
+  it.each(['a2345678', '密'.repeat(8)])(
     'accepts eight-character bootstrap passwords: %s',
     async password => {
       const wrapper = await mountLogin();

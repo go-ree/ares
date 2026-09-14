@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
@@ -46,6 +47,9 @@ func HashPasswordContext(ctx context.Context, password string) (string, error) {
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
+	}
+	if strings.IndexFunc(password, func(r rune) bool { return !unicode.IsDigit(r) }) == -1 {
+		return "", newInputError("密码不能是纯数字")
 	}
 	salt := make([]byte, defaultArgon2Parameters.saltLength)
 	if _, err := rand.Read(salt); err != nil {

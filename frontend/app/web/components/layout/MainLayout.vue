@@ -329,6 +329,10 @@ const submitPasswordChange = async () => {
     ElMessage.warning('新密码至少 8 个字符，UTF-8 编码不能超过 1024 字节');
     return;
   }
+  if (/^\p{Nd}+$/u.test(next)) {
+    ElMessage.warning('密码不能是纯数字');
+    return;
+  }
   if (next !== passwordForm.value.confirmation) {
     ElMessage.warning('两次输入的新密码不一致');
     return;
