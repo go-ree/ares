@@ -139,6 +139,7 @@ func TestMySQLTemplateCatalogAPI(t *testing.T) {
 	if tasks != 0 || versions != 1 {
 		t.Fatalf("unexpected effects tasks=%d versions=%d", tasks, versions)
 	}
+	t.Run("binding-preflight-read-only", func(t *testing.T) { checkBindingPreflightMySQL(t, database, cfg, v["id"].(string)) })
 	auditRaw, _ := json.Marshal(audit.audits)
 	if strings.Contains(string(auditRaw), "PRIVATE-REPOSITORY") {
 		t.Fatal("audit leaked spec")

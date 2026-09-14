@@ -29,6 +29,7 @@ func RouterWithRuntime(r gin.IRouter, runtime Runtime) {
 	environmentController := controller.NewEnvironmentController()
 	authController := controller.NewAuthController(runtime.Auth)
 	templateController := controller.NewTemplateCatalogController(runtime.TemplateCatalog)
+	bindingController := controller.NewBindingPreflightController(runtime.BindingPreflight)
 	workflowRuntime := release.Shared()
 	workflowController := controller.NewWorkflowController(workflowRuntime.Service, workflowRuntime.Coordinator, workflowRuntime.Logs)
 
@@ -140,6 +141,7 @@ func RouterWithRuntime(r gin.IRouter, runtime Runtime) {
 
 	apps := apiRouter.Group("/apps")
 	{
+		apps.POST("/:app_id/ci-binding/preflight", controller.TemplateCatalogDeadline(), runtime.require(routePolicy{Permission: auth.PermissionApplicationsWrite, Action: "ci-binding.preflight", ResourceType: "application", ResourceParam: "app_id"}), bindingController.CI)
 		apps.POST("", runtime.require(routePolicy{Permission: auth.PermissionApplicationsWrite, Action: "application.create", ResourceType: "application"}), appsController.CreateApp)
 		apps.POST("/batch", runtime.require(routePolicy{Permission: auth.PermissionApplicationsWrite, Action: "application.batch.create", ResourceType: "application"}), appsController.CreateApps)
 		apps.POST("/query", runtime.require(routePolicy{Permission: auth.PermissionApplicationsRead, Action: "application.list", ResourceType: "application"}), appsController.QueryApps)
@@ -156,6 +158,7 @@ func RouterWithRuntime(r gin.IRouter, runtime Runtime) {
 
 	appConfigs := apiRouter.Group("/app-configs")
 	{
+		appConfigs.POST("/:config_id/cd-binding/preflight", controller.TemplateCatalogDeadline(), runtime.require(routePolicy{Permission: auth.PermissionAppConfigsWrite, Action: "cd-binding.preflight", ResourceType: "app-config", ResourceParam: "config_id"}), bindingController.CD)
 		appConfigs.GET("/:config_id", runtime.require(routePolicy{Permission: auth.PermissionAppConfigsRead, Action: "app-config.read", ResourceType: "app-config", ResourceParam: "config_id"}), appConfigsController.GetAppConfigByID)
 		appConfigs.PATCH("/:config_id", runtime.require(routePolicy{Permission: auth.PermissionAppConfigsWrite, Action: "app-config.update", ResourceType: "app-config", ResourceParam: "config_id"}), appConfigsController.PatchAppConfigByID)
 		appConfigs.POST("/:config_id/releases/preflight", runtime.require(routePolicy{Permission: auth.PermissionReleasesCreate, Action: "release.preflight", ResourceType: "app-config", ResourceParam: "config_id"}), publishController.PreflightRelease)
