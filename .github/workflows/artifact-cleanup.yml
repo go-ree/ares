@@ -1,0 +1,44 @@
+name: 清理过期 Actions 制品
+
+on:
+  schedule:
+    - cron: "43 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+concurrency:
+  group: artifact-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      # No checkout or PR trigger: this token cannot be used by pull request code.
+      - name: 删除创建时间超过七天的制品
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Collect all pages before deleting so pagination cannot skip entries.
+          cutoff="$(date -u -d '7 days ago' +%s)"
+          ids="$(gh api --paginate "repos/$GH_REPO/actions/artifacts?per_page=100" \
+            --jq ".artifacts[] | select((.created_at | fromdateiso8601) < $cutoff) | .id")"
+          deleted=0
+          while IFS= read -r id; do
+            [ -n "$id" ] || continue
+            [[ "$id" =~ ^[0-9]+$ ]]
+            # Native expiration may have removed an artifact after the listing.
+            if result="$(gh api --method DELETE "repos/$GH_REPO/actions/artifacts/$id" 2>&1)"; then
+              deleted=$((deleted + 1))
+            elif [[ "$result" != *"(HTTP 404)"* ]]; then
+              printf '%s\n' "$result" >&2
+              exit 1
+            fi
+          done <<< "$ids"
+          printf '已删除 %s 个超过七天的 Actions 制品。\n' "$deleted"

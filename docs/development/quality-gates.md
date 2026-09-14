@@ -173,7 +173,9 @@ make image-scan
 - `质量门禁`：检查 Actions 语法、后端、MySQL 8.4 迁移与恢复、MySQL 8.4 最小权限账号、关键包竞态、Go 可达漏洞和前端；
 - `镜像与供应链`：校验 Compose、构建前后端镜像、生成 SPDX JSON SBOM，并使用 Trivy 扫描 high/critical 漏洞。
 
-工作流在指向 `main` 的 PR 和 `main` 推送上运行；镜像扫描还会每周执行一次。供应链工作流分别保存后端运行时镜像、前端 Nginx 运行时镜像和前端 lockfile 应用依赖三份 SBOM，避免压缩后的前端 bundle 丢失 npm 元数据。SBOM 与扫描报告作为 Actions Artifact 保留 14 天。工作流只有 `contents: read` 权限，不使用 PR 代码可访问的写权限或发布凭据。
+工作流在指向 `main` 的 PR 和 `main` 推送上运行；镜像扫描还会每周执行一次。供应链工作流分别保存后端运行时镜像、前端 Nginx 运行时镜像和前端 lockfile 应用依赖三份 SBOM，避免压缩后的前端 bundle 丢失 npm 元数据。SBOM 与扫描报告作为 Actions Artifact 保留 7 天。构建/扫描工作流只有 `contents: read` 权限，不使用 PR 代码可访问的写权限或发布凭据。
+
+仓库 Actions 制品和日志默认保留期已设为 7 天；设置不追溯已有对象。独立 `artifact-cleanup.yml` 每天 UTC 02:43（北京时间 10:43）清理创建时间超过 7×24 小时的制品，也可手动触发；先遍历全部分页再删除，兼容期间被原生过期机制删除的 404。调度可能延迟，不承诺精确到秒删除。该工作流只在默认分支定时/手动执行，无 PR 触发、不检出代码，单独授予 `actions: write`。它不删除运行记录、日志、缓存、Release 附件或镜像包；制品删除后不可恢复，需要长期归档的报告须提前下载。旧日志仍按原保留期到期。
 
 以下检查应作为 `main` 的 Required Checks：
 
@@ -202,7 +204,7 @@ Required Checks 只能在本 PR 合并、对应检查至少成功运行一次后
 
 ## 5. 依赖更新策略
 
-Dependabot 每周检查 Go Modules、前端 npm、GitHub Actions、两份 Dockerfile 和根目录 Docker Compose 镜像。minor/patch 更新按生态分组，major 更新保持独立 PR，便于评估兼容性。
+按维护者要求移除 `.github/dependabot.yml`，合并至 main 后停止 Dependabot 版本更新 PR。仓库 Dependabot 安全更新开关已关闭；它与配置文件控制的版本更新是两个独立机制，只关闭前者不会阻止每周版本升级 PR。现有 Dependabot PR 已关闭；依赖升级后续人工评估并走 PR。Go/npm/镜像漏洞扫描质量门禁保持启用，未关闭依赖安全检查或告警功能。
 
 依赖 PR 仍需执行全部 Required Checks。不得仅通过忽略扫描结果或降低严重级别来获得绿色检查。确实无法立即修复时，豁免必须在路线图风险看板和 PR 中同时记录：漏洞编号、不可达或不可利用的证据、影响范围、责任人、到期日和移除条件。
 
