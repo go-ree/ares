@@ -11,7 +11,10 @@
 - 新增应用 CI / 环境 CD 固定版本意图预检；CI 不要求环境、不推断旧 dev_language；CD 检查所属应用和环境启停。固定版本规范与校验和按只读事务快照校验，不使用当前草稿。
 - 新增纯参数解析器：默认值 < 绑定值 < 允许的运行覆盖，必填、原生类型、精度/大小及不可变拷贝。HTTP 不接运行覆盖，不回显原始规范、默认值或合并结果；复用 developer/admin 编辑权限、Origin/CSRF 和审计。
 - 仍为 epoch 9，无绑定存储/任务/产物写入，不改冻结迁移或 v1 校验器；[预检契约](../development/binding-preflight.md) 与 Swagger 同步。下一次先做 B2，不把预检成功当成已绑定或可运行。
-- 验证通过：后端全量测试/Vet、参数/API/真实 MySQL 联调 Race、完整 `make db-integration`、Swagger 生成、格式/工作流/Compose 和 Docker API 构建。SELECT-only 账号验证预检无业务写入，覆盖停用、归属、摘要损坏、严格请求和权限审计边界。前端无改动，本轮未重跑前端验收；预览版本和中文 PR 链接交付时补充，不自动合并。
+- 验证通过：后端全量测试/Vet、参数/API/真实 MySQL 联调 Race、完整 `make db-integration`、Swagger 生成、格式/工作流/Compose 和 Docker API 构建。SELECT-only 账号验证预检无业务写入，覆盖停用、归属、摘要损坏、严格请求和权限审计边界。前端无改动，本轮未重跑前端验收。
+- [中文 PR #60](https://github.com/go-ree/ares/pull/60) 已提交待评审，未合并。67 处本地文档链接及围栏、Swagger 一致性检查通过；隔离测试容器与卷已清理。
+- 本地预览已部署 `b463217`，API/Web/MySQL healthy、epoch 9 兼容。停止业务服务后备份并验证 gzip，保留数据与密钥卷；本轮无迁移，不声称恢复演练。admin 登录 200、匿名预检 401、缺失版本 404，测试会话已注销；预览无模板，正向预检仅在隔离 MySQL 验证。
+- 预览数据复核：3 应用、2 用户、4 任务、2 类型、0 模板、0 版本，与更新前一致。
 
 ## 已合并：W11-A3 类型与模板管理 API（2026-09-14）
 
