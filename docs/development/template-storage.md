@@ -2,7 +2,7 @@
 
 ## 1. 本次交付边界
 
-A2 拆为 A2a schema/迁移/权限和 A2b 事务存储/CAS。A2a 已合并，A2b 新增 `internal/templatecatalog` 内部存储服务，不新增 HTTP 管理接口、应用绑定或执行路径，不把结构合法等同可执行。A3 才接管理 API，D 才接页面。
+A2 拆为 A2a schema/迁移/权限和 A2b 事务存储/CAS，两者均已合并。A2b 的 `internal/templatecatalog` 内部服务由 A3 [管理 API](template-catalog-api.md) 接入，不新增应用绑定或执行路径，不把结构合法等同可执行。D 才接页面。
 
 ### 1.1 稳定身份与归属
 
@@ -16,7 +16,7 @@ A2 拆为 A2a schema/迁移/权限和 A2b 事务存储/CAS。A2a 已合并，A2b
 
 ### 1.3 内部服务行为
 
-- `CreateType/GetType/UpdateType`、`CreateTemplate/GetTemplate/UpdateTemplate`、`Publish/GetVersion` 提供最小持久化能力。列表分页、HTTP DTO、角色权限与审计接入留给 A3；当前没有对外路由，调用者以后必须先授权。
+- `CreateType/GetType/UpdateType`、`CreateTemplate/GetTemplate/UpdateTemplate`、`Publish/GetVersion` 提供最小持久化能力。A3 补充三个有界 keyset 列表，SQL 不选择草稿/版本 JSON；HTTP 调用者先经权限与审计中间件授权，内部存储不自行鉴权。
 - 更新 DTO 不接收稳定 key、kind 或归属字段的变更；草稿 Spec 必须与原归属一致。显示名/启停/草稿可以修改。类型停用后仍允许维护已有草稿，但不能创建该类型的新模板或发布；CD 不受语言类型启停影响。
 - 创建 revision 为 1；每次成功更新或发布均加 1。发布使用当前 expected_revision 作为 source_revision，重复/陈旧请求返回 `ErrConflict`（不自动重放），调用方可读取固定版本。即使内容未改，使用新 revision 再发布也会生成新的连续版本号。
 - 事务使用 READ COMMITTED：先读取不可变归属，再锁类型和模板；避免等待父锁后仍用旧快照分配版本号。停用先取得锁则发布拒绝；发布先取得锁则完整提交后停用。版本表仅普通读取，无需 UPDATE 权限。

@@ -239,6 +239,58 @@ definitions:
       projectType:
         type: string
     type: object
+  controller.ApplicationTypeView:
+    properties:
+      enabled:
+        type: boolean
+      key:
+        type: string
+      name:
+        type: string
+      revision:
+        type: string
+    type: object
+  controller.CatalogMutationReceipt:
+    properties:
+      executable:
+        type: boolean
+      id:
+        type: string
+      key:
+        type: string
+      revision:
+        type: string
+    type: object
+  controller.CreateTemplateRequest:
+    properties:
+      key:
+        type: string
+      spec:
+        $ref: '#/definitions/pipelinetemplate.Spec'
+    type: object
+  controller.CreateTypeRequest:
+    properties:
+      key:
+        type: string
+      name:
+        type: string
+    type: object
+  controller.PublishTemplateRequest:
+    properties:
+      expected_revision:
+        type: string
+    type: object
+  controller.TemplatePage:
+    properties:
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/controller.TemplateView'
+        type: array
+      next_cursor:
+        type: string
+    type: object
   controller.TemplateValidationResult:
     properties:
       executable:
@@ -250,6 +302,84 @@ definitions:
       valid:
         type: boolean
       validation_scope:
+        type: string
+    type: object
+  controller.TemplateVersionView:
+    properties:
+      checksum:
+        type: string
+      executable:
+        type: boolean
+      id:
+        type: string
+      number:
+        type: string
+      source_revision:
+        type: string
+      spec:
+        type: object
+      template_id:
+        type: string
+    type: object
+  controller.TemplateView:
+    properties:
+      application_type:
+        type: string
+      draft:
+        type: object
+      enabled:
+        type: boolean
+      executable:
+        type: boolean
+      id:
+        type: string
+      key:
+        type: string
+      kind:
+        type: string
+      revision:
+        type: string
+      target_type:
+        type: string
+    type: object
+  controller.TypePage:
+    properties:
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/controller.ApplicationTypeView'
+        type: array
+      next_cursor:
+        type: string
+    type: object
+  controller.UpdateTemplateRequest:
+    properties:
+      enabled:
+        type: boolean
+      expected_revision:
+        type: string
+      spec:
+        $ref: '#/definitions/pipelinetemplate.Spec'
+    type: object
+  controller.UpdateTypeRequest:
+    properties:
+      enabled:
+        type: boolean
+      expected_revision:
+        type: string
+      name:
+        type: string
+    type: object
+  controller.VersionPage:
+    properties:
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/controller.TemplateVersionView'
+        type: array
+      next_cursor:
         type: string
     type: object
   controller.authOptionsResponse:
@@ -2052,6 +2182,242 @@ paths:
       summary: 发布新的不可变工作流版本并切换应用环境绑定
       tags:
       - Pipeline
+  /api/v1/application-types:
+    get:
+      parameters:
+      - description: 上一页 next_cursor
+        in: query
+        name: after
+        type: string
+      - description: 1～100，默认20
+        in: query
+        name: limit
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.TypePage'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 分页查询应用类型（包含停用项）
+      tags:
+      - Pipeline
+    post:
+      parameters:
+      - description: 类型
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CreateTypeRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.CatalogMutationReceipt'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 创建应用类型（管理员）
+      tags:
+      - Pipeline
+  /api/v1/application-types/{key}:
+    get:
+      parameters:
+      - description: 稳定类型标识
+        in: path
+        name: key
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.ApplicationTypeView'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 查询应用类型
+      tags:
+      - Pipeline
+    put:
+      parameters:
+      - description: 稳定类型标识
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: 完整可变字段
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UpdateTypeRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.CatalogMutationReceipt'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 更新应用类型名称与启停（管理员，CAS）
+      tags:
+      - Pipeline
   /api/v1/apps:
     post:
       parameters:
@@ -3722,6 +4088,431 @@ paths:
                   type: array
               type: object
       summary: 获取流水线步骤类型目录
+      tags:
+      - Pipeline
+  /api/v1/pipeline-templates:
+    get:
+      parameters:
+      - description: 上一页 next_cursor
+        in: query
+        name: after
+        type: string
+      - description: 1～100，默认20
+        in: query
+        name: limit
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.TemplatePage'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 分页查询模板元数据
+      tags:
+      - Pipeline
+    post:
+      parameters:
+      - description: 稳定标识和规范
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CreateTemplateRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.CatalogMutationReceipt'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 创建模板草稿（管理员，不执行）
+      tags:
+      - Pipeline
+  /api/v1/pipeline-templates/{template_id}:
+    get:
+      parameters:
+      - description: 模板ID
+        in: path
+        name: template_id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.TemplateView'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 查询模板完整草稿（管理员，敏感读取审计）
+      tags:
+      - Pipeline
+    put:
+      parameters:
+      - description: 模板ID
+        in: path
+        name: template_id
+        required: true
+        type: string
+      - description: 完整可变字段
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UpdateTemplateRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.CatalogMutationReceipt'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 更新模板草稿与启停（管理员，CAS）
+      tags:
+      - Pipeline
+  /api/v1/pipeline-templates/{template_id}/versions:
+    get:
+      parameters:
+      - description: 模板ID
+        in: path
+        name: template_id
+        required: true
+        type: string
+      - description: 上一页 next_cursor
+        in: query
+        name: after
+        type: string
+      - description: 1～100，默认20
+        in: query
+        name: limit
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.VersionPage'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 分页查询已发布模板版本元数据
+      tags:
+      - Pipeline
+    post:
+      parameters:
+      - description: 模板ID
+        in: path
+        name: template_id
+        required: true
+        type: string
+      - description: 预期revision
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.PublishTemplateRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.TemplateVersionView'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 发布不可变模板版本（管理员，不启动任务）
+      tags:
+      - Pipeline
+  /api/v1/pipeline-templates/{template_id}/versions/{number}:
+    get:
+      parameters:
+      - description: 模板ID
+        in: path
+        name: template_id
+        required: true
+        type: string
+      - description: 模板内版本号
+        in: path
+        name: number
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.TemplateVersionView'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 查询不可变模板完整规范（管理员，敏感读取审计）
       tags:
       - Pipeline
   /api/v1/pipeline-templates/validate:
