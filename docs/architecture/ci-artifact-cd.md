@@ -2,7 +2,7 @@
 
 ## 1. 文档状态与核心路径
 
-提议，依据 [ADR-0007](decisions/0007-ci-artifact-cd-separation.md)，尚未实现。当前基线为 `main@875cbd7` / epoch 8（PR #38 已合并）；下面的模型名、路由和界面均为目标契约，不是当前 API 文档。
+依据 [ADR-0007](decisions/0007-ci-artifact-cd-separation.md) 的目标设计，分阶段实现中。当前基线 `main@00843f1` / epoch 9，W11-A 管理 API 已合并；B1 交付只读绑定意图预检。绑定持久化、独立运行、产物与页面仍未实现；实际接口以[管理 API](../development/template-catalog-api.md)和[预检契约](../development/binding-preflight.md)为准，下文其余模型是目标而非已完成能力。
 
 ```text
 应用类型 Java ── CI 模板：Maven 构建、Gradle 构建、构建并制作镜像

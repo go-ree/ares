@@ -214,6 +214,106 @@
                 }
             }
         },
+        "/api/v1/app-configs/{config_id}/cd-binding/preflight": {
+            "post": {
+                "tags": [
+                    "Pipeline"
+                ],
+                "summary": "预检环境 CD 固定版本绑定意图（不保存、不执行）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "应用环境配置ID",
+                        "name": "config_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "意图",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.CDBindingPreflightRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "result": {
+                                            "$ref": "#/definitions/pipelinebinding.Preflight"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "415": {
+                        "description": "Unsupported Media Type",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/app-configs/{config_id}/domains": {
             "get": {
                 "tags": [
@@ -2299,6 +2399,106 @@
                                     }
                                 }
                             ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/apps/{app_id}/ci-binding/preflight": {
+            "post": {
+                "tags": [
+                    "Pipeline"
+                ],
+                "summary": "预检应用 CI 固定版本绑定意图（不保存、不执行）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "应用ID",
+                        "name": "app_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "意图",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.CIBindingPreflightRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.ResponseTemplate"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "result": {
+                                            "$ref": "#/definitions/pipelinebinding.Preflight"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "415": {
+                        "description": "Unsupported Media Type",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/util.ResponseTemplate"
                         }
                     }
                 }
@@ -7135,6 +7335,34 @@
                 }
             }
         },
+        "controller.CDBindingPreflightRequest": {
+            "type": "object",
+            "properties": {
+                "parameters": {
+                    "type": "object"
+                },
+                "target_type": {
+                    "type": "string"
+                },
+                "version_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "controller.CIBindingPreflightRequest": {
+            "type": "object",
+            "properties": {
+                "application_type": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "type": "object"
+                },
+                "version_id": {
+                    "type": "string"
+                }
+            }
+        },
         "controller.CatalogMutationReceipt": {
             "type": "object",
             "properties": {
@@ -7998,6 +8226,35 @@
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "pipelinebinding.Preflight": {
+            "type": "object",
+            "properties": {
+                "checksum": {
+                    "type": "string"
+                },
+                "executable": {
+                    "type": "boolean"
+                },
+                "persisted": {
+                    "type": "boolean"
+                },
+                "template_id": {
+                    "type": "string"
+                },
+                "valid": {
+                    "type": "boolean"
+                },
+                "validation_scope": {
+                    "type": "string"
+                },
+                "version_id": {
+                    "type": "string"
+                },
+                "version_number": {
                     "type": "string"
                 }
             }

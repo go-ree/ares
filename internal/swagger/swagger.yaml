@@ -250,6 +250,24 @@ definitions:
       revision:
         type: string
     type: object
+  controller.CDBindingPreflightRequest:
+    properties:
+      parameters:
+        type: object
+      target_type:
+        type: string
+      version_id:
+        type: string
+    type: object
+  controller.CIBindingPreflightRequest:
+    properties:
+      application_type:
+        type: string
+      parameters:
+        type: object
+      version_id:
+        type: string
+    type: object
   controller.CatalogMutationReceipt:
     properties:
       executable:
@@ -817,6 +835,25 @@ definitions:
       started_at:
         type: string
       status:
+        type: string
+    type: object
+  pipelinebinding.Preflight:
+    properties:
+      checksum:
+        type: string
+      executable:
+        type: boolean
+      persisted:
+        type: boolean
+      template_id:
+        type: string
+      valid:
+        type: boolean
+      validation_scope:
+        type: string
+      version_id:
+        type: string
+      version_number:
         type: string
     type: object
   pipelinetemplate.ArtifactType:
@@ -1593,6 +1630,69 @@ paths:
       summary: 按 config_id 更新配置（PATCH：只更新传入字段）
       tags:
       - AppConfig
+  /api/v1/app-configs/{config_id}/cd-binding/preflight:
+    post:
+      parameters:
+      - description: 应用环境配置ID
+        in: path
+        name: config_id
+        required: true
+        type: string
+      - description: 意图
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CDBindingPreflightRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/pipelinebinding.Preflight'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 预检环境 CD 固定版本绑定意图（不保存、不执行）
+      tags:
+      - Pipeline
   /api/v1/app-configs/{config_id}/domains:
     get:
       parameters:
@@ -2575,6 +2675,69 @@ paths:
       summary: 应用基本信息变更（仅更新传入字段）
       tags:
       - App
+  /api/v1/apps/{app_id}/ci-binding/preflight:
+    post:
+      parameters:
+      - description: 应用ID
+        in: path
+        name: app_id
+        required: true
+        type: string
+      - description: 意图
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CIBindingPreflightRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/pipelinebinding.Preflight'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 预检应用 CI 固定版本绑定意图（不保存、不执行）
+      tags:
+      - Pipeline
   /api/v1/apps/{app_id}/config-options:
     get:
       consumes:

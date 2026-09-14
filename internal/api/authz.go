@@ -25,6 +25,7 @@ const legacyAdminTokenHeader = "X-Ares-Admin-Token"
 type Runtime struct {
 	Auth                    *auth.Service
 	TemplateCatalog         controller.TemplateCatalogStore
+	BindingPreflight        controller.BindingPreflightService
 	LegacyAdminTokenEnabled bool
 	LegacyAdminToken        string
 	LegacyAdminTokenSunset  string
