@@ -31,7 +31,7 @@ W07-C 在 W11 运行模型固定后同时覆盖 CI/CD 的取消；W08 是真实�
 | A1 | 已合并：[PR #42](https://github.com/go-ree/ares/pull/42) | 独立 CI/CD 规范、类型化槽位、前序引用、参数约束、校验 API 与回归测试 |
 | A2a | 已合并：[PR #44](https://github.com/go-ree/ares/pull/44) | 类型/模板/不可变版本 schema、数据契约、最小权限与恢复验收，详见 [存储契约](../development/template-storage.md) |
 | A2b | 已合并：[PR #53](https://github.com/go-ree/ares/pull/53) | 事务存储、类型启停与模板草稿 CAS、原子发布版本及并发测试；无 HTTP/UI/执行路径 |
-| A3 | 本次交付，待验收 | 类型/模板管理 API、有界分页、字符串 ID/revision、权限与敏感读审计，详见 [API 契约](../development/template-catalog-api.md) |
+| A3 | 待验收：[PR #59](https://github.com/go-ree/ares/pull/59) | 类型/模板管理 API、有界分页、字符串 ID/revision、权限与敏感读审计，详见 [API 契约](../development/template-catalog-api.md) |
 
 A3 验证：后端全量测试/Vet、API 边界及 MySQL HTTP 联调 Race、完整 MySQL 数据库回归、Swagger/格式/工作流/Compose、文档链接与 Docker API 构建通过。无 schema/前端变动，不声称 UI 或真实 Java CI 完成；部署版本与 PR 见总看板。
 
