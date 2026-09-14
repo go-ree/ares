@@ -113,8 +113,8 @@ func TestMySQL84Migrations(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertCompatibleStatus(t, status)
-		if got := harness.tableCount(t, databaseName); got != len(epoch8SemanticSchemaManifest.tables)+1 {
-			t.Fatalf("table count after migrate up = %d, want %d", got, len(epoch8SemanticSchemaManifest.tables)+1)
+		if got := harness.tableCount(t, databaseName); got != len(epoch9SemanticSchemaManifest.tables)+1 {
+			t.Fatalf("table count after migrate up = %d, want %d", got, len(epoch9SemanticSchemaManifest.tables)+1)
 		}
 
 		database := openIntegrationDatabase(t, dsn)
@@ -1947,8 +1947,8 @@ func TestMySQL84Migrations(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !before.Initialized || !before.NeedsAdoption || len(before.Applied) != 3 || len(before.Pending) != 5 {
-			t.Fatalf("legacy status = %+v, want three adopted candidates and five pending migrations", before)
+		if !before.Initialized || !before.NeedsAdoption || len(before.Applied) != 3 || len(before.Pending) != len(schemaMigrations)-3 {
+			t.Fatalf("legacy status = %+v, want three adopted candidates and %d pending migrations", before, len(schemaMigrations)-3)
 		}
 
 		status, err := MigrateUp(ctx, dsn, "", 45*time.Second, 10*time.Second)
@@ -3775,7 +3775,7 @@ func (h *mysqlIntegrationHarness) newRuntimeUser(t *testing.T, targetDSN, databa
 		"GRANT SELECT ON `%s`.* TO %s", grantPattern, account)); err != nil {
 		t.Fatal(err)
 	}
-	for _, tableName := range sortedStringKeys(epoch8SemanticSchemaManifest.tables) {
+	for _, tableName := range sortedStringKeys(epoch9SemanticSchemaManifest.tables) {
 		privileges := expectedRuntimeDMLPrivileges(tableName)
 		if privileges == "" {
 			continue

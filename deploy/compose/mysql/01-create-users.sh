@@ -990,6 +990,9 @@ GRANT UPDATE ON \`${MYSQL_DATABASE}\`.\`auth_bootstrap_state\` TO '${MYSQL_RUNTI
 GRANT INSERT ON \`${MYSQL_DATABASE}\`.\`audit_events\` TO '${MYSQL_RUNTIME_USER}'@'%';
 GRANT INSERT ON \`${MYSQL_DATABASE}\`.\`release_idempotency_records\` TO '${MYSQL_RUNTIME_USER}'@'%';
 GRANT INSERT ON \`${MYSQL_DATABASE}\`.\`release_idempotency_items\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`application_types\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT, UPDATE ON \`${MYSQL_DATABASE}\`.\`pipeline_templates\` TO '${MYSQL_RUNTIME_USER}'@'%';
+GRANT INSERT ON \`${MYSQL_DATABASE}\`.\`pipeline_template_versions\` TO '${MYSQL_RUNTIME_USER}'@'%';
 SQL
 fi
 

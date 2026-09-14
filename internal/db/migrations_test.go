@@ -23,6 +23,7 @@ func TestPublishedMigrationChecksumsAreStable(t *testing.T) {
 		6: "55fade2745e43396c5b7e031e225dc18d38d523627e2469feac9a362aa0ac3ed",
 		7: "c861661da96b99252a356c3d8c703760c8d6610af3c6e61384cebe293ba70582",
 		8: "3d96237a751e4399f427bb410ae88337161d59da74b12764dd375c36b5c5ae39",
+		9: "bba4a18269a5c75918a3d1731653280741d48fd0065ab7a3d0c594fdf9feffa0",
 	}
 	for _, migration := range schemaMigrations {
 		if got := migration.checksum(); got != want[migration.epoch] {
@@ -42,6 +43,7 @@ func TestPublishedMigrationImplementationFingerprintsAreStable(t *testing.T) {
 		6: {"idempotent_release_migration.go"},
 		7: {"worker_lease_migration.go"},
 		8: {"task_attempt_migration.go"},
+		9: {"pipeline_template_migration.go", "../pipelinetemplate/spec.go", "../canonicaljson/canonical.go"},
 	}
 	for _, migration := range schemaMigrations {
 		got := sourceFingerprint(t, filesByEpoch[migration.epoch])
@@ -265,7 +267,7 @@ func TestComposeRuntimeGrantsCoverManagedTablesWithLeastPrivilege(t *testing.T) 
 		t.Fatal(err)
 	}
 	content := string(script)
-	for _, tableName := range sortedStringKeys(epoch8SemanticSchemaManifest.tables) {
+	for _, tableName := range sortedStringKeys(epoch9SemanticSchemaManifest.tables) {
 		privilege := expectedRuntimeDMLPrivileges(tableName)
 		if privilege == "" {
 			needle := ".\\`" + tableName + "\\` TO '${MYSQL_RUNTIME_USER}'@'%'"
@@ -396,7 +398,7 @@ func expectedRuntimeDMLPrivileges(tableName string) string {
 	switch tableName {
 	case "pipelines", "pipelines_job_combination":
 		return ""
-	case "apps", "app_configs", "task_record", "env_configs", "integration_settings",
+	case "apps", "app_configs", "task_record", "env_configs", "integration_settings", "application_types", "pipeline_templates",
 		"release_workflows", "app_config_workflows", "task_step_records":
 		return "INSERT, UPDATE"
 	case "app_config_domains", "auth_sessions", "auth_oidc_flows":
@@ -405,7 +407,7 @@ func expectedRuntimeDMLPrivileges(tableName string) string {
 		return "INSERT, DELETE"
 	case "auth_users":
 		return "INSERT, UPDATE"
-	case "auth_identities", "audit_events", "dev_language_rules", "release_workflow_versions":
+	case "auth_identities", "audit_events", "dev_language_rules", "release_workflow_versions", "pipeline_template_versions":
 		return "INSERT"
 	case "release_idempotency_records", "release_idempotency_items":
 		return "INSERT"
