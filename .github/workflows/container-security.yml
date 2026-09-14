@@ -119,4 +119,4 @@ jobs:
           name: image-security-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
