@@ -71,11 +71,11 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { InfoFilled, Monitor, Setting, Share } from '@element-plus/icons-vue';
-import { getAppDetail } from '@/services/application';
-import { AppStatus, type AppInfo } from '@/models/application';
+import { getAppDetail } from '@shared/services/application';
+import { AppStatus, type AppInfo } from '@shared/models/application';
 import { useAuthStore } from '@/stores/auth';
-import { PERMISSIONS } from '@/types/auth';
-import { repositoryWebURL } from '@/utils/repository-url';
+import { PERMISSIONS } from '@shared/types/auth';
+import { repositoryWebURL } from '@shared/utils/repository-url';
 
 const props = defineProps<{
   appId: string | number;

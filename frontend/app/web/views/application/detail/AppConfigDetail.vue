@@ -443,7 +443,7 @@ import type {
   UpdateAppConfigRequest,
   WorkflowFailurePolicy,
   WorkflowSpec,
-} from '@/models/application';
+} from '@shared/models/application';
 import {
   createAppConfig,
   getAppConfigs,
@@ -453,11 +453,11 @@ import {
   getApplicationApiErrorMessage,
   getPipelineStepTypes,
   putAppConfigWorkflow,
-} from '@/services/application';
-import { normalizeLegacyNullableText } from '@/utils/legacy-nullable-text';
+} from '@shared/services/application';
+import { normalizeLegacyNullableText } from '@shared/utils/legacy-nullable-text';
 import { useEnvironments } from '@/composables/useEnvironments';
 import { useAuthStore } from '@/stores/auth';
-import { PERMISSIONS } from '@/types/auth';
+import { PERMISSIONS } from '@shared/types/auth';
 
 const route = useRoute();
 const authStore = useAuthStore();

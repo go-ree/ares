@@ -7,8 +7,8 @@ import App from './App.vue';
 import zhCn from 'element-plus/es/locale/lang/zh-cn';
 import router from './routes';
 import { useAuthStore } from './stores/auth';
-import { configureApiAuth } from './config/api';
-import { normalizeReturnTo } from './utils/return-to';
+import { configureApiAuth } from '@shared/config/api';
+import { normalizeReturnTo } from '@shared/utils/return-to';
 
 // Remove identity artifacts written by pre-session versions of the frontend.
 try {

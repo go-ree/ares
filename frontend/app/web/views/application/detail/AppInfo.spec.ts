@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import AppInfo from './AppInfo.vue';
 
 const api = vi.hoisted(() => ({ getAppDetail: vi.fn(), patchApp: vi.fn() }));
-vi.mock('@/services/application', () => api);
+vi.mock('@shared/services/application', () => api);
 vi.mock('vue-router', () => ({ useRoute: () => ({ params: { appId: '1' } }) }));
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ can: () => true }) }));
 

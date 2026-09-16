@@ -5,13 +5,13 @@ import {
   queryPublishLogs,
   taskStepLogStreamUrl,
   type LegacyTaskLogType,
-} from '@/services/deploy';
-import type { TaskRecord } from '@/models/deploy';
-import type { DeployingService, LogFilter, LogItem } from '@/types/deploy';
-import { normalizeLegacyNullableText } from '@/utils/legacy-nullable-text';
+} from '@shared/services/deploy';
+import type { TaskRecord } from '@shared/models/deploy';
+import type { DeployingService, LogFilter, LogItem } from '@shared/types/deploy';
+import { normalizeLegacyNullableText } from '@shared/utils/legacy-nullable-text';
 import { useEnvironments } from '@/composables/useEnvironments';
 import { useAuthStore } from '@/stores/auth';
-import { PERMISSIONS } from '@/types/auth';
+import { PERMISSIONS } from '@shared/types/auth';
 import {
   createFetchLogStreamTransport,
   createLegacyLogStreamTransport,
@@ -19,7 +19,7 @@ import {
   type LogStreamFailure,
   type LogStreamTransport,
   type LogStreamTransportFactory,
-} from '@/services/log-stream';
+} from '@shared/services/log-stream';
 
 const STREAM_ERROR_MESSAGES: Record<string, string> = {
   '404': '未找到日志信息',

@@ -1,6 +1,6 @@
 import { afterEach } from 'vitest';
 import { config } from '@vue/test-utils';
-import { resetApiAuth } from '@/config/api';
+import { resetApiAuth } from '@shared/config/api';
 
 class ResizeObserverStub implements ResizeObserver {
   observe() {}

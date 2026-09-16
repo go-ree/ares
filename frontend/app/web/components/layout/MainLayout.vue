@@ -228,9 +228,9 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { getPasswordChangeErrorMessage } from '@/services/auth';
+import { getPasswordChangeErrorMessage } from '@shared/services/auth';
 import { useAuthStore } from '@/stores/auth';
-import { PERMISSIONS } from '@/types/auth';
+import { PERMISSIONS } from '@shared/types/auth';
 import {
   ArrowDown,
   House,

@@ -25,10 +25,10 @@ import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import AppTable from '@/components/application/AppTable.vue';
 import AppAdvancedSearch from '@/components/application/AppAdvancedSearch.vue';
-import { queryApps } from '@/services/application';
-import type { AppInfo, AppQueryParams, PageResponse } from '@/models/application';
+import { queryApps } from '@shared/services/application';
+import type { AppInfo, AppQueryParams, PageResponse } from '@shared/models/application';
 import { useAuthStore } from '@/stores/auth';
-import { PERMISSIONS } from '@/types/auth';
+import { PERMISSIONS } from '@shared/types/auth';
 
 const router = useRouter();
 const authStore = useAuthStore();

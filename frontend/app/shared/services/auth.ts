@@ -1,5 +1,5 @@
 import axios from 'axios';
-import api from '@/config/api';
+import api from '@shared/config/api';
 import type {
   ApiEnvelope,
   AuthOptions,
@@ -7,8 +7,8 @@ import type {
   ChangePasswordRequest,
   LoginRequest,
   SessionSnapshot,
-} from '@/types/auth';
-import { normalizeReturnTo } from '@/utils/return-to';
+} from '@shared/types/auth';
+import { normalizeReturnTo } from '@shared/utils/return-to';
 
 const AUTH_BASE_URL = '/api/v1/auth';
 

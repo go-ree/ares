@@ -1,5 +1,5 @@
 import axios from 'axios';
-import api from '@/config/api';
+import api from '@shared/config/api';
 import type {
   BatchReleasePreflightResult,
   BatchReleaseRequest,
@@ -9,7 +9,7 @@ import type {
   ReleaseRequest,
   ReleaseTargetPage,
   ReleaseTargetQuery,
-} from '@/models/release';
+} from '@shared/models/release';
 
 const RELEASES_URL = '/api/v1/releases';
 const APP_CONFIGS_URL = '/api/v1/app-configs';

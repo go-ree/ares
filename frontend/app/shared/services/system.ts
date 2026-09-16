@@ -1,5 +1,5 @@
 import axios from 'axios';
-import api from '@/config/api';
+import api from '@shared/config/api';
 import type {
   IntegrationSettings,
   JenkinsIntegrationSettings,
@@ -7,7 +7,7 @@ import type {
   SystemApiResponse,
   UpdateJenkinsIntegrationRequest,
   UpdateKubernetesIntegrationRequest,
-} from '@/types/system';
+} from '@shared/types/system';
 
 const BASE_URL = '/api/v1/system/integrations';
 const DEFAULT_REQUEST_TIMEOUT_MS = 15000;

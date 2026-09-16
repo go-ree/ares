@@ -95,7 +95,7 @@ import {
   UploadFilled,
 } from '@element-plus/icons-vue';
 import { useAuthStore } from '@/stores/auth';
-import { PERMISSIONS } from '@/types/auth';
+import { PERMISSIONS } from '@shared/types/auth';
 
 const router = useRouter();
 const authStore = useAuthStore();

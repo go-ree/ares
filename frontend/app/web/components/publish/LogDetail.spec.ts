@@ -2,10 +2,10 @@ import { createPinia, setActivePinia } from 'pinia';
 import { flushPromises, mount } from '@vue/test-utils';
 import { defineComponent, h, inject, provide, type PropType } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TaskRecord, TaskStepRecord } from '@/models/deploy';
-import type { DeployingService } from '@/types/deploy';
+import type { TaskRecord, TaskStepRecord } from '@shared/models/deploy';
+import type { DeployingService } from '@shared/types/deploy';
 import { useAuthStore } from '@/stores/auth';
-import { PERMISSIONS } from '@/types/auth';
+import { PERMISSIONS } from '@shared/types/auth';
 import LogDetail from './LogDetail.vue';
 
 const context = vi.hoisted(() => ({
@@ -73,8 +73,8 @@ const TableColumnStub = defineComponent({
   },
 });
 
-vi.mock('@/services/deploy', async importOriginal => ({
-  ...(await importOriginal<typeof import('@/services/deploy')>()),
+vi.mock('@shared/services/deploy', async importOriginal => ({
+  ...(await importOriginal<typeof import('@shared/services/deploy')>()),
   getTaskDetail: context.getTaskDetail,
   getTaskAttempts: context.getTaskAttempts,
   retryTaskStep: context.retryTaskStep,

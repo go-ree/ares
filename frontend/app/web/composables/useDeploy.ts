@@ -1,8 +1,8 @@
 import { ref } from 'vue';
 import { ElMessage } from 'element-plus';
-import api from '@/config/api';
-import type { DeployingService, ServiceInfo } from '@/types/deploy';
-import { normalizeLegacyNullableText } from '@/utils/legacy-nullable-text';
+import api from '@shared/config/api';
+import type { DeployingService, ServiceInfo } from '@shared/types/deploy';
+import { normalizeLegacyNullableText } from '@shared/utils/legacy-nullable-text';
 import { useEnvironments } from '@/composables/useEnvironments';
 
 interface ActiveTaskStepSummary {

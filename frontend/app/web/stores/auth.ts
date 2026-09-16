@@ -8,7 +8,7 @@ import {
   getSession,
   login as loginRequest,
   logout as logoutRequest,
-} from '@/services/auth';
+} from '@shared/services/auth';
 import type {
   AuthOptions,
   AuthStatus,
@@ -18,7 +18,7 @@ import type {
   LoginRequest,
   Permission,
   SessionSnapshot,
-} from '@/types/auth';
+} from '@shared/types/auth';
 
 const isSessionSnapshot = (value: unknown): value is SessionSnapshot => {
   if (!value || typeof value !== 'object') return false;

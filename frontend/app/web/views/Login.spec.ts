@@ -33,7 +33,7 @@ vi.mock('@/stores/auth', () => ({
   }),
 }));
 
-vi.mock('@/services/auth', () => ({ oidcStartURL: context.oidcStartURL }));
+vi.mock('@shared/services/auth', () => ({ oidcStartURL: context.oidcStartURL }));
 
 const axiosError = (status: number, data: unknown) =>
   Object.assign(new Error('request failed'), {

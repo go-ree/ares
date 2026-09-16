@@ -4,11 +4,24 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./app/web/*"],
-      "@components/*": ["./app/web/components/*"],
-      "@assets/*": ["./app/web/assets/*"],
-      "@services/*": ["./app/web/services/*"],
-      "@utils/*": ["./app/web/utils/*"]
+      "@/*": [
+        "./app/web/*"
+      ],
+      "@shared/*": [
+        "./app/shared/*"
+      ],
+      "@components/*": [
+        "./app/web/components/*"
+      ],
+      "@assets/*": [
+        "./app/web/assets/*"
+      ],
+      "@services/*": [
+        "./app/shared/services/*"
+      ],
+      "@utils/*": [
+        "./app/shared/utils/*"
+      ]
     },
     "strict": true,
     "noUnusedLocals": true,
@@ -18,10 +31,13 @@
   },
   "include": [
     "src/**/*.ts",
-    "src/**/*.tsx",
     "src/**/*.vue",
     "app/**/*.ts",
-    "app/**/*.tsx",
     "app/**/*.vue"
+  ],
+  "exclude": [
+    "app/web-react",
+    "dist-react",
+    "node_modules"
   ]
 }

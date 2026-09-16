@@ -25,7 +25,7 @@ TRIVY_VERSION ?= v0.74.0
 GO_PACKAGES ?= . ./internal/...
 RACE_PACKAGES ?= ./internal/cli ./internal/config ./internal/db ./internal/workflow ./internal/executor/... ./internal/integration ./internal/job ./internal/jenkins ./internal/k8s ./internal/publish ./internal/environment ./internal/templatecatalog ./internal/pipelinebinding ./internal/api/...
 
-.PHONY: help all clean fmt-check mod-check test db-integration db-account-integration vet race vuln toolchain-check workflow-check backend-check frontend-install frontend-check frontend-audit swagger swagger-check compose-config build build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-windows-amd64 docker docker-build syft-version-check trivy-version-check sbom image-scan verify
+.PHONY: help all clean fmt-check mod-check test db-integration db-account-integration vet race vuln toolchain-check workflow-check backend-check frontend-install frontend-check frontend-check-react frontend-audit swagger swagger-check compose-config build build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-windows-amd64 docker docker-build syft-version-check trivy-version-check sbom image-scan verify
 
 help: ## 显示可用命令
 	@awk 'BEGIN {FS = ":.*## "; printf "Ares 开发命令\n\n"} /^[a-zA-Z0-9_.-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -138,6 +138,11 @@ frontend-check: ## 执行前端格式、Lint、类型、单元测试与构建检
 	$(NPM) --prefix frontend test
 	$(NPM) --prefix frontend run build
 
+frontend-check-react: ## 执行 React + Semi 栈的类型、单元测试与构建检查（ADR-0008）
+	$(NPM) --prefix frontend run type-check:react
+	$(NPM) --prefix frontend run test:react
+	$(NPM) --prefix frontend run build:react
+
 frontend-audit: ## 扫描全部前端依赖的 high/critical 漏洞
 	$(NPM) --prefix frontend audit --audit-level=high
 
@@ -214,4 +219,4 @@ sbom: syft-version-check ## 为已构建镜像生成 CycloneDX SBOM（需要 syf
 image-scan: trivy-version-check ## 扫描镜像中的 high/critical 漏洞（需要 trivy）
 	$(TRIVY) image --exit-code 1 --severity HIGH,CRITICAL "$(IMAGE)"
 
-verify: workflow-check backend-check frontend-check frontend-audit compose-config ## 执行合并前完整质量门禁
+verify: workflow-check backend-check frontend-check frontend-check-react frontend-audit compose-config ## 执行合并前完整质量门禁

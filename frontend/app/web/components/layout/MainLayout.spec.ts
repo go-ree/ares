@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils';
 import ElementPlus from 'element-plus';
 import { ref } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PERMISSIONS, type Permission } from '@/types/auth';
+import { PERMISSIONS, type Permission } from '@shared/types/auth';
 import MainLayout from './MainLayout.vue';
 
 const context = vi.hoisted(() => ({

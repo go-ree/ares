@@ -1,5 +1,5 @@
 import 'vue-router';
-import type { Permission } from '@/types/auth';
+import type { Permission } from '@shared/types/auth';
 
 declare module 'vue-router' {
   interface RouteMeta {

@@ -2,8 +2,8 @@ import { createRouter, createWebHistory } from 'vue-router';
 import type { RouteLocationNormalized, RouteRecordRaw } from 'vue-router';
 import MainLayout from '../components/layout/MainLayout.vue';
 import { useAuthStore } from '@/stores/auth';
-import { PERMISSIONS, type Permission } from '@/types/auth';
-import { normalizeReturnTo } from '@/utils/return-to';
+import { PERMISSIONS, type Permission } from '@shared/types/auth';
+import { normalizeReturnTo } from '@shared/utils/return-to';
 
 const routes: RouteRecordRaw[] = [
   {

@@ -62,10 +62,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
-import { getAppDetail } from '@/services/application';
-import type { AppInfo } from '@/models/application';
-import { AppStatus } from '@/models/application';
-import { repositoryWebURL } from '@/utils/repository-url';
+import { getAppDetail } from '@shared/services/application';
+import type { AppInfo } from '@shared/models/application';
+import { AppStatus } from '@shared/models/application';
+import { repositoryWebURL } from '@shared/utils/repository-url';
 
 const props = defineProps<{
   visible: boolean;

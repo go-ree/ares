@@ -1,4 +1,4 @@
-import api from '@/config/api';
+import api from '@shared/config/api';
 import type {
   ApiResponse,
   TaskRecord,
