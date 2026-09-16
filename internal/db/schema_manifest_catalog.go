@@ -175,14 +175,15 @@ updated_at|timestamp|NO|CURRENT_TIMESTAMP|on update current_timestamp|`,
 }
 
 var (
-	epoch1SemanticSchemaManifest semanticSchemaManifest
-	epoch2SemanticSchemaManifest semanticSchemaManifest
-	epoch3SemanticSchemaManifest semanticSchemaManifest
-	epoch5SemanticSchemaManifest semanticSchemaManifest
-	epoch6SemanticSchemaManifest semanticSchemaManifest
-	epoch7SemanticSchemaManifest semanticSchemaManifest
-	epoch8SemanticSchemaManifest semanticSchemaManifest
-	epoch9SemanticSchemaManifest semanticSchemaManifest
+	epoch1SemanticSchemaManifest  semanticSchemaManifest
+	epoch2SemanticSchemaManifest  semanticSchemaManifest
+	epoch3SemanticSchemaManifest  semanticSchemaManifest
+	epoch5SemanticSchemaManifest  semanticSchemaManifest
+	epoch6SemanticSchemaManifest  semanticSchemaManifest
+	epoch7SemanticSchemaManifest  semanticSchemaManifest
+	epoch8SemanticSchemaManifest  semanticSchemaManifest
+	epoch9SemanticSchemaManifest  semanticSchemaManifest
+	epoch10SemanticSchemaManifest semanticSchemaManifest
 )
 
 const (
@@ -197,15 +198,16 @@ const (
 // mutate the catalog accidentally. A new epoch must declare its complete set;
 // there is deliberately no implicit "latest" fallback.
 var epochDataContractCatalog = map[uint64][]string{
-	1: {canonicalTextValuesDataContractID},
-	2: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID},
-	3: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID},
-	4: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID},
-	5: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID},
-	6: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID, idempotentReleaseDataContractID},
-	7: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID, idempotentReleaseDataContractID, workerLeaseDataContractID},
-	8: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID, idempotentReleaseDataContractID, workerLeaseDataContractID, "task-attempts-v1"},
-	9: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID, idempotentReleaseDataContractID, workerLeaseDataContractID, "task-attempts-v1", "pipeline-templates-v1"},
+	1:  {canonicalTextValuesDataContractID},
+	2:  {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID},
+	3:  {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID},
+	4:  {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID},
+	5:  {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID},
+	6:  {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID, idempotentReleaseDataContractID},
+	7:  {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID, idempotentReleaseDataContractID, workerLeaseDataContractID},
+	8:  {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID, idempotentReleaseDataContractID, workerLeaseDataContractID, "task-attempts-v1"},
+	9:  {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID, idempotentReleaseDataContractID, workerLeaseDataContractID, "task-attempts-v1", "pipeline-templates-v1"},
+	10: {canonicalTextValuesDataContractID, normalizedEnvironmentCodesDataContractID, activeEnvironmentCatalogDataContractID, authBootstrapSingletonDataContractID, idempotentReleaseDataContractID, workerLeaseDataContractID, "task-attempts-v1", "pipeline-templates-v1", "ci-cd-bindings-v1"},
 }
 
 func epochDataContractIDs(epoch uint64) []string {
@@ -251,6 +253,10 @@ func (s *migrationSession) verifyEpochDataContracts(epoch uint64) error {
 			if err := s.verifyPipelineTemplateRows(); err != nil {
 				return err
 			}
+		case "ci-cd-bindings-v1":
+			if err := s.verifyPipelineBindingRows(); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("epoch %d declares unknown data contract %q", epoch, contractID)
 		}
@@ -283,6 +289,7 @@ func init() {
 	initializeEpoch7SemanticSchemaManifest()
 	initializeEpoch8SemanticSchemaManifest()
 	initializeEpoch9SemanticSchemaManifest()
+	initializeEpoch10SemanticSchemaManifest()
 }
 
 func publishedTableCollation(tableName string) string {

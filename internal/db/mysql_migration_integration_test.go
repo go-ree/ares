@@ -113,8 +113,8 @@ func TestMySQL84Migrations(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertCompatibleStatus(t, status)
-		if got := harness.tableCount(t, databaseName); got != len(epoch9SemanticSchemaManifest.tables)+1 {
-			t.Fatalf("table count after migrate up = %d, want %d", got, len(epoch9SemanticSchemaManifest.tables)+1)
+		if got := harness.tableCount(t, databaseName); got != len(epoch10SemanticSchemaManifest.tables)+1 {
+			t.Fatalf("table count after migrate up = %d, want %d", got, len(epoch10SemanticSchemaManifest.tables)+1)
 		}
 
 		database := openIntegrationDatabase(t, dsn)
@@ -1078,7 +1078,9 @@ func TestMySQL84Migrations(t *testing.T) {
 			statement string
 			want      string
 		}{
-			{name: "missing table", statement: "DROP TABLE apps", want: "apps"},
+			// Binding tables reference apps, so the drift probe drops the
+			// dependents first and still targets the same core table.
+			{name: "missing table", statement: "DROP TABLE application_ci_bindings, app_config_cd_bindings, apps", want: "apps"},
 			{name: "missing column", statement: "ALTER TABLE apps DROP COLUMN app_name_cn", want: "app_name_cn"},
 		} {
 			t.Run(test.name, func(t *testing.T) {
@@ -3775,9 +3777,33 @@ func (h *mysqlIntegrationHarness) newRuntimeUser(t *testing.T, targetDSN, databa
 		"GRANT SELECT ON `%s`.* TO %s", grantPattern, account)); err != nil {
 		t.Fatal(err)
 	}
-	for _, tableName := range sortedStringKeys(epoch9SemanticSchemaManifest.tables) {
+	// Tests that stop at an earlier epoch still use this helper, so grant only on
+	// tables the database already has.
+	present := make(map[string]struct{})
+	rows, err := h.admin.QueryContext(ctx,
+		"SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?", databaseName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		present[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		t.Fatal(err)
+	}
+	rows.Close()
+	for _, tableName := range sortedStringKeys(epoch10SemanticSchemaManifest.tables) {
 		privileges := expectedRuntimeDMLPrivileges(tableName)
 		if privileges == "" {
+			continue
+		}
+		if _, exists := present[tableName]; !exists {
 			continue
 		}
 		if _, err := h.admin.ExecContext(ctx, fmt.Sprintf(

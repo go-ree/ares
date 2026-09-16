@@ -15,15 +15,16 @@ import (
 
 func TestPublishedMigrationChecksumsAreStable(t *testing.T) {
 	want := map[uint64]string{
-		1: "adf55db01694dcc4fa6e5dda17b9196ae17b80496c58c914f86b994f2b1c117b",
-		2: "0d7e2a98c2981a9e3383b0003bdddb10b4e10a15ad8dc0aebf9ac14223ebfac5",
-		3: "f889da04714679e3cc304b82d9a26b6100f63e23569bd5a04f26d361ca279912",
-		4: "0301b14dea0c3dacf2260dcdfd28fa2da486a596308ae43ccfeec47cb5638e01",
-		5: "5fdb78c86cb338613d32e6e05c9ad38e652ba30fe83bf02564d0e110574aef0a",
-		6: "55fade2745e43396c5b7e031e225dc18d38d523627e2469feac9a362aa0ac3ed",
-		7: "c861661da96b99252a356c3d8c703760c8d6610af3c6e61384cebe293ba70582",
-		8: "3d96237a751e4399f427bb410ae88337161d59da74b12764dd375c36b5c5ae39",
-		9: "bba4a18269a5c75918a3d1731653280741d48fd0065ab7a3d0c594fdf9feffa0",
+		1:  "adf55db01694dcc4fa6e5dda17b9196ae17b80496c58c914f86b994f2b1c117b",
+		2:  "0d7e2a98c2981a9e3383b0003bdddb10b4e10a15ad8dc0aebf9ac14223ebfac5",
+		3:  "f889da04714679e3cc304b82d9a26b6100f63e23569bd5a04f26d361ca279912",
+		4:  "0301b14dea0c3dacf2260dcdfd28fa2da486a596308ae43ccfeec47cb5638e01",
+		5:  "5fdb78c86cb338613d32e6e05c9ad38e652ba30fe83bf02564d0e110574aef0a",
+		6:  "55fade2745e43396c5b7e031e225dc18d38d523627e2469feac9a362aa0ac3ed",
+		7:  "c861661da96b99252a356c3d8c703760c8d6610af3c6e61384cebe293ba70582",
+		8:  "3d96237a751e4399f427bb410ae88337161d59da74b12764dd375c36b5c5ae39",
+		9:  "bba4a18269a5c75918a3d1731653280741d48fd0065ab7a3d0c594fdf9feffa0",
+		10: "6562377d10d1be4972adead36cabc8fd31985e7721ca77bbedca8b702959f192",
 	}
 	for _, migration := range schemaMigrations {
 		if got := migration.checksum(); got != want[migration.epoch] {
@@ -35,15 +36,16 @@ func TestPublishedMigrationChecksumsAreStable(t *testing.T) {
 
 func TestPublishedMigrationImplementationFingerprintsAreStable(t *testing.T) {
 	filesByEpoch := map[uint64][]string{
-		1: {"null_string_migration.go", "../tool/nullable_text.go"},
-		2: {"null_string_migration.go", "../tool/nullable_text.go", "pluggable_cicd_migration.go"},
-		3: {"null_string_migration.go", "../tool/nullable_text.go", "pluggable_cicd_migration.go", "cicd_runtime_hardening_migration.go"},
-		4: {"null_string_migration.go", "../tool/nullable_text.go", "pluggable_cicd_migration.go", "versioned_schema_migration.go"},
-		5: {"pluggable_cicd_migration.go", "auth_rbac_migration.go", "../canonicaljson/canonical.go"},
-		6: {"idempotent_release_migration.go"},
-		7: {"worker_lease_migration.go"},
-		8: {"task_attempt_migration.go"},
-		9: {"pipeline_template_migration.go", "../pipelinetemplate/spec.go", "../canonicaljson/canonical.go"},
+		1:  {"null_string_migration.go", "../tool/nullable_text.go"},
+		2:  {"null_string_migration.go", "../tool/nullable_text.go", "pluggable_cicd_migration.go"},
+		3:  {"null_string_migration.go", "../tool/nullable_text.go", "pluggable_cicd_migration.go", "cicd_runtime_hardening_migration.go"},
+		4:  {"null_string_migration.go", "../tool/nullable_text.go", "pluggable_cicd_migration.go", "versioned_schema_migration.go"},
+		5:  {"pluggable_cicd_migration.go", "auth_rbac_migration.go", "../canonicaljson/canonical.go"},
+		6:  {"idempotent_release_migration.go"},
+		7:  {"worker_lease_migration.go"},
+		8:  {"task_attempt_migration.go"},
+		9:  {"pipeline_template_migration.go", "../pipelinetemplate/spec.go", "../canonicaljson/canonical.go"},
+		10: {"pipeline_binding_migration.go"},
 	}
 	for _, migration := range schemaMigrations {
 		got := sourceFingerprint(t, filesByEpoch[migration.epoch])
@@ -267,7 +269,7 @@ func TestComposeRuntimeGrantsCoverManagedTablesWithLeastPrivilege(t *testing.T) 
 		t.Fatal(err)
 	}
 	content := string(script)
-	for _, tableName := range sortedStringKeys(epoch9SemanticSchemaManifest.tables) {
+	for _, tableName := range sortedStringKeys(epoch10SemanticSchemaManifest.tables) {
 		privilege := expectedRuntimeDMLPrivileges(tableName)
 		if privilege == "" {
 			needle := ".\\`" + tableName + "\\` TO '${MYSQL_RUNTIME_USER}'@'%'"
@@ -399,7 +401,7 @@ func expectedRuntimeDMLPrivileges(tableName string) string {
 	case "pipelines", "pipelines_job_combination":
 		return ""
 	case "apps", "app_configs", "task_record", "env_configs", "integration_settings", "application_types", "pipeline_templates",
-		"release_workflows", "app_config_workflows", "task_step_records":
+		"release_workflows", "app_config_workflows", "task_step_records", "application_ci_bindings", "app_config_cd_bindings":
 		return "INSERT, UPDATE"
 	case "app_config_domains", "auth_sessions", "auth_oidc_flows":
 		return "INSERT, UPDATE, DELETE"

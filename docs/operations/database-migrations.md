@@ -101,7 +101,12 @@ PR #6 及更早的 Compose 使用 `MYSQL_USER` 作为应用账号，MySQL 首次
 - 当前应用 epoch 位于数据库兼容区间内；
 - Ares 专用 schema 的基础表/视图集合、每个受管列的完整定义、CHECK、索引语义、外键语义、字符集和排序规则符合对应 epoch 的完整 schema manifest；Ares 指向外部 schema 或外部 schema 子表反向引用 Ares 受管表/ledger 的外键均不允许；epoch 2 起还校验活动环境代码，并要求每条未删除 AppConfig 的环境都能精确对应一个未删除的环境目录项，后续 epoch 显式继承这些仍有效的数据约束。
 
-当前应用 schema 为 epoch 8，兼容区间是 `[8,8]`，完整 manifest 管理 23 张表。epoch 8 的 `20260911_001_task_attempts` 新增 `task_step_attempts` 和步骤重试策略/到期时间列。此前 epoch 6 的迁移
+当前应用 schema 为 epoch 10，兼容区间是 `[10,10]`，完整 manifest 管理 28 张表。epoch 10 的
+`20260916_001_pipeline_bindings` 新增 `application_ci_bindings` 与 `app_config_cd_bindings`
+两张固定版本绑定表，见[绑定存储契约](../development/binding-storage.md)；epoch 9 的
+`20260911_002_pipeline_templates` 新增 `application_types`、`pipeline_templates`、
+`pipeline_template_versions` 并写入 Java/Python 种子。epoch 8 的 `20260911_001_task_attempts`
+新增 `task_step_attempts` 和步骤重试策略/到期时间列。此前 epoch 6 的迁移
 `20260907_001_idempotent_releases` 为 `task_record` 增加可空的 `app_config_id` 与索引，并新增
 `release_idempotency_records`、`release_idempotency_items`；epoch 7 的迁移
 `20260908_001_worker_leases` 在不新增表的情况下为任务增加 `next_poll_at`、`lease_owner`、
