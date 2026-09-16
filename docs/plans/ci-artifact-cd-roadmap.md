@@ -158,6 +158,7 @@ D 的实现栈由 [ADR-0008](../architecture/decisions/0008-frontend-react-semi-
 - 产物对比：React semi chunk 1004 kB JS + 720 kB CSS，Vue element-plus chunk 1021 kB JS + 361 kB CSS；量级相当，CSS 约为两倍，按组件引入列为可选优化。
 - 生产入口未切换，Vue 栈继续对外服务，预览不重启。
 - 质量复核补充：独立 React 开发入口现支持 SPA 刷新和可用的认证代理；loader 守卫改为显式 `REPLACE`，数据加载通过同一 loader 在权限通过后执行；菜单分类不因自身没有页面路由而禁用；认证选项请求在 StrictMode 下单飞。ADR 同步修正旧页面删除时机。
+- 评审状态：[PR #64](https://github.com/go-ree/ares/pull/64) head `77a2a89`，8 项云端检查全部成功，未自动合并。React 独立预览为 [localhost:8081/login](http://localhost:8081/login)；生产 Vue/Docker 预览保持 `05f06ce` / epoch 10 healthy，无数据库或持久数据改动。
 
 ### B2 验证与预览记录
 
