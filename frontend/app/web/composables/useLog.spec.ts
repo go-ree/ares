@@ -13,17 +13,17 @@ import {
   useLog,
   type StepTaskLogTarget,
 } from './useLog';
-import type { TaskRecord, TaskStepRecord } from '@/models/deploy';
-import type { DeployingService } from '@/types/deploy';
+import type { TaskRecord, TaskStepRecord } from '@shared/models/deploy';
+import type { DeployingService } from '@shared/types/deploy';
 import { useAuthStore } from '@/stores/auth';
-import { PERMISSIONS } from '@/types/auth';
-import type { ApiEnvelope, SessionSnapshot } from '@/types/auth';
-import api from '@/config/api';
+import { PERMISSIONS } from '@shared/types/auth';
+import type { ApiEnvelope, SessionSnapshot } from '@shared/types/auth';
+import api from '@shared/config/api';
 import type {
   LogStreamFailure,
   LogStreamTransport,
   LogStreamTransportFactory,
-} from '@/services/log-stream';
+} from '@shared/services/log-stream';
 
 class FakeEventSource extends EventTarget {
   static readonly CONNECTING = 0;

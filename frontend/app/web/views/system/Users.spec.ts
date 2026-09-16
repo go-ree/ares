@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import ElementPlus, { ElMessage, ElMessageBox } from 'element-plus';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PERMISSIONS, type ManagedUser, type Permission } from '@/types/auth';
+import { PERMISSIONS, type ManagedUser, type Permission } from '@shared/types/auth';
 import Users from './Users.vue';
 
 const context = vi.hoisted(() => ({
@@ -25,7 +25,7 @@ vi.mock('@/stores/auth', () => ({
   }),
 }));
 
-vi.mock('@/services/users', () => ({
+vi.mock('@shared/services/users', () => ({
   listUsers: context.listUsers,
   updateUser: context.updateUser,
   getUserApiError: (error: { status?: number; message?: string }) => ({

@@ -104,7 +104,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRouter } from 'vue-router';
-import { getUserApiError, listUsers, updateUser } from '@/services/users';
+import { getUserApiError, listUsers, updateUser } from '@shared/services/users';
 import { useAuthStore } from '@/stores/auth';
 import {
   PERMISSIONS,
@@ -112,7 +112,7 @@ import {
   type BuiltInRole,
   type ManagedUser,
   type UpdateManagedUserRequest,
-} from '@/types/auth';
+} from '@shared/types/auth';
 
 const PAGE_SIZE = 100;
 const roleOptions: Array<{ value: BuiltInRole; label: string }> = [

@@ -4,13 +4,13 @@ import {
   FrozenReleaseActorError,
   useReleaseComposer as createReleaseComposer,
 } from './useReleaseComposer';
-import { AmbiguousReleaseResponseError } from '@/services/releases';
+import { AmbiguousReleaseResponseError } from '@shared/services/releases';
 import type {
   BatchReleaseRequest,
   ReleaseReceipt,
   ReleaseTarget,
   ReleaseTargetPage,
-} from '@/models/release';
+} from '@shared/models/release';
 
 const target = (configId = 7, env = 'staging'): ReleaseTarget => ({
   config_id: configId,

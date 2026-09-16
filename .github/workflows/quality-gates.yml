@@ -207,7 +207,7 @@ jobs:
         run: make frontend-install
 
       - name: 检查与构建前端
-        run: make frontend-check
+        run: make frontend-check frontend-check-react
 
       - name: 审计完整依赖树
         run: make frontend-audit

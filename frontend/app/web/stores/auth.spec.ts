@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
-import * as authService from '@/services/auth';
+import * as authService from '@shared/services/auth';
 import { useAuthStore } from './auth';
-import { PERMISSIONS, type SessionSnapshot } from '@/types/auth';
+import { PERMISSIONS, type SessionSnapshot } from '@shared/types/auth';
 
-vi.mock('@/services/auth', () => ({
+vi.mock('@shared/services/auth', () => ({
   getAuthOptions: vi.fn(),
   getSession: vi.fn(),
   login: vi.fn(),

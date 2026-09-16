@@ -177,9 +177,9 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import { useAuthStore } from '@/stores/auth';
-import { oidcStartURL } from '@/services/auth';
-import type { ApiEnvelope } from '@/types/auth';
-import { normalizeReturnTo } from '@/utils/return-to';
+import { oidcStartURL } from '@shared/services/auth';
+import type { ApiEnvelope } from '@shared/types/auth';
+import { normalizeReturnTo } from '@shared/utils/return-to';
 
 const route = useRoute();
 const router = useRouter();

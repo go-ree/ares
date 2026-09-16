@@ -119,11 +119,11 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus';
-import type { AppInfo, PatchAppRequest } from '@/models/application';
-import { getAppDetail, patchApp } from '@/services/application';
-import { normalizeLegacyNullableText } from '@/utils/legacy-nullable-text';
+import type { AppInfo, PatchAppRequest } from '@shared/models/application';
+import { getAppDetail, patchApp } from '@shared/services/application';
+import { normalizeLegacyNullableText } from '@shared/utils/legacy-nullable-text';
 import { useAuthStore } from '@/stores/auth';
-import { PERMISSIONS } from '@/types/auth';
+import { PERMISSIONS } from '@shared/types/auth';
 
 const route = useRoute();
 const authStore = useAuthStore();

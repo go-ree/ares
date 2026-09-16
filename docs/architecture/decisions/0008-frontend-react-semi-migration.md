@@ -43,6 +43,19 @@
 
 **W11-D 的新页面直接在 React + Semi 上写，不等迁移完成。** 其 `services/`、`types/`、`models/` 是纯 TS，B0 之前就可以写；组件在 B0/B1 之后写，避免新页面按旧壳结构落地再返工。这与[W11 实施计划](../../plans/ci-artifact-cd-roadmap.md)的 D 阶段范围不冲突：D 的范围仍是"新模型页面与联调"，本 ADR 只决定它构建在哪套栈上。
 
+### 2.3 B0 落地时实测到的集成约束
+
+以下为 2026-09-16 在 B0 骨架中实测确认的事实（非推断），后续批次必须遵守：
+
+1. **React 19 必须引入适配器**：使用任何 Semi 组件前要先 `import '@douyinfe/semi-ui-19/react19-adapter'`，它把 `createRoot` 注入 Semi 全局配置，否则 Toast/Modal 等命令式弹层在 React 19 下无法挂载。React 版本对应关系：React 19 用 `@douyinfe/semi-ui-19`（peer `react ^19.0.0`），React <19 用 `@douyinfe/semi-ui`。
+2. **官方文档的样式路径不可用**：`@douyinfe/semi-ui-19/dist/css/semi.min.css` 无法解析——该包的 `exports` 只暴露 `lib/**`，没有 `./dist/*`（普通包 `@douyinfe/semi-ui` 同样如此），Vite 8 会直接构建失败。因此 React 侧配置把该 specifier 别名到真实文件，而不是用脆弱的相对路径进 `node_modules`。
+3. **locale 路径**是 `@douyinfe/semi-ui-19/lib/es/locale/source/zh_CN`。
+4. **不能继承 Vue 的 tsconfig 基类**：`@vue/tsconfig` 设置了 `jsxImportSource: "vue"`，继承它会让每个 `.tsx` 编译成 Vue vnode，React 渲染时报 `Objects are not valid as a React child`。React 栈使用自包含 tsconfig（`app/web-react/tsconfig.json`），不 extends Vue 预设；两条栈的 type-check 范围互相排除。
+5. **Semi 入口会拉入 `lottie-web`**：它在模块作用域构造 2D canvas 上下文（jsdom 需要桩，否则任何引入 Semi 组件的测试都在加载阶段失败），并使用直接 `eval`。当前 CSP 只有 `frame-ancestors 'none'`，不冲突；但后续若收紧 `script-src` 且不含 `unsafe-eval`，需要改为按组件深路径引入或排除插画组件。
+6. **`redirect()` 没有 `replace` 选项**（签名是 `(url, init?: number | ResponseInit)`）：data router 的 loader 重定向本身就替换历史记录，等价于 Vue 守卫的 `replace: true`。
+7. **实测规模与复用比例**：共享层搬迁（`services/config/utils/models/types` → `app/shared/`）后，Vue 栈仍是 21 个 spec / 198 个测试全绿；21 个 spec 中确实只有 6 个依赖 `@vue/test-utils`，与 ADR 的拆分一致。React 项目新增 17 个测试（认证 store 7 + 路由守卫 10）。
+8. **产物体积**：React 栈首次构建为 semi 167 kB（gzip 48 kB）+ 样式 677 kB（gzip 77 kB）+ react 312 kB（gzip 98 kB）。样式体积主要来自整包引入，B1 应评估按组件引入。
+
 ## 3. 不采用的方案
 
 - **社区 Vue 3 移植版 `@kousum/semi-ui-vue`**：改动最小，但单人维护、2025-04 后停更、比官方落后约 25 个 minor、无 Vue 文档站；把长期 UI 基建押在停更的移植版上，风险高于换框架。另一候选 `semi-design-vue3` 首发版本且无任何采用证据，不用于生产。

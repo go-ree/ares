@@ -136,7 +136,7 @@ import { useLog } from '@/composables/useLog';
 import { useDeploy } from '@/composables/useDeploy';
 import { ElMessage } from 'element-plus';
 import { useEnvironments } from '@/composables/useEnvironments';
-import type { LogItem } from '@/types/deploy';
+import type { LogItem } from '@shared/types/deploy';
 
 // 定义props
 interface Props {

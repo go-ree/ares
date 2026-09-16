@@ -5,7 +5,7 @@ import {
   isAmbiguousReleaseError,
   isPositiveInt64String,
   preflightBatchRelease,
-} from '@/services/releases';
+} from '@shared/services/releases';
 import type {
   BatchReleasePreflightResult,
   BatchReleaseRequest,
@@ -13,7 +13,7 @@ import type {
   ReleaseReceipt,
   ReleaseTarget,
   ReleaseTargetPage,
-} from '@/models/release';
+} from '@shared/models/release';
 
 export interface ReleaseInputRow {
   key: string;

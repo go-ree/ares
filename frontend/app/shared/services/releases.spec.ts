@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AxiosError, AxiosHeaders } from 'axios';
 import MockAdapter from 'axios-mock-adapter';
-import api, { configureApiAuth, resetApiAuth } from '@/config/api';
+import api, { configureApiAuth, resetApiAuth } from '@shared/config/api';
 import {
   AmbiguousReleaseResponseError,
   createBatchRelease,
@@ -12,7 +12,7 @@ import {
   preflightBatchRelease,
   preflightRelease,
 } from './releases';
-import type { BatchReleaseRequest } from '@/models/release';
+import type { BatchReleaseRequest } from '@shared/models/release';
 
 const success = <T>(result: T) => ({ code: 1, message: 'ok', result, error: null });
 

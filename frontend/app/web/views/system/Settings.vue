@@ -431,14 +431,14 @@ import {
   getSystemApiErrorMessage,
   updateJenkinsIntegration,
   updateKubernetesIntegration,
-} from '@/services/system';
+} from '@shared/services/system';
 import {
   createSystemEnvironment,
   getEnvironmentApiErrorMessage,
   getSystemEnvironments,
   updateSystemEnvironment,
-} from '@/services/environment';
-import type { EnvironmentCatalogItem } from '@/models/application';
+} from '@shared/services/environment';
+import type { EnvironmentCatalogItem } from '@shared/models/application';
 import type {
   JenkinsIntegrationSettings,
   KubernetesClusterSettings,
@@ -446,10 +446,10 @@ import type {
   KubernetesIntegrationSettings,
   UpdateJenkinsIntegrationRequest,
   UpdateKubernetesClusterRequest,
-} from '@/types/system';
+} from '@shared/types/system';
 import { useEnvironments } from '@/composables/useEnvironments';
 import { useAuthStore } from '@/stores/auth';
-import { PERMISSIONS } from '@/types/auth';
+import { PERMISSIONS } from '@shared/types/auth';
 
 interface JenkinsFormState {
   enabled: boolean;

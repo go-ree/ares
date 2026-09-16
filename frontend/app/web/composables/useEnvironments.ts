@@ -1,6 +1,6 @@
 import { computed, readonly, ref } from 'vue';
-import { getEnvironments } from '@/services/environment';
-import type { AppEnv, EnvironmentCatalogItem } from '@/models/application';
+import { getEnvironments } from '@shared/services/environment';
+import type { AppEnv, EnvironmentCatalogItem } from '@shared/models/application';
 
 const environments = ref<EnvironmentCatalogItem[]>([]);
 const loading = ref(false);

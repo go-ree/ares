@@ -310,8 +310,8 @@ import {
   useReleaseComposer,
 } from '@/composables/useReleaseComposer';
 import { useFrozenReleaseNavigationGuard } from '@/composables/useFrozenReleaseNavigationGuard';
-import { getReleaseApiErrorMessage, getReleaseRetryAfterSeconds } from '@/services/releases';
-import type { ReleaseStepSummary, ReleaseTarget } from '@/models/release';
+import { getReleaseApiErrorMessage, getReleaseRetryAfterSeconds } from '@shared/services/releases';
+import type { ReleaseStepSummary, ReleaseTarget } from '@shared/models/release';
 import { useAuthStore } from '@/stores/auth';
 
 interface Props {

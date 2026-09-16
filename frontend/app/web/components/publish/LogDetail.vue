@@ -246,11 +246,11 @@
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { Loading } from '@element-plus/icons-vue';
 import { taskLogTargetKey, taskLogTargets, useLog, type TaskLogTarget } from '@/composables/useLog';
-import type { TaskRecord, TaskStepRecord, TaskAttempt } from '@/models/deploy';
-import type { DeployingService } from '@/types/deploy';
-import { getTaskDetail, getTaskAttempts, retryTaskStep } from '@/services/deploy';
+import type { TaskRecord, TaskStepRecord, TaskAttempt } from '@shared/models/deploy';
+import type { DeployingService } from '@shared/types/deploy';
+import { getTaskDetail, getTaskAttempts, retryTaskStep } from '@shared/services/deploy';
 import { useAuthStore } from '@/stores/auth';
-import { PERMISSIONS } from '@/types/auth';
+import { PERMISSIONS } from '@shared/types/auth';
 
 interface Props {
   visible: boolean;

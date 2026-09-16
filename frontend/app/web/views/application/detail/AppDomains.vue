@@ -141,16 +141,16 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import type { AppConfig, AppEnv, DomainItem } from '@/models/application';
+import type { AppConfig, AppEnv, DomainItem } from '@shared/models/application';
 import {
   createAppConfig,
   getAppConfigDomains,
   getAppConfigs,
   upsertAppConfigDomains,
-} from '@/services/application';
+} from '@shared/services/application';
 import { useEnvironments } from '@/composables/useEnvironments';
 import { useAuthStore } from '@/stores/auth';
-import { PERMISSIONS } from '@/types/auth';
+import { PERMISSIONS } from '@shared/types/auth';
 
 const route = useRoute();
 const authStore = useAuthStore();

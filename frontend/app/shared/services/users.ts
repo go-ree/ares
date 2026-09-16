@@ -1,11 +1,11 @@
 import axios from 'axios';
-import api from '@/config/api';
+import api from '@shared/config/api';
 import type {
   ApiEnvelope,
   ManagedUser,
   ManagedUserList,
   UpdateManagedUserRequest,
-} from '@/types/auth';
+} from '@shared/types/auth';
 
 const USERS_BASE_URL = '/api/v1/system/users';
 

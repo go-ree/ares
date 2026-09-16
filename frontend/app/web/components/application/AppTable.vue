@@ -46,7 +46,7 @@
 </template>
 
 <script setup lang="ts">
-import type { AppInfo } from '@/models/application';
+import type { AppInfo } from '@shared/models/application';
 import { ref, onMounted, onUnmounted } from 'vue';
 
 // 定义props

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import MockAdapter from 'axios-mock-adapter';
 import type { AxiosHeaders } from 'axios';
-import api, { configureApiAuth } from '@/config/api';
+import api, { configureApiAuth } from '@shared/config/api';
 import { getUserApiError, listUsers, updateUser } from './users';
 
 describe('users service', () => {

@@ -1,17 +1,18 @@
 {
   "extends": "@vue/tsconfig/tsconfig.dom.json",
   "include": ["env.d.ts", "src/**/*", "src/**/*.vue", "app/**/*", "app/**/*.vue", "config/**/*"],
-  "exclude": ["src/**/__tests__/*", "dist", "node_modules"],
+  "exclude": ["src/**/__tests__/*", "dist", "dist-react", "node_modules", "app/web-react"],
   "compilerOptions": {
     "composite": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "baseUrl": ".",
     "paths": {
       "@/*": ["app/web/*"],
+      "@shared/*": ["app/shared/*"],
       "@components/*": ["app/web/components/*"],
       "@assets/*": ["app/web/assets/*"],
-      "@services/*": ["app/web/services/*"],
-      "@utils/*": ["app/web/utils/*"]
+      "@services/*": ["app/shared/services/*"],
+      "@utils/*": ["app/shared/utils/*"]
     },
 
     // 适中的类型检查 - 保持实用性

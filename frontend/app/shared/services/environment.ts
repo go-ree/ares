@@ -1,6 +1,6 @@
 import axios from 'axios';
-import api from '@/config/api';
-import type { ApiResponse, EnvironmentCatalogItem } from '@/models/application';
+import api from '@shared/config/api';
+import type { ApiResponse, EnvironmentCatalogItem } from '@shared/models/application';
 
 const BASE_URL = '/api/v1/environments';
 const SYSTEM_BASE_URL = '/api/v1/system/environments';

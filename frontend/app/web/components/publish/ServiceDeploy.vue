@@ -41,9 +41,9 @@ import DeployTool from './DeployTool.vue';
 import DeployingList from './DeployingList.vue';
 import LogQuery from './LogQuery.vue';
 import LogDetail from './LogDetail.vue';
-import type { DeployingService, LogItem } from '@/types/deploy';
+import type { DeployingService, LogItem } from '@shared/types/deploy';
 import { useAuthStore } from '@/stores/auth';
-import { PERMISSIONS } from '@/types/auth';
+import { PERMISSIONS } from '@shared/types/auth';
 
 // 当前激活的标签页
 const authStore = useAuthStore();

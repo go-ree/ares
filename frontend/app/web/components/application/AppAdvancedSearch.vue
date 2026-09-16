@@ -65,8 +65,8 @@
 
 <script setup lang="ts">
 import { reactive } from 'vue';
-import type { AppQueryParams } from '@/models/application';
-import { DevLanguage, AppStatus } from '@/models/application';
+import type { AppQueryParams } from '@shared/models/application';
+import { DevLanguage, AppStatus } from '@shared/models/application';
 
 // 定义搜索表单数据
 const searchForm = reactive<Partial<AppQueryParams & { app_id?: number }>>({

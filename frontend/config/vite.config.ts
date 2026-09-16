@@ -280,10 +280,11 @@ export default defineConfig(({ command, mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname, '../app/web'),
+        '@shared': path.resolve(import.meta.dirname, '../app/shared'),
         '@components': path.resolve(import.meta.dirname, '../app/web/components'),
         '@assets': path.resolve(import.meta.dirname, '../app/web/assets'),
-        '@services': path.resolve(import.meta.dirname, '../app/web/services'),
-        '@utils': path.resolve(import.meta.dirname, '../app/web/utils'),
+        '@services': path.resolve(import.meta.dirname, '../app/shared/services'),
+        '@utils': path.resolve(import.meta.dirname, '../app/shared/utils'),
       },
     },
     build: {

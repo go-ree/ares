@@ -2,10 +2,10 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import router from './index';
 import { useAuthStore } from '@/stores/auth';
-import * as authService from '@/services/auth';
-import { PERMISSIONS, type Permission, type SessionSnapshot } from '@/types/auth';
+import * as authService from '@shared/services/auth';
+import { PERMISSIONS, type Permission, type SessionSnapshot } from '@shared/types/auth';
 
-vi.mock('@/services/auth', () => ({
+vi.mock('@shared/services/auth', () => ({
   getAuthOptions: vi.fn(),
   getSession: vi.fn(),
   login: vi.fn(),
