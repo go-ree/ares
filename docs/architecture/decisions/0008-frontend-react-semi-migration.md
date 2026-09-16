@@ -4,6 +4,8 @@
 
 2026-09-16 提出，**待评审**（本 ADR 合并前不构成已生效决策）。迁移方向由维护者确定：前端后续使用 Semi Design 开发。本文固定路径、批次与门禁；具体迁移实现按批次分别提交中文 PR。
 
+同日维护者进一步决定：**本迁移为当前最高优先级，全速推进；W11-B3 独立运行上下文与 W11-C 产物能力暂缓**，待迁移完成后按原验收门禁恢复。顺序调整已先写入[总进度看板](../../plans/open-source-production-roadmap.md)与[W11 实施计划](../../plans/ci-artifact-cd-roadmap.md)。
+
 触发原因是一个无法回避的约束：**Semi Design 没有官方 Vue 版本**。官方组件库只有 React 版 `@douyinfe/semi-ui`（React 19 用 `@douyinfe/semi-ui-19`），官方 FAQ 明确"暂无计划"提供其它技术栈，生态页也未收录 Vue 方案。因此"改用 Semi"等价于"前端换框架"，不是一个纯组件库替换。
 
 当前前端（`frontend/`）的事实，用于评估工作量：
@@ -17,10 +19,10 @@
 
 ## 2. 采用的方案
 
-1. **框架与组件库**：React 18/19 + `@douyinfe/semi-ui` + `@douyinfe/semi-icons`，主题与暗黑沿用 Semi 的 Design Token 与 `theme-mode`（`document.body.setAttribute('theme-mode','dark')`）。
+1. **框架与组件库**：React 19 + `@douyinfe/semi-ui-19`（该包 peer 为 `react ^19.0.0`；`@douyinfe/semi-ui` 面向 React <19）+ `@douyinfe/semi-icons`，主题与暗黑沿用 Semi 的 Design Token 与 `theme-mode`（`document.body.setAttribute('theme-mode','dark')`）。
 2. **不做运行时双框架共存**。新栈在 `frontend/app/web-react/` 平行开发，验收时用第二入口和 `/next` 前缀访问，对外不可见；全部页面完成后**只改 `frontend/index.html` 的一行入口**完成切换，Dockerfile 与 nginx 不动。理由是三条硬约束：认证是模块单例（`configureApiAuth` + `watch(status)` 的全局 401 跳转）、页面直接依赖 Pinia 与 `onBeforeRouteLeave` 的冻结发布守卫、nginx 是单 root + SPA fallback；跨 SPA 边界会丢内存态（发布页的 SSE 与冻结提交当场失效），要保住就得维护两套等价逻辑，代价高于一次性切换。
 3. **状态与数据层**：认证用 Zustand（vanilla store + `useStore`，可在 React 之外读写，与 Pinia 能力对齐），`stores/auth.ts` 的会话世代号、过期定时器、401/403 分支机械平移。`services/`、`config/api.ts`、`utils/`、`models/`、`types/` 是纯 TS，**零改动复用**（含 CSRF 拦截器）。composables 先做无框架抽取（`boundLogText`/`log-stream` 分帧传输/`useReleaseComposer` 状态机/`calculateTaskProgress` 与其 spec 原样保留），再补 React 外壳；`useFrozenReleaseNavigationGuard` 改为 `useBlocker`。不引入 Redux Toolkit；TanStack Query 只用于 W11-D 的新列表页。
-4. **路由**：react-router v7 data router（`createBrowserRouter`），把 `router.beforeEach` 拆成 loader——根 loader 做 `ensureSession` + `requiresAuth`，子 loader 做 `requiredPermissions` 并跳 `/forbidden`。`normalizeReturnTo` 的防开放重定向逻辑与 `publicOnly` 行为原样保留。
+4. **路由**：react-router **v7**（`7.18.4`，`createBrowserRouter` data router；v8 在提出时仅有 9 个发布，作为基础设施先钉成熟大版本），把 `router.beforeEach` 拆成 loader——根 loader 做 `ensureSession` + `requiresAuth`，子 loader 做 `requiredPermissions` 并跳 `/forbidden`。`normalizeReturnTo` 的防开放重定向逻辑与 `publicOnly` 行为原样保留。
 5. **测试**：21 个 spec 中 15 个（services/config/utils/纯逻辑）直接复用，6 个重写。React 侧用 jsdom + `@testing-library/react` + `user-event` + `jest-dom`（不用 happy-dom），通信层继续用 `axios-mock-adapter`；`Toast/Modal` 命令式 API 以 mock 断言，不断言 DOM。setup 保留 ResizeObserver/matchMedia stub。
 6. **工程与 CI**：`@vitejs/plugin-react` 替换 `@vitejs/plugin-vue`，`manualChunks` 改 semi/react 分组，`vue-tsc` → `tsc --noEmit`；ESLint 去 `eslint-plugin-vue`、加 `react-hooks`/`react-refresh`。过渡期用 vitest projects 分 vue/react 两个 project，新增 `frontend-check-react`，`frontend-check` 保留到最后一批才删。
 
