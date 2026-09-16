@@ -1,9 +1,17 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W11-A3、B1 已合并；B2 绑定存储本次交付，B3 及 C～F 未开始
-> - 基线版本：`main@54947dc`，已合并 [PR #60](https://github.com/go-ree/ares/pull/60)
+> - 当前状态：W11-A3、B1、B2 已合并；B3 及 C～F 未开始。前端栈决策 [ADR-0008](../architecture/decisions/0008-frontend-react-semi-migration.md) 待评审
+> - 基线版本：`main@0e9eea2`，已合并 [PR #61](https://github.com/go-ree/ares/pull/61)
 > - 最后更新：2026-09-16
+
+## 2026-09-16：前端栈决策 ADR-0008（待评审）
+
+- 维护者确定前端后续使用 Semi Design 开发。核实结论：**Semi 没有官方 Vue 版本**，官方组件库只有 React 版 `@douyinfe/semi-ui`，官方 FAQ 明确暂无其它技术栈计划；因此该方向等价于换框架，需要一个 ADR 而不是一次依赖替换。
+- 新增 [ADR-0008](../architecture/decisions/0008-frontend-react-semi-migration.md)：采用 React + `@douyinfe/semi-ui`，不做运行时双框架共存，新栈在 `app/web-react/` 平行开发、验收用第二入口，全部页面完成后改 `frontend/index.html` 一行入口切换；认证用 Zustand，`services/config/utils/models/types` 纯 TS 零改动复用，`router.beforeEach` 拆成 react-router v7 loader。
+- 文档记录了当前前端的实测规模（31 个 `.vue`、46 个 `.ts`、约 16.1k 行、40 种 `el-*` 标签 579 处、21 个 spec 中 6 个依赖 `@vue/test-utils`、单一入口 `/app/web/main.ts`），以及 B0～B5 批次与每批门禁、过渡期双 vitest project 与 `frontend-check-react` 门禁。
+- W11-D 的范围不变，但**新页面直接在 React + Semi 上开发**，不先落在 Vue + Element Plus 上再迁移；迁移窗口内旧栈只接受 bugfix 并当天同步新栈。
+- 本 ADR **待评审**，合并前不构成已生效决策；B0 之前不删除 Vue 依赖、不改生产入口、不宣称已使用 Semi。本轮为纯文档变更，按约定不重启预览业务服务。
 
 ## 2026-09-16：W11-B2 固定版本绑定存储与管理 API
 
