@@ -34,15 +34,19 @@ A2 拆为 A2a schema/迁移/权限和 A2b 事务存储/CAS，两者均已合并�
 
 epoch 9 实现指纹包含 v1 Spec 校验器与 canonicaljson；未来规范演进必须保留 v1 校验语义并追加版本，不能修改已发布迁移所依赖的校验行为。
 
-### 2.2 最小权限
+### 2.2 Epoch 10
 
-runtime 对类型和草稿表仅 SELECT/INSERT/UPDATE，对版本表仅 SELECT/INSERT；不允许删除类型/模板或改写发布版本。migrator 继续按现有授权管理 DDL；应用启动只验证，不自动迁移。
+2026-09-16 追加 `20260916_001_pipeline_bindings`，只新增 `application_ci_bindings` 与 `app_config_cd_bindings`；epoch 1～9 定义、校验器和指纹不变，不复用 `app_config_workflows`。绑定表结构、CAS、锁顺序与数据契约见[绑定存储契约](binding-storage.md)。绑定只引用不可变 `version_id`，不复制步骤或规范。
+
+### 2.3 最小权限
+
+runtime 对类型和草稿表仅 SELECT/INSERT/UPDATE，对版本表仅 SELECT/INSERT；对两张绑定表仅 SELECT/INSERT/UPDATE（无 DELETE）；不允许删除类型/模板或改写发布版本。migrator 继续按现有授权管理 DDL；应用启动只验证，不自动迁移。
 
 ## 3. 升级与恢复
 
 ### 3.1 部署顺序
 
-停止旧 API/Worker → 备份并验证恢复 → migrator 升级至 epoch 9 → 刷新 runtime 表级授权 → 启动匹配版本并检查健康、旧应用和历史数据。epoch 8 二进制不得连接 epoch 9 工作库。
+停止旧 API/Worker → 备份并验证恢复 → migrator 升级至当前 epoch（A2a 为 9，B2 起为 10）→ 刷新 runtime 表级授权 → 启动匹配版本并检查健康、旧应用和历史数据。低于工作库 epoch 的二进制不得连接该库：epoch 8 二进制不得连接 epoch 9 工作库，epoch 9 二进制不得连接 epoch 10 工作库。
 
 ### 3.2 回退
 

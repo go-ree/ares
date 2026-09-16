@@ -61,6 +61,7 @@ ARES_TEST_MYSQL_DSN='root:<密码>@tcp(127.0.0.1:3306)/mysql?parseTime=true' \
 - epoch 5 六张身份/审计表、Bootstrap singleton、发布任务与工作流版本稳定主体字段的精确 manifest、数据契约和 dirty 恢复边界；历史显示名不得被猜测成用户 ID；
 - epoch 6 的 22 张受管表、任务 AppConfig 稳定引用、两张只增幂等回执表、连续 items 与 accepted/rejected 解析约束，以及三个 DDL 中间态的 dirty 恢复边界；历史任务不得被猜测回填 AppConfig 或回执。
 - epoch 7 的任务调度/租约字段、integration revision、公平扫描索引、每个 DDL 中间态和数据契约；三个真实 MySQL Worker 并发领取、过期接管、token 单调与陈旧读写拒绝；Jenkins 设置 CAS 的 provider 事务 fence、活动任务拒绝、旧 revision 分类、disabled generation 恢复和 ClaimStep 先行线性化；以及三个 v1 leader 竞争者中只有一个外呼、持锁连接断开后接管。
+- epoch 9/10 的类型、模板、不可变版本与两张绑定表精确 manifest、数据契约和每个 DDL 中间态 dirty 恢复；绑定写入的种类/归属/启停重新校验、revision CAS 与并发唯一键裁决、软删除目标分类、最小权限主体拒绝 `DELETE` 与版本改写，以及绑定存储与 HTTP 管理接口的组合 grant 联调。
 
 历史夹具来自 `main@e2cfd2a`，内容由 SHA-256 测试锁定；改变基线必须先做显式架构决策，不能直接覆盖夹具。每个 epoch 的 manifest/data-contract、bootstrap 和迁移实现都有独立 golden；共享引擎指纹额外覆盖 runner、ledger 收养、manifest 比较、迁移目录调度和 dirty 恢复路径，安全修复必须显式更新审计基线。MySQL 会对低权限账号隐藏部分 trigger/event/routine 和外部入向外键元数据，因此账号有效权限、特权对象及入向依赖缺失还必须执行管理员 E2E，不能以普通 manifest 查询替代。guarded 数据库身份还要在 `lower_case_table_names=1` 的 MySQL 8.4 实例上验证：DSN 大小写可由服务端归一化，但 migrator、管理员和清理连接的实际 `DATABASE()` 必须一致。配置单元测试同时固定严格 YAML 契约：未知顶层/嵌套字段、多文档均失败且不替换活动配置。
 

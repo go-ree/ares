@@ -4,7 +4,7 @@
 
 W11 开发入口：[CI/CD 模板结构契约与校验 API](development/pipeline-template-contract.md)、[类型与模板存储契约](development/template-storage.md)、[类型与模板管理 API](development/template-catalog-api.md)。A3 接入有权限/审计的管理 API；页面与真实执行尚未接入。
 
-B1：[固定版本绑定意图预检与参数规则](development/binding-preflight.md)，只读验证，不保存绑定或启动运行。B2 将接绑定持久化。
+B1：[固定版本绑定意图预检与参数规则](development/binding-preflight.md)，只读验证，不保存绑定或启动运行。B2：[固定版本绑定存储与管理 API](development/binding-storage.md)，已持久化绑定但仍不执行；B3 才接独立运行上下文。
 
 新模型设计与进度：[CI、产出物与 CD 领域设计](architecture/ci-artifact-cd.md)、[ADR-0007](architecture/decisions/0007-ci-artifact-cd-separation.md)、[W11 分阶段实施计划](plans/ci-artifact-cd-roadmap.md)、[Java CI 步骤计划](plans/java-ci-step-catalog.md)（真实步骤尚未实现）。
 

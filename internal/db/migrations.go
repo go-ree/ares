@@ -24,7 +24,7 @@ const (
 	// ApplicationSchemaEpoch is the exact catalog and manifest epoch this
 	// binary can prove safe. Unknown future epochs remain fail-closed even if a
 	// database row claims a wider compatibility range.
-	ApplicationSchemaEpoch uint64 = 9
+	ApplicationSchemaEpoch uint64 = 10
 )
 
 var ErrSchemaState = errors.New("database schema requires migration or operator attention")
@@ -202,6 +202,7 @@ var schemaMigrations = []schemaMigration{
 	newWorkerLeaseSchemaMigration("854a5beda4a6a4e32373180de63e95c95ba5aa689154a32419f8b3f09292a9d9"),
 	newTaskAttemptSchemaMigration("6aca76101ab924231156543a410334703a3c6eece8d70ddff0df7d26195bb59c"),
 	newPipelineTemplateSchemaMigration("dcb29f5afa2a52c943fb42b0737b3034d00b456be745d65ab19f74f23fde97df"),
+	newPipelineBindingSchemaMigration("d0b18109453071aa576fb09bae6bedd50bc84f5869a5b314f3d2274f1d38d004"),
 }
 
 type ledgerRow struct {

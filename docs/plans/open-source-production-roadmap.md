@@ -1,18 +1,27 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：W11-A3 已合并；B1 绑定意图预检本次交付，B2/B3 及 C～F 未开始
-> - 基线版本：`main@00843f1`，已合并 [PR #59](https://github.com/go-ree/ares/pull/59)
-> - 最后更新：2026-09-14
+> - 当前状态：W11-A3、B1 已合并；B2 绑定存储本次交付，B3 及 C～F 未开始
+> - 基线版本：`main@54947dc`，已合并 [PR #60](https://github.com/go-ree/ares/pull/60)
+> - 最后更新：2026-09-16
 
-## 2026-09-14：W11-B1 绑定意图预检与参数解析
+## 2026-09-16：W11-B2 固定版本绑定存储与管理 API
+
+- 追加 epoch 10：新增 `application_ci_bindings`、`app_config_cd_bindings`，唯一键为应用/环境配置，外键 RESTRICT 指向目标与不可变版本；不修改已发布迁移、冻结 v1 校验器和 epoch 9 结构，不复用 `app_config_workflows`。
+- 新增六个管理接口：CI/CD 的创建与改绑（revision CAS）、不含参数的元数据读取、以及受敏感读取审计保护的绑定层参数读取。viewer/releaser 既不能改绑定也不能读参数；省略 `expected_revision` 表示创建，重复创建返回 409 而不分叉第二个活动绑定。
+- 写入事务按 `application_types → pipeline_templates → 绑定行` 固定顺序加锁，重新校验种类、归属、模板/类型/环境启停与固定版本摘要；参数先校验后取锁，存储后回读确认 MySQL 规范化大小。绑定成功仍 `executable=false`，不创建任务、不登记产物。
+- 新增数据契约 `ci-cd-bindings-v1` 与运行时 `INSERT, UPDATE` 授权（不含 `DELETE`）；软删除目标不自动清理绑定，也不让已应用 epoch 失效。[契约文档](../development/binding-storage.md) 与 Swagger 同步。
+- 验证通过：后端全量测试/Vet、相关 Race、完整 `make db-integration`、Swagger 生成、格式/工作流/Compose 与 Docker API 构建。新增覆盖逐 DDL 中间态 dirty 恢复、数据契约 fail-closed、并发创建/并发 CAS 各一个成功、跨种类与跨类型拒绝、停用与软删除分类、最小权限主体拒绝 `DELETE`/版本改写、HTTP 组合 grant 联调。
+- 前端无改动，本轮未重跑前端验收；没有新页面、没有运行创建，也没有真实 Java/Python CI 能力。预览与 PR 链接交付时补充。
+
+## 已合并：W11-B1 绑定意图预检与参数解析（2026-09-14）
 
 - 将 B 细分为 B1 只读预检/参数规则、B2 绑定持久化与 CAS、B3 独立运行上下文和回执，详见 [W11 明细](ci-artifact-cd-roadmap.md)。完整 B 尚未完成。
 - 新增应用 CI / 环境 CD 固定版本意图预检；CI 不要求环境、不推断旧 dev_language；CD 检查所属应用和环境启停。固定版本规范与校验和按只读事务快照校验，不使用当前草稿。
 - 新增纯参数解析器：默认值 < 绑定值 < 允许的运行覆盖，必填、原生类型、精度/大小及不可变拷贝。HTTP 不接运行覆盖，不回显原始规范、默认值或合并结果；复用 developer/admin 编辑权限、Origin/CSRF 和审计。
 - 仍为 epoch 9，无绑定存储/任务/产物写入，不改冻结迁移或 v1 校验器；[预检契约](../development/binding-preflight.md) 与 Swagger 同步。下一次先做 B2，不把预检成功当成已绑定或可运行。
 - 验证通过：后端全量测试/Vet、参数/API/真实 MySQL 联调 Race、完整 `make db-integration`、Swagger 生成、格式/工作流/Compose 和 Docker API 构建。SELECT-only 账号验证预检无业务写入，覆盖停用、归属、摘要损坏、严格请求和权限审计边界。前端无改动，本轮未重跑前端验收。
-- [中文 PR #60](https://github.com/go-ree/ares/pull/60) 已提交待评审，未合并。67 处本地文档链接及围栏、Swagger 一致性检查通过；隔离测试容器与卷已清理。
+- [中文 PR #60](https://github.com/go-ree/ares/pull/60) 已合并（合并提交 `54947dc`），8 项云端检查全部成功。67 处本地文档链接及围栏、Swagger 一致性检查通过；隔离测试容器与卷已清理。
 - 本地预览已部署 `b463217`，API/Web/MySQL healthy、epoch 9 兼容。停止业务服务后备份并验证 gzip，保留数据与密钥卷；本轮无迁移，不声称恢复演练。admin 登录 200、匿名预检 401、缺失版本 404，测试会话已注销；预览无模板，正向预检仅在隔离 MySQL 验证。
 - 预览数据复核：3 应用、2 用户、4 任务、2 类型、0 模板、0 版本，与更新前一致。
 
@@ -560,7 +569,7 @@ W07-A 已验证的子项（不代替上述完整范围）：
 
 W11 的完整工作包明细与验收矩阵单独维护在 [CI、产出物与 CD 解耦实施计划](ci-artifact-cd-roadmap.md)。设计决策 D-010 处于待评审状态：[ADR-0007](../architecture/decisions/0007-ci-artifact-cd-separation.md)，涉及 W11 及 W07-C/W08 的顺序调整；不把已有 AppConfig 全流程文档当成新模型接口约定。
 
-PR #40/#41/#42/#43/#44/#51/#53/#57/#58/#59 已合并。本次交付 W11-B1 绑定意图预检与参数解析；下一增量 B2 绑定持久化与 CAS，再进入 B3 独立运行。W07-C 暂缓至新模型稳定；W01 管理项继续独立跟踪。B1 尚待验收，构建部署能力未完成。
+PR #40/#41/#42/#43/#44/#51/#53/#57/#58/#59/#60 已合并。本次交付 W11-B2 固定版本绑定存储与管理 API；下一增量 B3 独立运行上下文与幂等回执。W07-C 暂缓至新模型稳定；W01 管理项继续独立跟踪。B2 尚待验收，构建部署能力未完成。
 
 ## 9. 进度记录
 

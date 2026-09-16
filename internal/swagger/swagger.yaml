@@ -250,6 +250,48 @@ definitions:
       revision:
         type: string
     type: object
+  controller.BindingParametersView:
+    properties:
+      binding_id:
+        type: string
+      executable:
+        type: boolean
+      parameters:
+        type: object
+      revision:
+        type: string
+    type: object
+  controller.BindingView:
+    properties:
+      binding_id:
+        type: string
+      checksum:
+        type: string
+      created_at:
+        type: string
+      enabled:
+        type: boolean
+      executable:
+        type: boolean
+      kind:
+        type: string
+      persisted:
+        type: boolean
+      revision:
+        type: string
+      target_id:
+        type: string
+      template_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+      version_id:
+        type: string
+      version_number:
+        type: string
+    type: object
   controller.CDBindingPreflightRequest:
     properties:
       parameters:
@@ -296,6 +338,32 @@ definitions:
   controller.PublishTemplateRequest:
     properties:
       expected_revision:
+        type: string
+    type: object
+  controller.SaveCDBindingRequest:
+    properties:
+      enabled:
+        type: boolean
+      expected_revision:
+        type: string
+      parameters:
+        type: object
+      target_type:
+        type: string
+      version_id:
+        type: string
+    type: object
+  controller.SaveCIBindingRequest:
+    properties:
+      application_type:
+        type: string
+      enabled:
+        type: boolean
+      expected_revision:
+        type: string
+      parameters:
+        type: object
+      version_id:
         type: string
     type: object
   controller.TemplatePage:
@@ -1630,6 +1698,191 @@ paths:
       summary: 按 config_id 更新配置（PATCH：只更新传入字段）
       tags:
       - AppConfig
+  /api/v1/app-configs/{config_id}/cd-binding:
+    get:
+      parameters:
+      - description: 应用环境配置ID
+        in: path
+        name: config_id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.BindingView'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 查询环境 CD 绑定元数据（不含参数）
+      tags:
+      - Pipeline
+    put:
+      parameters:
+      - description: 应用环境配置ID
+        in: path
+        name: config_id
+        required: true
+        type: string
+      - description: 固定版本、参数与预期revision
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.SaveCDBindingRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.BindingView'
+              type: object
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.BindingView'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 保存环境 CD 固定版本绑定（不执行）
+      tags:
+      - Pipeline
+  /api/v1/app-configs/{config_id}/cd-binding/parameters:
+    get:
+      parameters:
+      - description: 应用环境配置ID
+        in: path
+        name: config_id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.BindingParametersView'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 查询环境 CD 绑定参数（敏感读取审计）
+      tags:
+      - Pipeline
   /api/v1/app-configs/{config_id}/cd-binding/preflight:
     post:
       parameters:
@@ -2675,6 +2928,191 @@ paths:
       summary: 应用基本信息变更（仅更新传入字段）
       tags:
       - App
+  /api/v1/apps/{app_id}/ci-binding:
+    get:
+      parameters:
+      - description: 应用ID
+        in: path
+        name: app_id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.BindingView'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 查询应用 CI 绑定元数据（不含参数）
+      tags:
+      - Pipeline
+    put:
+      parameters:
+      - description: 应用ID
+        in: path
+        name: app_id
+        required: true
+        type: string
+      - description: 固定版本、参数与预期revision
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.SaveCIBindingRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.BindingView'
+              type: object
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.BindingView'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 保存应用 CI 固定版本绑定（不执行）
+      tags:
+      - Pipeline
+  /api/v1/apps/{app_id}/ci-binding/parameters:
+    get:
+      parameters:
+      - description: 应用ID
+        in: path
+        name: app_id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.ResponseTemplate'
+            - properties:
+                result:
+                  $ref: '#/definitions/controller.BindingParametersView'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/util.ResponseTemplate'
+      summary: 查询应用 CI 绑定参数（敏感读取审计）
+      tags:
+      - Pipeline
   /api/v1/apps/{app_id}/ci-binding/preflight:
     post:
       parameters:

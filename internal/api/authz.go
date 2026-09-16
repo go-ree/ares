@@ -26,6 +26,7 @@ type Runtime struct {
 	Auth                    *auth.Service
 	TemplateCatalog         controller.TemplateCatalogStore
 	BindingPreflight        controller.BindingPreflightService
+	BindingManagement       controller.BindingStore
 	LegacyAdminTokenEnabled bool
 	LegacyAdminToken        string
 	LegacyAdminTokenSunset  string
