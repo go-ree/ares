@@ -149,6 +149,15 @@ D 的实现栈由 [ADR-0008](../architecture/decisions/0008-frontend-react-semi-
 
 本文件记录 W11 明细，[总进度看板](open-source-production-roadmap.md)记录跨工作包顺序；每次实现 PR 同时更新两处状态、PR 链接、实际范围、验证结果、迁移和预览版本。W11-0 已完成；A1/A2/A3 与 B1 已合并，本次交付 B2，下一增量为 B3 独立运行上下文。
 
+### 前端迁移 B1 记录（外壳）
+
+- 交付：React 版 `MainLayout`（Semi `Layout` + `Nav` 权限菜单、用户下拉、改密弹窗）、完整 `Login`（认证方式加载、OIDC 入口、本地登录、首次管理员 bootstrap 字段级校验与错误映射）与正式 `Home`（欢迎/统计/按权限的快捷入口）。B0 的占位外壳删除。
+- 权限菜单与 Vue 模板逐项对拍：`visibleMenuItems` 与 `toNavItems` 是纯函数，测试覆盖只读身份不泄漏写入口、父项无可见子项时隐藏、无条件分类保留、用户管理仅 `users:read` 可见；改密入口仅对本地 bootstrap 身份出现（测试实际打开下拉断言）。
+- 过渡期取舍见 [ADR-0008 §2.4](../architecture/decisions/0008-frontend-react-semi-migration.md)：未迁移路由禁用而非死链；空父菜单隐藏（对现有角色不可观测）。
+- 验证：Vue 栈 21 文件 / 198 测试不退化、React 栈 4 文件 / 31 测试通过（新增 Login 6 项与菜单 8 项）、`tsc` 与 `vue-tsc` 均无错误、ESLint 双栈 0 问题、两条栈构建通过。测试过程中实测并修复了"提交按钮同时挂 onClick 与 htmlType 导致重复提交"的真实缺陷。
+- 产物对比：React semi chunk 1004 kB JS + 720 kB CSS，Vue element-plus chunk 1021 kB JS + 361 kB CSS；量级相当，CSS 约为两倍，按组件引入列为可选优化。
+- 生产入口未切换，Vue 栈继续对外服务，预览不重启。
+
 ### B2 验证与预览记录
 
 - 追加 epoch 10：新增 `application_ci_bindings`、`app_config_cd_bindings` 两张绑定表，唯一键为应用/环境配置，外键 RESTRICT 到目标与不可变版本；不修改已发布迁移、冻结 v1 校验器与 epoch 9 结构。绑定表不冗余类型或种类列，跨种类改绑由存储写入校验与数据契约 `ci-cd-bindings-v1` 双重保证。

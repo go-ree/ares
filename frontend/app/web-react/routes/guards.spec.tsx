@@ -105,12 +105,15 @@ describe('route guards (React)', () => {
 
   it('redirects a missing permission to the forbidden page with the source path', async () => {
     await signIn();
+    // The redirect target must exist in this minimal table, otherwise React
+    // Router logs a route-miss that would mask real failures.
     const guarded: RouteObject[] = [
       {
         path: '/guarded',
         loader: requirePermissions([PERMISSIONS.USERS_WRITE]),
         element: null,
       },
+      { path: '/forbidden', element: null },
     ];
     const router = renderAt('/guarded', guarded);
     await waitFor(() =>
@@ -128,12 +131,15 @@ describe('route guards (React)', () => {
       } as never) as never
     );
     await useAuthStore.getState().ensureSession();
+    // The redirect target must exist in this minimal table, otherwise React
+    // Router logs a route-miss that would mask real failures.
     const guarded: RouteObject[] = [
       {
         path: '/guarded',
         loader: requirePermissions([PERMISSIONS.USERS_WRITE]),
         element: null,
       },
+      { path: '/forbidden', element: null },
     ];
     const router = renderAt('/guarded', guarded);
     await waitFor(() => expect(router.state.initialized).toBe(true));

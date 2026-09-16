@@ -54,7 +54,16 @@
 5. **Semi 入口会拉入 `lottie-web`**：它在模块作用域构造 2D canvas 上下文（jsdom 需要桩，否则任何引入 Semi 组件的测试都在加载阶段失败），并使用直接 `eval`。当前 CSP 只有 `frame-ancestors 'none'`，不冲突；但后续若收紧 `script-src` 且不含 `unsafe-eval`，需要改为按组件深路径引入或排除插画组件。
 6. **`redirect()` 没有 `replace` 选项**（签名是 `(url, init?: number | ResponseInit)`）：data router 的 loader 重定向本身就替换历史记录，等价于 Vue 守卫的 `replace: true`。
 7. **实测规模与复用比例**：共享层搬迁（`services/config/utils/models/types` → `app/shared/`）后，Vue 栈仍是 21 个 spec / 198 个测试全绿；21 个 spec 中确实只有 6 个依赖 `@vue/test-utils`，与 ADR 的拆分一致。React 项目新增 17 个测试（认证 store 7 + 路由守卫 10）。
-8. **产物体积**：React 栈首次构建为 semi 167 kB（gzip 48 kB）+ 样式 677 kB（gzip 77 kB）+ react 312 kB（gzip 98 kB）。样式体积主要来自整包引入，B1 应评估按组件引入。
+8. **产物体积**：B0 骨架阶段只引入少量组件，semi chunk 为 167 kB；B1 引入 Nav/Layout/Dropdown/Modal/Form 后为 **1004 kB JS + 720 kB CSS**，而同仓库 Vue 栈的 element-plus chunk 为 **1021 kB JS + 361 kB CSS**，两条栈量级相当。因此体积不构成选型缺陷；CSS 约为两倍，按组件引入属于后续可选优化，不作为门禁。
+9. **Nav/Sider 与 antd 的直觉不同**（读包内类型确认）：`Layout.Sider` 只有 `breakpoint`/`onBreakpoint`，**没有** `collapsed`/`width`/`collapsedWidth`，宽度必须自己受控；`Nav` 用 `itemKey`（不是 `key`）、`isCollapsed`/`onCollapseChange`、`selectedKeys`/`onSelect({itemKey})`，`footer={{collapseButton:true}}` 会渲染内置折叠按钮，折叠态 tooltip 由 Nav 自动包裹。
+10. **`Banner` 没有 `closable`**，且该包不导出 `Alert`；`NavItems` 只从 `lib/es/navigation` 子路径导出，不从包根导出。
+11. **表单内的提交按钮不要同时挂 `onClick` 与 `htmlType="submit"`**：点击会同时触发表单提交，而 React 的异步状态更新让在途守卫挡不住第二次调用，实测产生重复请求；只保留表单 `onSubmit` 是正确写法（Vue 版靠同步的 loading 标志掩盖了同一竞态）。
+12. **测试环境要求**：vitest 未开 `globals` 时 Testing Library 无法自动注册清理，必须在 setup 里显式 `cleanup()`，否则多次 `render` 累积会让后续查询命中重复元素；Semi 的 Nav/Dropdown/Tooltip 依赖 `Range.prototype.getBoundingClientRect`/`getClientRects` 与元素几何，jsdom 都未实现，需要桩。
+
+### 2.4 过渡期的两处显式取舍（B1 确认）
+
+- **未迁移路由不给死链**：`app/web-react/routes/migration.ts` 维护"本栈已迁移"的路由集合，导航与首页快捷入口对尚未迁移的目标置为禁用，批次落地时逐条移出。菜单结构与权限过滤保持完整（正是权限对拍测试断言的对象），只是不可点击。
+- **空父菜单隐藏**：Vue 模板里父项与子项各自独立 `v-if`，理论上能渲染出"没有任何可见子项"的空分类；React 版改为父项无可见子项时不渲染。已发布角色总是同时持有父项与至少一个子项的权限，因此该差异对现有角色不可观测，属于有意改进。
 
 ## 3. 不采用的方案
 
