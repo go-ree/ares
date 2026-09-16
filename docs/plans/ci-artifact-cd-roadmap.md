@@ -154,7 +154,7 @@ B1 只冻结参数默认值 < 绑定值 < 明确允许的运行覆盖值；HTTP 
 - 写入事务按 `application_types → pipeline_templates → 绑定行` 固定顺序加锁，重新校验种类、归属、模板/类型/环境启停与固定版本摘要；参数先校验后取锁，存储后回读确认 MySQL 规范化大小。
 - 验证：后端全量测试/Vet、相关 Race、完整 `make db-integration`、Swagger 生成、格式/工作流/Compose 与 Docker API 构建通过。新增覆盖逐 DDL 中间态恢复、数据契约 fail-closed、并发创建与并发 CAS、跨种类/跨类型拒绝、软删除与停用分类、最小权限主体拒绝 `DELETE` 与版本改写、HTTP 层组合 grant 联调。
 - 账号最小权限动态矩阵同步新增两张表的 `INSERT,UPDATE`：`deploy/compose/mysql/account-init-integration.sh` 的建表清单、DML 白名单、精确权限总数（24 表/44 项 → 26 表/48 项，仍无 `DELETE`）和逐表期望一并更新，`make db-account-integration` 本地通过。该矩阵在云端因未同步而失败过一次，属于本轮新增授权的连带契约。
-- 预览升级：先保留旧镜像 `ares-api:preview-epoch9` 并停止业务服务，备份为 `before-w11b2-05f06ce-epoch9.sql.gz`（gzip 校验通过，权限 600）。备份导入隔离 MySQL 8.4 实例后关键行数一致，**epoch 9 镜像报告兼容**，而 epoch 10 镜像报告 `状态=不兼容` 且 `serve` 拒绝启动，证明升级前 fail-closed。随后完整重建（含四个一次性任务）升级持久预览至 epoch 10。
+- 预览升级：部署代码 `05f06ce`（其后提交仅改文档，不重建业务镜像）。先保留旧镜像 `ares-api:preview-epoch9` 并停止业务服务，备份为 `before-w11b2-05f06ce-epoch9.sql.gz`（gzip 校验通过，权限 600）。备份导入隔离 MySQL 8.4 实例后关键行数一致，**epoch 9 镜像报告兼容**，而 epoch 10 镜像报告 `状态=不兼容` 且 `serve` 拒绝启动，证明升级前 fail-closed。随后完整重建（含四个一次性任务）升级持久预览至 epoch 10。
 - 升级后：`migrate status` 为 epoch 10 兼容、dirty=0、29 张基础表；3 应用/2 用户/4 任务/2 类型/0 模板/0 版本与升级前一致，两张绑定表为空；`ares_runtime` 对新表只有 INSERT/UPDATE（无 DELETE）。匿名访问四个新接口与 PUT 均为 401，不存在的路由为 404，首页 200；服务健康，账号与持久卷保留。
 - 本轮**未执行**已登录的预览正向冒烟：预览管理员凭据不在本会话可用范围内，按约定不重置密码。正向创建/改绑/缺失绑定 404 与最小权限边界由隔离 MySQL 的 HTTP 联调测试覆盖，不把匿名冒烟当成端到端验收。
 - [中文 PR #61](https://github.com/go-ree/ares/pull/61) 待评审、未自动合并，8 项云端检查全部成功。本轮没有新页面、没有运行创建，也没有真实 Java/Python CI 能力。
