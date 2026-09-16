@@ -139,6 +139,9 @@ export const toNavItems = (nodes: MenuNode[]): NavItems =>
     itemKey: node.itemKey,
     text: node.text,
     icon: node.icon,
-    disabled: !isMigrated(node.itemKey),
+    // Category nodes only expand/collapse. Disabling them would also make a
+    // newly migrated child unreachable unless every ancestor were duplicated
+    // in the route set.
+    disabled: !node.items && !isMigrated(node.itemKey),
     items: node.items ? toNavItems(node.items) : undefined,
   }));

@@ -4,8 +4,8 @@
  * Until a batch lands, the corresponding route exists only in the Vue stack, so
  * the shell keeps rendering the full permission structure — that is what the
  * permission parity test asserts — while marking not-yet-migrated destinations
- * as disabled instead of offering a dead link. Entries move out of this list as
- * each batch lands, and it disappears entirely once every route is migrated.
+ * as disabled instead of offering a dead link. Each batch adds its leaf routes
+ * to this allowlist; the gate disappears entirely once every route is migrated.
  */
 const MIGRATED_ROUTES = new Set<string>(['/', '/forbidden']);
 

@@ -1,24 +1,35 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { reactEntryFallback } from './react-entry.ts';
 
 // React + Semi stack (ADR-0008). It builds to its own output directory and entry
 // so the Vue build stays byte-identical until the B5 entry switch.
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
+  const apiTarget = env.VITE_API_BASE_URL || 'http://localhost:8080';
+  const apiOrigin = new URL(apiTarget).origin;
 
   return {
     root: path.resolve(import.meta.dirname, '..'),
-    plugins: [react()],
+    plugins: [react(), reactEntryFallback()],
     server: {
       port: 8081,
       host: '127.0.0.1',
       proxy: {
         '/api': {
-          target: env.VITE_API_BASE_URL || 'http://127.0.0.1:8080',
+          target: apiTarget,
           changeOrigin: true,
           secure: false,
           rewrite: requestPath => requestPath,
+          // The backend intentionally accepts writes only from its public
+          // origin. The standalone dev server is same-site only through this
+          // proxy, so forward the target origin instead of leaking :8081.
+          configure(proxy) {
+            proxy.on('proxyReq', (proxyRequest, request) => {
+              if (request.headers.origin) proxyRequest.setHeader('Origin', apiOrigin);
+            });
+          },
         },
       },
     },

@@ -60,7 +60,9 @@ interface AuthState {
 // must never notify React subscribers. This mirrors the Vue implementation,
 // where the same values were plain closure variables.
 let sessionFlight: Promise<boolean> | null = null;
+let optionsFlight: Promise<AuthOptions> | null = null;
 let sessionGeneration = 0;
+let optionsGeneration = 0;
 let expirationTimer: ReturnType<typeof setTimeout> | null = null;
 
 const initialSnapshot = {
@@ -182,10 +184,20 @@ export const useAuthStore = create<AuthState>()((set, get) => {
     ...initialSnapshot,
     ensureSession: () => fetchSession(false),
     refreshSession: () => fetchSession(true),
-    loadOptions: async () => {
-      const response = await getAuthOptions();
-      set({ options: response.data.result });
-      return response.data.result;
+    loadOptions: () => {
+      if (optionsFlight) return optionsFlight;
+      const requestGeneration = optionsGeneration;
+      const flight = (async () => {
+        try {
+          const response = await getAuthOptions();
+          if (requestGeneration === optionsGeneration) set({ options: response.data.result });
+          return response.data.result;
+        } finally {
+          if (requestGeneration === optionsGeneration) optionsFlight = null;
+        }
+      })();
+      optionsFlight = flight;
+      return flight;
     },
     login: async (request: LoginRequest) => {
       await loginRequest(request);
@@ -219,8 +231,10 @@ export const useAuthStore = create<AuthState>()((set, get) => {
     invalidate: (reason = 'unauthenticated') => clearSession(reason),
     reset: () => {
       sessionGeneration += 1;
+      optionsGeneration += 1;
       clearExpirationTimer();
       sessionFlight = null;
+      optionsFlight = null;
       set({ ...initialSnapshot });
     },
   };

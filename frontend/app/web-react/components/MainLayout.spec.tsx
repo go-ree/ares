@@ -170,5 +170,8 @@ describe('MainLayout permission menu', () => {
     // a dead link while the Vue stack still owns it.
     expect(byKey.get('/')?.disabled).toBe(false);
     expect(byKey.get('/application/list')?.disabled).toBe(true);
+    // A category must remain expandable so a child becomes reachable as soon
+    // as that child is migrated; category paths are not destinations.
+    expect(byKey.get('/application')?.disabled).toBe(false);
   });
 });

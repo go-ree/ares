@@ -48,8 +48,8 @@ A2b 验证：后端全量测试/Vet、MySQL 8.4 完整数据库回归、存储 R
 | 增量 | 状态 | 边界 |
 | --- | --- | --- |
 | B1 | 已合并：[PR #60](https://github.com/go-ree/ares/pull/60) | 固定版本绑定意图预检、类型/环境/归属与参数解析；只读、不保存、不执行，见[契约](../development/binding-preflight.md) |
-| B2 | 本次交付，待验收 | CI/CD 专用绑定存储、revision CAS、启停/改绑、受控参数 DTO、管理 API 与 epoch 10 迁移/最小权限验收；不复用旧工作流绑定表，见[契约](../development/binding-storage.md) |
-| B3 | 未开始，下一增量 | 独立运行上下文、永久幂等回执、资源关系/快照与旧引擎隔离；C 未就绪不接纳不可执行任务 |
+| B2 | 已合并：[PR #61](https://github.com/go-ree/ares/pull/61) | CI/CD 专用绑定存储、revision CAS、启停/改绑、受控参数 DTO、管理 API 与 epoch 10 迁移/最小权限验收；不复用旧工作流绑定表，见[契约](../development/binding-storage.md) |
+| B3 | 未开始，前端迁移后恢复 | 独立运行上下文、永久幂等回执、资源关系/快照与旧引擎隔离；C 未就绪不接纳不可执行任务 |
 
 B1 只冻结参数默认值 < 绑定值 < 明确允许的运行覆盖值；HTTP 不接运行覆盖/产物，也不承诺预检后的状态不变。B2 的写入事务已按此重新校验类型、模板、目标与环境状态，不信任预检响应；B3 创建运行时同样必须重新校验，不能信任绑定读取结果。
 
@@ -69,7 +69,7 @@ B1 只冻结参数默认值 < 绑定值 < 明确允许的运行覆盖值；HTTP 
 
 ### 2.4 D/E：交互、迁移和预览
 
-D 的实现栈由 [ADR-0008](../architecture/decisions/0008-frontend-react-semi-migration.md) 决定：**前端改用 React + `@douyinfe/semi-ui`**（Semi 无官方 Vue 版，换组件库等价于换框架）。D 的**范围不变**，但新页面直接在 React + Semi 上开发，不先落在 Vue + Element Plus 上再迁移；其 `services/types/models` 是纯 TS，可先写。迁移本身按 ADR 的 B0～B5 批次分批提交，批次门禁与"迁完即删"规则见该 ADR。
+D 的实现栈由 [ADR-0008](../architecture/decisions/0008-frontend-react-semi-migration.md) 决定：**前端改用 React + `@douyinfe/semi-ui`**（Semi 无官方 Vue 版，换组件库等价于换框架）。D 的**范围不变**，但新页面直接在 React + Semi 上开发，不先落在 Vue + Element Plus 上再迁移；其 `services/types/models` 是纯 TS，可先写。迁移本身按 ADR 的 B0～B5 批次分批提交；B5 切换前保留生产仍引用的旧页面，切换验收后统一清理。
 
 - [ ] 管理者在统一入口配置类型下多种 CI 组合；应用只选版本与参数。
 - [ ] CI 运行、产物、CD 运行分别有列表与详情；CD 显示原始/派生/实际部署产物。
@@ -147,16 +147,17 @@ D 的实现栈由 [ADR-0008](../architecture/decisions/0008-frontend-react-semi-
 - 预览后端已更新至 `6dbebd6`，无前端业务变动。停旧服务后备份数据库，保留原数据/密钥卷；服务 healthy，epoch 8 兼容，校验接口匿名返回 401；应用/用户/任务数量保持 3/1/4。
 - 本次没有新的数据库迁移或真实 CI/CD 执行，未声称对尚不存在的管理页面进行端到端验收。最终云端结果以 [PR #42](https://github.com/go-ree/ares/pull/42) 检查为准；不直接合并。
 
-本文件记录 W11 明细，[总进度看板](open-source-production-roadmap.md)记录跨工作包顺序；每次实现 PR 同时更新两处状态、PR 链接、实际范围、验证结果、迁移和预览版本。W11-0 已完成；A1/A2/A3 与 B1 已合并，本次交付 B2，下一增量为 B3 独立运行上下文。
+本文件记录 W11 明细，[总进度看板](open-source-production-roadmap.md)记录跨工作包顺序；每次实现 PR 同时更新两处状态、PR 链接、实际范围、验证结果、迁移和预览版本。W11-0、A1/A2/A3、B1/B2 已合并；当前先完成 ADR-0008 前端迁移，之后恢复 B3 独立运行上下文。
 
 ### 前端迁移 B1 记录（外壳）
 
 - 交付：React 版 `MainLayout`（Semi `Layout` + `Nav` 权限菜单、用户下拉、改密弹窗）、完整 `Login`（认证方式加载、OIDC 入口、本地登录、首次管理员 bootstrap 字段级校验与错误映射）与正式 `Home`（欢迎/统计/按权限的快捷入口）。B0 的占位外壳删除。
 - 权限菜单与 Vue 模板逐项对拍：`visibleMenuItems` 与 `toNavItems` 是纯函数，测试覆盖只读身份不泄漏写入口、父项无可见子项时隐藏、无条件分类保留、用户管理仅 `users:read` 可见；改密入口仅对本地 bootstrap 身份出现（测试实际打开下拉断言）。
 - 过渡期取舍见 [ADR-0008 §2.4](../architecture/decisions/0008-frontend-react-semi-migration.md)：未迁移路由禁用而非死链；空父菜单隐藏（对现有角色不可观测）。
-- 验证：Vue 栈 21 文件 / 198 测试不退化、React 栈 4 文件 / 31 测试通过（新增 Login 6 项与菜单 8 项）、`tsc` 与 `vue-tsc` 均无错误、ESLint 双栈 0 问题、两条栈构建通过。测试过程中实测并修复了"提交按钮同时挂 onClick 与 htmlType 导致重复提交"的真实缺陷。
+- 验证：Vue 栈 21 文件 / 198 测试不退化、React 栈 5 文件 / 39 测试通过，`tsc` 与 `vue-tsc` 均无错误、ESLint/Prettier 双栈通过、两条栈构建及前端依赖审计通过。覆盖 Login、菜单、入口刷新、历史动作、数据请求门禁和 StrictMode 单飞；浏览器复查登录页无控制台错误或警告。
 - 产物对比：React semi chunk 1004 kB JS + 720 kB CSS，Vue element-plus chunk 1021 kB JS + 361 kB CSS；量级相当，CSS 约为两倍，按组件引入列为可选优化。
 - 生产入口未切换，Vue 栈继续对外服务，预览不重启。
+- 质量复核补充：独立 React 开发入口现支持 SPA 刷新和可用的认证代理；loader 守卫改为显式 `REPLACE`，数据加载通过同一 loader 在权限通过后执行；菜单分类不因自身没有页面路由而禁用；认证选项请求在 StrictMode 下单飞。ADR 同步修正旧页面删除时机。
 
 ### B2 验证与预览记录
 
@@ -168,6 +169,6 @@ D 的实现栈由 [ADR-0008](../architecture/decisions/0008-frontend-react-semi-
 - 预览升级：部署代码 `05f06ce`（其后提交仅改文档，不重建业务镜像）。先保留旧镜像 `ares-api:preview-epoch9` 并停止业务服务，备份为 `before-w11b2-05f06ce-epoch9.sql.gz`（gzip 校验通过，权限 600）。备份导入隔离 MySQL 8.4 实例后关键行数一致，**epoch 9 镜像报告兼容**，而 epoch 10 镜像报告 `状态=不兼容` 且 `serve` 拒绝启动，证明升级前 fail-closed。随后完整重建（含四个一次性任务）升级持久预览至 epoch 10。
 - 升级后：`migrate status` 为 epoch 10 兼容、dirty=0、29 张基础表；3 应用/2 用户/4 任务/2 类型/0 模板/0 版本与升级前一致，两张绑定表为空；`ares_runtime` 对新表只有 INSERT/UPDATE（无 DELETE）。匿名访问四个新接口与 PUT 均为 401，不存在的路由为 404，首页 200；服务健康，账号与持久卷保留。
 - 本轮**未执行**已登录的预览正向冒烟：预览管理员凭据不在本会话可用范围内，按约定不重置密码。正向创建/改绑/缺失绑定 404 与最小权限边界由隔离 MySQL 的 HTTP 联调测试覆盖，不把匿名冒烟当成端到端验收。
-- [中文 PR #61](https://github.com/go-ree/ares/pull/61) 待评审、未自动合并，8 项云端检查全部成功。本轮没有新页面、没有运行创建，也没有真实 Java/Python CI 能力。
+- [中文 PR #61](https://github.com/go-ree/ares/pull/61) 已合并，8 项云端检查全部成功。本轮没有新页面、没有运行创建，也没有真实 Java/Python CI 能力。
 
-下一次实施**前端框架迁移 B0 骨架**（React 入口、Semi、Zustand 认证、loader 守卫、双 vitest project 与 `frontend-check-react` 门禁），按 [ADR-0008](../architecture/decisions/0008-frontend-react-semi-migration.md) 的批次推进；B3 独立运行上下文与幂等回执、C 产物能力在其后恢复。不先写 CD 按钮、不把旧 Output 临时公开为产物。任何扩展到任意 Shell、自动部署触发、跨应用共享或实际存储平台选择的决定都需补充文档评审。
+下一次在 [PR #64](https://github.com/go-ree/ares/pull/64) 的 B1 外壳评审通过后实施**前端迁移 B2 只读页**；B3 独立运行上下文与幂等回执、C 产物能力在前端迁移完成后恢复。不先写 CD 按钮、不把旧 Output 临时公开为产物。任何扩展到任意 Shell、自动部署触发、跨应用共享或实际存储平台选择的决定都需补充文档评审。
