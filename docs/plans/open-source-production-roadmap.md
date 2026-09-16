@@ -14,7 +14,7 @@
 - 验证通过：后端全量测试/Vet、相关 Race、完整 `make db-integration`、Swagger 生成、格式/工作流/Compose 与 Docker API 构建。新增覆盖逐 DDL 中间态 dirty 恢复、数据契约 fail-closed、并发创建/并发 CAS 各一个成功、跨种类与跨类型拒绝、停用与软删除分类、最小权限主体拒绝 `DELETE`/版本改写、HTTP 组合 grant 联调。
 - 预览：备份 `before-w11b2-05f06ce-epoch9.sql.gz`（gzip 校验通过）并保留 `ares-api:preview-epoch9`；备份在隔离 MySQL 8.4 恢复后关键行数一致、epoch 9 镜像兼容、epoch 10 镜像判定不兼容且 `serve` 拒绝启动。完整重建升级持久预览至 epoch 10，四个一次性任务退出 0，三个常驻服务 healthy，`migrate status` 兼容、dirty=0、29 张基础表。
 - 预览数据复核：3 应用/2 用户/4 任务/2 类型/0 模板/0 版本与升级前一致，两张绑定表 0 行；`ares_runtime` 对新表仅 INSERT/UPDATE。冒烟：匿名访问四个新接口与 PUT 均 401、不存在路由 404、首页 200，测试会话未创建。**未执行已登录正向冒烟**（预览管理员凭据不在本次会话可用范围，未重置密码），正向链路由隔离 MySQL HTTP 联调覆盖。
-- 前端无改动，本轮未重跑前端验收；没有新页面、没有运行创建，也没有真实 Java/Python CI 能力。[中文 PR #61](https://github.com/go-ree/ares/pull/61) 已提交待评审，未合并；云端检查以 PR 实时结果为准。
+- 前端无改动，本轮未重跑前端验收；没有新页面、没有运行创建，也没有真实 Java/Python CI 能力。[中文 PR #61](https://github.com/go-ree/ares/pull/61) 已提交待评审，未合并，8 项云端检查全部成功（含新增授权导致的账号最小权限矩阵同步修复）。
 
 ## 已合并：W11-B1 绑定意图预检与参数解析（2026-09-14）
 
