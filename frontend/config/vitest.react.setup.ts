@@ -1,4 +1,5 @@
 import { afterEach } from 'vitest';
+import { cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { resetApiAuth } from '@shared/config/api';
 
@@ -63,6 +64,35 @@ Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
   value: () => canvasContextStub(),
 });
 
+// Semi measures text and popups with Range geometry, which jsdom does not
+// implement. Without these stubs Nav/Dropdown/Tooltip throw during render.
+const emptyRect = {
+  x: 0,
+  y: 0,
+  width: 0,
+  height: 0,
+  top: 0,
+  right: 0,
+  bottom: 0,
+  left: 0,
+  toJSON: () => ({}),
+};
+
+Object.defineProperty(Range.prototype, 'getBoundingClientRect', {
+  configurable: true,
+  value: () => emptyRect,
+});
+
+Object.defineProperty(Range.prototype, 'getClientRects', {
+  configurable: true,
+  value: () => ({ length: 0, item: () => null, [Symbol.iterator]: [][Symbol.iterator] }),
+});
+
+Object.defineProperty(Element.prototype, 'getBoundingClientRect', {
+  configurable: true,
+  value: () => emptyRect,
+});
+
 Object.defineProperty(window, 'matchMedia', {
   configurable: true,
   value: (query: string) => ({
@@ -82,4 +112,8 @@ Object.defineProperty(window, 'matchMedia', {
 // service module before a spec registers its `vi.mock`, defeating the mock.
 afterEach(() => {
   resetApiAuth();
+  // Vitest runs without globals here, so Testing Library cannot register its own
+  // cleanup; without this every render piles up in document.body and later
+  // queries match several copies of the same element.
+  cleanup();
 });

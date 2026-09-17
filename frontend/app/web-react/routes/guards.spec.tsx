@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import type { RouteObject } from 'react-router';
+import type { LoaderFunctionArgs, RouteObject } from 'react-router';
 import * as authService from '@shared/services/auth';
 import { PERMISSIONS, type SessionSnapshot } from '@shared/types/auth';
 import { appRoutes } from './index';
@@ -66,7 +66,12 @@ describe('route guards (React)', () => {
   });
 
   it('sends an anonymous visitor to login with the intended path preserved', async () => {
-    await expect(locationFor('/')).resolves.toBe('/login?redirect=%2F');
+    const router = renderAt('/');
+    await waitFor(() => expect(router.state.initialized).toBe(true));
+    expect(`${router.state.location.pathname}${router.state.location.search}`).toBe(
+      '/login?redirect=%2F'
+    );
+    expect(router.state.historyAction).toBe('REPLACE');
   });
 
   it('treats the forbidden page as protected too', async () => {
@@ -105,12 +110,15 @@ describe('route guards (React)', () => {
 
   it('redirects a missing permission to the forbidden page with the source path', async () => {
     await signIn();
+    // The redirect target must exist in this minimal table, otherwise React
+    // Router logs a route-miss that would mask real failures.
     const guarded: RouteObject[] = [
       {
         path: '/guarded',
         loader: requirePermissions([PERMISSIONS.USERS_WRITE]),
         element: null,
       },
+      { path: '/forbidden', element: null },
     ];
     const router = renderAt('/guarded', guarded);
     await waitFor(() =>
@@ -118,6 +126,45 @@ describe('route guards (React)', () => {
         '/forbidden?from=%2Fguarded'
       )
     );
+    expect(router.state.historyAction).toBe('REPLACE');
+  });
+
+  it('does not start a protected data request before its own permission check passes', async () => {
+    await signIn();
+    const load = vi.fn();
+    const guarded: RouteObject[] = [
+      {
+        path: '/guarded',
+        loader: requirePermissions([PERMISSIONS.USERS_WRITE], load),
+        element: null,
+      },
+      { path: '/forbidden', element: null },
+    ];
+    const router = renderAt('/guarded', guarded);
+    await waitFor(() => expect(router.state.location.pathname).toBe('/forbidden'));
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it('runs a composed data request after permission succeeds and preserves loader arguments', async () => {
+    vi.mocked(authService.getSession).mockReturnValue(
+      response({
+        ...session,
+        user: { ...session.user, permissions: [PERMISSIONS.USERS_WRITE] },
+      } as never) as never
+    );
+    const load = vi.fn((_args: LoaderFunctionArgs) => ({ ok: true }));
+    const guarded: RouteObject[] = [
+      {
+        path: '/guarded/:id',
+        loader: requirePermissions([PERMISSIONS.USERS_WRITE], load),
+        element: null,
+      },
+    ];
+    const router = renderAt('/guarded/42', guarded);
+    await waitFor(() => expect(router.state.initialized).toBe(true));
+    expect(load).toHaveBeenCalledOnce();
+    expect(load.mock.calls[0][0].params).toEqual({ id: '42' });
+    expect(router.state.loaderData['0']).toEqual({ ok: true });
   });
 
   it('lets a granted permission reach the guarded route', async () => {
@@ -128,12 +175,15 @@ describe('route guards (React)', () => {
       } as never) as never
     );
     await useAuthStore.getState().ensureSession();
+    // The redirect target must exist in this minimal table, otherwise React
+    // Router logs a route-miss that would mask real failures.
     const guarded: RouteObject[] = [
       {
         path: '/guarded',
         loader: requirePermissions([PERMISSIONS.USERS_WRITE]),
         element: null,
       },
+      { path: '/forbidden', element: null },
     ];
     const router = renderAt('/guarded', guarded);
     await waitFor(() => expect(router.state.initialized).toBe(true));

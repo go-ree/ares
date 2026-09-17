@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as authService from '@shared/services/auth';
-import { PERMISSIONS, type SessionSnapshot } from '@shared/types/auth';
+import { PERMISSIONS, type AuthOptions, type SessionSnapshot } from '@shared/types/auth';
 import { can, canAny, isAuthenticated, useAuthStore } from './auth';
 
 vi.mock('@shared/services/auth', () => ({
@@ -35,7 +35,30 @@ const authFailure = (status: number) =>
 describe('auth store (React)', () => {
   beforeEach(() => {
     useAuthStore.getState().reset();
+    vi.mocked(authService.getAuthOptions).mockReset();
     vi.mocked(authService.getSession).mockReset();
+  });
+
+  it('deduplicates concurrent auth-option loads used by React StrictMode', async () => {
+    const options: AuthOptions = {
+      oidc_enabled: false,
+      local_login_enabled: true,
+      bootstrap_available: false,
+    };
+    let resolveOptions!: (value: never) => void;
+    vi.mocked(authService.getAuthOptions).mockReturnValue(
+      new Promise(resolve => {
+        resolveOptions = resolve as never;
+      }) as never
+    );
+
+    const first = useAuthStore.getState().loadOptions();
+    const second = useAuthStore.getState().loadOptions();
+    expect(authService.getAuthOptions).toHaveBeenCalledOnce();
+    resolveOptions((await response(options)) as never);
+
+    await expect(Promise.all([first, second])).resolves.toEqual([options, options]);
+    expect(useAuthStore.getState().options).toEqual(options);
   });
 
   it('deduplicates concurrent session probes and exposes the identity outside React', async () => {

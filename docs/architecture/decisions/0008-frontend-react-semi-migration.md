@@ -2,7 +2,7 @@
 
 ## 1. 状态与决策背景
 
-2026-09-16 提出，**待评审**（本 ADR 合并前不构成已生效决策）。迁移方向由维护者确定：前端后续使用 Semi Design 开发。本文固定路径、批次与门禁；具体迁移实现按批次分别提交中文 PR。
+2026-09-16 提出并经 [PR #62](https://github.com/go-ree/ares/pull/62) 合并生效。迁移方向由维护者确定：前端后续使用 Semi Design 开发。本文固定路径、批次与门禁；具体迁移实现按批次分别提交中文 PR。
 
 同日维护者进一步决定：**本迁移为当前最高优先级，全速推进；W11-B3 独立运行上下文与 W11-C 产物能力暂缓**，待迁移完成后按原验收门禁恢复。顺序调整已先写入[总进度看板](../../plans/open-source-production-roadmap.md)与[W11 实施计划](../../plans/ci-artifact-cd-roadmap.md)。
 
@@ -20,9 +20,9 @@
 ## 2. 采用的方案
 
 1. **框架与组件库**：React 19 + `@douyinfe/semi-ui-19`（该包 peer 为 `react ^19.0.0`；`@douyinfe/semi-ui` 面向 React <19）+ `@douyinfe/semi-icons`，主题与暗黑沿用 Semi 的 Design Token 与 `theme-mode`（`document.body.setAttribute('theme-mode','dark')`）。
-2. **不做运行时双框架共存**。新栈在 `frontend/app/web-react/` 平行开发，验收时用第二入口和 `/next` 前缀访问，对外不可见；全部页面完成后**只改 `frontend/index.html` 的一行入口**完成切换，Dockerfile 与 nginx 不动。理由是三条硬约束：认证是模块单例（`configureApiAuth` + `watch(status)` 的全局 401 跳转）、页面直接依赖 Pinia 与 `onBeforeRouteLeave` 的冻结发布守卫、nginx 是单 root + SPA fallback；跨 SPA 边界会丢内存态（发布页的 SSE 与冻结提交当场失效），要保住就得维护两套等价逻辑，代价高于一次性切换。
+2. **不做生产运行时双框架共存**。新栈在 `frontend/app/web-react/` 平行开发，B0～B4 使用独立的 React 开发服务器和 `react.html` 构建入口验收，不挂到生产 nginx 路径；全部页面完成后在 B5 切换 `frontend/index.html` 入口并清理旧栈。理由是三条硬约束：认证是模块单例（`configureApiAuth` + `watch(status)` 的全局 401 跳转）、页面直接依赖 Pinia 与 `onBeforeRouteLeave` 的冻结发布守卫、nginx 是单 root + SPA fallback；跨 SPA 边界会丢内存态（发布页的 SSE 与冻结提交当场失效），要保住就得维护两套等价逻辑，代价高于一次性切换。
 3. **状态与数据层**：认证用 Zustand（vanilla store + `useStore`，可在 React 之外读写，与 Pinia 能力对齐），`stores/auth.ts` 的会话世代号、过期定时器、401/403 分支机械平移。`services/`、`config/api.ts`、`utils/`、`models/`、`types/` 是纯 TS，**零改动复用**（含 CSRF 拦截器）。composables 先做无框架抽取（`boundLogText`/`log-stream` 分帧传输/`useReleaseComposer` 状态机/`calculateTaskProgress` 与其 spec 原样保留），再补 React 外壳；`useFrozenReleaseNavigationGuard` 改为 `useBlocker`。不引入 Redux Toolkit；TanStack Query 只用于 W11-D 的新列表页。
-4. **路由**：react-router **v7**（`7.18.4`，`createBrowserRouter` data router；v8 在提出时仅有 9 个发布，作为基础设施先钉成熟大版本），把 `router.beforeEach` 拆成 loader——根 loader 做 `ensureSession` + `requiresAuth`，子 loader 做 `requiredPermissions` 并跳 `/forbidden`。`normalizeReturnTo` 的防开放重定向逻辑与 `publicOnly` 行为原样保留。
+4. **路由**：react-router **v7**（`7.18.4`，`createBrowserRouter` data router；v8 在提出时仅有 9 个发布，作为基础设施先钉成熟大版本）。父子 loader 会并行，不能依赖父 loader 先完成；每个受保护的数据 loader 使用统一组合器，在自身请求前完成会话与权限校验。`normalizeReturnTo` 的防开放重定向逻辑与 `publicOnly` 行为原样保留，需要替换历史记录的守卫使用 `replace()`。
 5. **测试**：21 个 spec 中 15 个（services/config/utils/纯逻辑）直接复用，6 个重写。React 侧用 jsdom + `@testing-library/react` + `user-event` + `jest-dom`（不用 happy-dom），通信层继续用 `axios-mock-adapter`；`Toast/Modal` 命令式 API 以 mock 断言，不断言 DOM。setup 保留 ResizeObserver/matchMedia stub。
 6. **工程与 CI**：`@vitejs/plugin-react` 替换 `@vitejs/plugin-vue`，`manualChunks` 改 semi/react 分组，`vue-tsc` → `tsc --noEmit`；ESLint 去 `eslint-plugin-vue`、加 `react-hooks`/`react-refresh`。过渡期用 vitest projects 分 vue/react 两个 project，新增 `frontend-check-react`，`frontend-check` 保留到最后一批才删。
 
@@ -37,7 +37,7 @@
 | B4 发布链路（最难，最后做） | useLog/log-stream 适配、LogQuery/LogDetail/DeployTool/DeployingList/ServiceDeploy → Deploy/Merge/Log/AppDetail/AppPods | 同上 |
 | B5 切换 | 改 `index.html` 入口、删 Vue 依赖与 `frontend/src/` 遗留脚手架、并回单 vitest project、下线 `frontend-check` | 生产入口切换后全量回归 |
 
-每批通用门禁：新栈检查全绿；spec 数量不减（被重写的 6 个文件必须补齐等价行为用例）；该批路由的 URL/权限/请求序列与旧栈一致；gzip 产物劣化不超过 10%。迁移窗口内旧栈只接受 bugfix，且当天同步到新栈；每批"迁完即删"对应 `.vue` 与 Element Plus 引用，不留半迁移悬空。
+每批通用门禁：新栈检查全绿；spec 数量不减（被重写的 6 个文件必须补齐等价行为用例）；该批路由的 URL/权限/请求序列与旧栈一致；gzip 产物劣化不超过 10%。迁移窗口内旧栈只接受 bugfix，且当天同步到新栈。B5 切换前必须保留生产入口仍引用的 Vue 页面和 Element Plus 依赖；只有确认不再被生产入口引用的过渡代码才能提前删除，切换验收后再统一清理旧栈。
 
 ### 2.2 与 W11-D 的顺序
 
@@ -52,9 +52,21 @@
 3. **locale 路径**是 `@douyinfe/semi-ui-19/lib/es/locale/source/zh_CN`。
 4. **不能继承 Vue 的 tsconfig 基类**：`@vue/tsconfig` 设置了 `jsxImportSource: "vue"`，继承它会让每个 `.tsx` 编译成 Vue vnode，React 渲染时报 `Objects are not valid as a React child`。React 栈使用自包含 tsconfig（`app/web-react/tsconfig.json`），不 extends Vue 预设；两条栈的 type-check 范围互相排除。
 5. **Semi 入口会拉入 `lottie-web`**：它在模块作用域构造 2D canvas 上下文（jsdom 需要桩，否则任何引入 Semi 组件的测试都在加载阶段失败），并使用直接 `eval`。当前 CSP 只有 `frame-ancestors 'none'`，不冲突；但后续若收紧 `script-src` 且不含 `unsafe-eval`，需要改为按组件深路径引入或排除插画组件。
-6. **`redirect()` 没有 `replace` 选项**（签名是 `(url, init?: number | ResponseInit)`）：data router 的 loader 重定向本身就替换历史记录，等价于 Vue 守卫的 `replace: true`。
+6. **loader 重定向的历史语义必须显式选择**：实测 `redirect()` 产生 `PUSH`，只有 `replace()` 产生 `REPLACE`；登录和权限守卫使用 `replace()` 才与 Vue 的 `replace: true` 一致，并用 `historyAction` 回归测试固定。
 7. **实测规模与复用比例**：共享层搬迁（`services/config/utils/models/types` → `app/shared/`）后，Vue 栈仍是 21 个 spec / 198 个测试全绿；21 个 spec 中确实只有 6 个依赖 `@vue/test-utils`，与 ADR 的拆分一致。React 项目新增 17 个测试（认证 store 7 + 路由守卫 10）。
-8. **产物体积**：React 栈首次构建为 semi 167 kB（gzip 48 kB）+ 样式 677 kB（gzip 77 kB）+ react 312 kB（gzip 98 kB）。样式体积主要来自整包引入，B1 应评估按组件引入。
+8. **产物体积**：B0 骨架阶段只引入少量组件，semi chunk 为 167 kB；B1 引入 Nav/Layout/Dropdown/Modal/Form 后为 **1004 kB JS + 720 kB CSS**，而同仓库 Vue 栈的 element-plus chunk 为 **1021 kB JS + 361 kB CSS**，两条栈量级相当。因此体积不构成选型缺陷；CSS 约为两倍，按组件引入属于后续可选优化，不作为门禁。
+9. **Nav/Sider 与 antd 的直觉不同**（读包内类型确认）：`Layout.Sider` 只有 `breakpoint`/`onBreakpoint`，**没有** `collapsed`/`width`/`collapsedWidth`，宽度必须自己受控；`Nav` 用 `itemKey`（不是 `key`）、`isCollapsed`/`onCollapseChange`、`selectedKeys`/`onSelect({itemKey})`，`footer={{collapseButton:true}}` 会渲染内置折叠按钮，折叠态 tooltip 由 Nav 自动包裹。
+10. **`Banner` 没有 `closable`**，且该包不导出 `Alert`；`NavItems` 只从 `lib/es/navigation` 子路径导出，不从包根导出。
+11. **表单内的提交按钮不要同时挂 `onClick` 与 `htmlType="submit"`**：点击会同时触发表单提交，而 React 的异步状态更新让在途守卫挡不住第二次调用，实测产生重复请求；只保留表单 `onSubmit` 是正确写法（Vue 版靠同步的 loading 标志掩盖了同一竞态）。
+12. **测试环境要求**：vitest 未开 `globals` 时 Testing Library 无法自动注册清理，必须在 setup 里显式 `cleanup()`，否则多次 `render` 累积会让后续查询命中重复元素；Semi 的 Nav/Dropdown/Tooltip 依赖 `Range.prototype.getBoundingClientRect`/`getClientRects` 与元素几何，jsdom 都未实现，需要桩。
+13. **独立 React 入口需要自己的 SPA fallback**：Vite 默认把 `/login` 等 HTML 导航回退到根 `index.html`，而迁移期该文件仍启动 Vue。React 配置必须把浏览器导航改写到 `react.html`，同时让 `/api`、模块和静态资源保持原路径；开发代理还要把写请求 Origin 转为后端公开 Origin，否则本地登录固定返回 `invalid origin`。
+14. **父子 loader 并行且菜单分类不是页面**：受保护的数据请求通过 `requirePermissions(required, load)` 组合，不能信任父 loader 的完成顺序；有子项的 Nav 分类保持可展开，只对尚未迁移的叶子路由禁用。
+15. **StrictMode 会重复执行挂载 effect**：公开认证选项使用 store 级单飞请求，避免开发模式重复请求 `/auth/options`，重置时用 generation 丢弃迟到响应。
+
+### 2.4 过渡期的两处显式取舍（B1 确认）
+
+- **未迁移路由不给死链**：`app/web-react/routes/migration.ts` 维护“本栈已迁移”的叶子路由白名单，导航与首页快捷入口对尚未迁移的目标置为禁用，批次落地时逐条加入。菜单结构与权限过滤保持完整（正是权限对拍测试断言的对象），只是不可点击；父分类只负责展开，不进入白名单。
+- **空父菜单隐藏**：Vue 模板里父项与子项各自独立 `v-if`，理论上能渲染出"没有任何可见子项"的空分类；React 版改为父项无可见子项时不渲染。已发布角色总是同时持有父项与至少一个子项的权限，因此该差异对现有角色不可观测，属于有意改进。
 
 ## 3. 不采用的方案
 
@@ -73,7 +85,7 @@
 ## 5. 代价与边界
 
 - 需要重写约 16.1k 行前端代码与 6 个组件级 spec，工作量以月为单位；迁移期间前端功能冻结（只接受 bugfix），这是明确接受的成本。
-- 本 ADR 合并**不代表**迁移已开始或已完成；B0 之前不删除任何 Vue 依赖、不改生产入口、不宣称"已使用 Semi"。
-- 不做同页面双运行时；过渡期的"共存"仅指构建期双入口与 `/next` 前缀验收，不是对外双栈。
+- 本 ADR 已合并，B0 也已由 [PR #63](https://github.com/go-ree/ares/pull/63) 交付，但完整迁移尚未完成；B5 之前不改生产入口、不宣称已完成切换。
+- 不做同页面双运行时；过渡期的“共存”仅指代码和构建入口并存，React 在独立开发服务器验收，不作为生产对外双栈。
 - 品牌色与主题按 Semi Design Token 承载，不复制 Element Plus 的样式覆盖方式；暗黑模式与多语言随 Semi 机制实现。
 - 组件映射的差异点（`v-loading` 无指令需改 `Spin` 包裹、`ElMessageBox.confirm` → `Modal.confirm`、`el-table-column` 插槽式列定义改 `columns` 数组 + `render`、`v-model` 全面改受控）在 B0/B1 落地时逐项验证，本 ADR 不把它们当作已验证结论。

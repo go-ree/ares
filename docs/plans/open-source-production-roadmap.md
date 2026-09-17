@@ -1,8 +1,8 @@
 # Ares 开源化与生产能力开发计划
 
 > - 文档类型：持续更新的开发路线与进度看板
-> - 当前状态：**最高优先级为前端框架迁移**（[ADR-0008](../architecture/decisions/0008-frontend-react-semi-migration.md)，批次 B0～B5）；W11-A3/B1/B2 已合并，B3 与 C 暂缓
-> - 基线版本：`main@0e9eea2`，已合并 [PR #61](https://github.com/go-ree/ares/pull/61)
+> - 当前状态：**最高优先级为前端框架迁移**（[ADR-0008](../architecture/decisions/0008-frontend-react-semi-migration.md)）；B0 已合并，B1 外壳在 [PR #64](https://github.com/go-ree/ares/pull/64) 待评审，W11-B3 与 C 暂缓
+> - 基线版本：`main@b7b17cb`，已合并 [PR #63](https://github.com/go-ree/ares/pull/63)
 > - 最后更新：2026-09-16
 
 ## 2026-09-16：前端迁移调整为当前最高优先级
@@ -12,13 +12,24 @@
 - 顺序调整已按项目的强制同步规则先写入决策记录（本文件与 [W11 实施计划](ci-artifact-cd-roadmap.md)），随后才改动代码与前端工程配置。
 - 后续每次迁移批次交付同样更新两处状态、验证证据、PR 与预览版本；纯前端工程变更是否重启预览按持续预览约定判断。
 
-## 2026-09-16：前端栈决策 ADR-0008（待评审）
+## 2026-09-16：前端迁移 B1 外壳及质量修复（MainLayout / Login / Home）
+
+- 交付 React 版外壳与登录页：Semi `Layout` + `Nav` 权限菜单、用户下拉与改密弹窗、完整 `Login`（OIDC 入口、本地登录、首次管理员 bootstrap 字段级校验与错误映射）、正式 `Home`；B0 占位外壳删除。
+- 权限对拍：菜单过滤与改绑为纯函数并逐项测试（只读身份不泄漏写入口、父项无可见子项时隐藏、无条件分类保留、用户管理仅 `users:read`、改密仅本地 bootstrap 身份）。
+- 过渡期取舍记入 ADR-0008 §2.4：未迁移路由置为禁用（不给死链）、空父菜单隐藏（对现有角色不可观测）。同时补充 §2.3 的实测约束：Sider 无折叠 API、`Banner` 无 `closable`、表单提交按钮不可同时挂 `onClick`、vitest 未开 globals 时需显式 `cleanup()`、jsdom 需几何桩，以及两条栈的产物体积对比。
+- 验证：Vue 栈 21 文件 / 198 测试不退化，React 栈 5 文件 / 39 测试通过，`tsc`/`vue-tsc` 无错误，ESLint 与 Prettier 双栈通过，两条栈构建及前端依赖审计通过；测试期间实测修复了重复提交缺陷。
+- 生产入口未切换，预览不重启；本轮为前端工程与页面迁移，不改后端、不改 schema。
+- 复核并修复 B0/B1 边界：React 开发服务器为 `/`、`/login` 等浏览器导航提供 `react.html` SPA fallback；开发代理重写为后端公开 Origin，登录不再返回 `invalid origin`；守卫使用 `replace()`，并为并行 loader 提供“先鉴权再取数”的组合方式；顶层路由提供加载回退，浏览器复查无控制台错误或警告。
+- 修复菜单分类被错误禁用、StrictMode 重复加载认证选项，以及 ADR 中“统一切换”与“每批删除旧页面”的矛盾。新增入口、历史动作、数据请求门禁、分类可展开和认证选项单飞测试。
+- [PR #64](https://github.com/go-ree/ares/pull/64) 已追加质量修复提交 `77a2a89`，8 项云端检查全部成功，保持待维护者评审且未自动合并。独立 React 预览运行于 [localhost:8081/login](http://localhost:8081/login)，浏览器渲染正常且控制台无错误/警告；开发代理写请求从 `invalid origin` 进入正常认证边界。生产入口仍由 Vue 提供，Docker 预览保持 `05f06ce` / epoch 10 healthy，本轮无 schema/后端变更，不重启或改写持久数据。
+
+## 已合并：前端栈决策 ADR-0008（2026-09-16）
 
 - 维护者确定前端后续使用 Semi Design 开发。核实结论：**Semi 没有官方 Vue 版本**，官方组件库只有 React 版 `@douyinfe/semi-ui`，官方 FAQ 明确暂无其它技术栈计划；因此该方向等价于换框架，需要一个 ADR 而不是一次依赖替换。
 - 新增 [ADR-0008](../architecture/decisions/0008-frontend-react-semi-migration.md)：采用 React + `@douyinfe/semi-ui`，不做运行时双框架共存，新栈在 `app/web-react/` 平行开发、验收用第二入口，全部页面完成后改 `frontend/index.html` 一行入口切换；认证用 Zustand，`services/config/utils/models/types` 纯 TS 零改动复用，`router.beforeEach` 拆成 react-router v7 loader。
 - 文档记录了当前前端的实测规模（31 个 `.vue`、46 个 `.ts`、约 16.1k 行、40 种 `el-*` 标签 579 处、21 个 spec 中 6 个依赖 `@vue/test-utils`、单一入口 `/app/web/main.ts`），以及 B0～B5 批次与每批门禁、过渡期双 vitest project 与 `frontend-check-react` 门禁。
 - W11-D 的范围不变，但**新页面直接在 React + Semi 上开发**，不先落在 Vue + Element Plus 上再迁移；迁移窗口内旧栈只接受 bugfix 并当天同步新栈。
-- 本 ADR **待评审**，合并前不构成已生效决策；B0 之前不删除 Vue 依赖、不改生产入口、不宣称已使用 Semi。本轮为纯文档变更，按约定不重启预览业务服务。
+- ADR 已由 [PR #62](https://github.com/go-ree/ares/pull/62) 合并生效；B0 骨架由 [PR #63](https://github.com/go-ree/ares/pull/63) 合并。完整迁移和生产入口切换仍未完成。
 
 ## 2026-09-16：W11-B2 固定版本绑定存储与管理 API
 
@@ -31,7 +42,7 @@
 - 预览数据复核：升级后 3 应用/2 用户/4 任务/2 类型与升级前一致，两张绑定表和模板表初始为空；`ares_runtime` 对新表仅 INSERT/UPDATE。冒烟：匿名访问四个新接口与 PUT 均 401、不存在路由 404、首页 200。
 - 维护者要求查看效果并重置 `admin` 密码：按仓库自身 Argon2id 参数离线重建凭据，同一事务撤销该账号 3 个旧会话并记 `auth.password.reset` 运维审计，登录 200 后补齐已登录冒烟——四个新接口返回 404 `binding_resource_not_found`、目录接口 200。
 - 为让效果可见，经维护者要求在预览创建了**明确标注为模拟**的演示数据：CI 模板 `demo-simulated-python-ci`（python）与 CD 模板 `demo-simulated-k8s-cd`（kubernetes）各发布 version 1，`demo-worker` 绑定 CI、其 dev 环境配置绑定 CD。演示中复核：陈旧 revision、漏传 `expected_revision`、跨种类版本、归属不符、未声明参数、缺必填参数分别返回 409/409/422/422/422/422 且状态不变；正确 revision 改绑 200 且 revision 1→2，旧 revision 重放 409。任务数仍为 4、旧 `app_config_workflows` 仍为 12 行，未产生任何执行或旧流程副作用。
-- 前端无改动，本轮未重跑前端验收；没有新页面、没有运行创建，也没有真实 Java/Python CI 能力。[中文 PR #61](https://github.com/go-ree/ares/pull/61) 已提交待评审，未合并，8 项云端检查全部成功（含新增授权导致的账号最小权限矩阵同步修复）。
+- 前端无改动，本轮未重跑前端验收；没有新页面、没有运行创建，也没有真实 Java/Python CI 能力。[中文 PR #61](https://github.com/go-ree/ares/pull/61) 已合并，8 项云端检查全部成功（含新增授权导致的账号最小权限矩阵同步修复）。
 
 ## 已合并：W11-B1 绑定意图预检与参数解析（2026-09-14）
 
@@ -195,7 +206,7 @@ PR 描述至少包含：目标、范围、非目标、数据库影响、安全�
 | W08    | Secret Resolver 与密钥轮换   | W02、W04           | `未开始` | 待创建                                           | 工作流只保存 Secret 引用，运行时按版本解析      |
 | W09    | 执行器开发套件与扩展生态     | W03、W07、W08、W11-F      | `未开始` | 待创建                                           | 契约测试、模板及新增执行器                      |
 | W10    | 可观测性、正式发行与生产示例 | W01、W06、W07、W08、W11-F | `未开始` | 待创建                                           | 指标、告警、签名镜像、生产部署与升级工具        |
-| W11    | 应用类型 CI、产出物与独立 CD | W02～W06、W07-A/B；真实接入另需 W07-C/W08 | `开发中` | [PR #59](https://github.com/go-ree/ares/pull/59) | A 已合并；B1 本次交付，B2/B3 未开始 |
+| W11    | 应用类型 CI、产出物与独立 CD | W02～W06、W07-A/B；真实接入另需 W07-C/W08 | `开发中` | [PR #61](https://github.com/go-ree/ares/pull/61) | A、B1、B2 已合并；B3/C 暂缓，先完成前端迁移 |
 
 依赖关系如下：
 

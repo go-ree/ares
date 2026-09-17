@@ -1,4 +1,4 @@
-import { redirect } from 'react-router';
+import { replace } from 'react-router';
 import type { LoaderFunctionArgs } from 'react-router';
 import { normalizeReturnTo } from '@shared/utils/return-to';
 import type { Permission } from '@shared/types/auth';
@@ -21,10 +21,8 @@ const settleSession = async () => {
   }
 };
 
-// `redirect` only takes ResponseInit; a data-router loader redirect already
-// replaces the history entry, matching the Vue guard's `replace: true`.
 const loginRedirect = (request: Request) =>
-  redirect(`/login?redirect=${encodeURIComponent(normalizeReturnTo(currentPath(request)))}`);
+  replace(`/login?redirect=${encodeURIComponent(normalizeReturnTo(currentPath(request)))}`);
 
 export const requireSession = async ({ request }: LoaderFunctionArgs) => {
   await settleSession();
@@ -33,21 +31,28 @@ export const requireSession = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const requirePermissions =
-  (required: Permission[]) =>
-  async ({ request }: LoaderFunctionArgs) => {
+  (
+    required: Permission[],
+    authorizedLoader?: (args: LoaderFunctionArgs) => unknown | Promise<unknown>
+  ) =>
+  async (args: LoaderFunctionArgs) => {
+    const { request } = args;
     await settleSession();
     if (!isAuthenticated()) throw loginRedirect(request);
     if (required.some(permission => !can(permission))) {
-      throw redirect(
+      throw replace(
         `/forbidden?from=${encodeURIComponent(normalizeReturnTo(currentPath(request)))}`
       );
     }
-    return null;
+    // Parent and child data-router loaders run in parallel. Data loading that
+    // needs this permission must therefore be composed here, after the guard,
+    // rather than assuming a parent loader has completed first.
+    return authorizedLoader ? authorizedLoader(args) : null;
   };
 
 export const publicOnly = async ({ request }: LoaderFunctionArgs) => {
   await settleSession();
   if (!isAuthenticated()) return null;
   const url = new URL(request.url);
-  return redirect(normalizeReturnTo(url.searchParams.get('redirect')));
+  return replace(normalizeReturnTo(url.searchParams.get('redirect')));
 };
